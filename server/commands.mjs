@@ -73,7 +73,7 @@ const pushConvertActions = (args, options) => {
 
     if (options.scale != null && options.scale !== '' && Number(options.scale) !== 1) {
         const s = Number(options.scale);
-        if (!Number.isFinite(s)) throw new Error(`Invalid scale value: ${options.scale}`);
+        if (!Number.isFinite(s) || s <= 0) throw new Error(`Invalid scale value: ${options.scale} (must be greater than 0)`);
         args.push('-s', String(s));
     }
 
@@ -118,18 +118,27 @@ const pushConvertActions = (args, options) => {
         }
         const val = Number(fv.value);
         if (!Number.isFinite(val)) throw new Error(`filter-value: invalid value "${fv.value}"`);
+        // the CLI inverse-transforms the linear opacity and rejects values outside (0,1)
+        if (col === 'opacity' && (val <= 0 || val >= 1)) {
+            throw new Error('filter-value: transformed opacity must be between 0 and 1 (use opacity_raw for stored values)');
+        }
         args.push('-V', `${col},${fv.comparator},${val}`);
     }
 
     const ff = options.filterFloaters;
     if (ff && typeof ff === 'object') {
+        // GPU-only pass — fail fast rather than let the CLI throw mid-run
+        if (options.device === 'cpu') throw new Error('Remove floaters needs the GPU — uncheck "CPU only"');
         const has = (x) => x != null && String(x).trim() !== '';
         if (!has(ff.size) && !has(ff.opacity) && !has(ff.min)) {
             args.push('-G'); // bare flag → CLI defaults (0.05, 0.1, 0.004)
         } else {
-            const size = num(has(ff.size) ? ff.size : 0.05, 0.05, 0, 1e6);
-            const op = num(has(ff.opacity) ? ff.opacity : 0.1, 0.1, 0, 1);
-            const min = num(has(ff.min) ? ff.min : 0.004, 0.004, 0, 1);
+            const size = has(ff.size) ? Number(ff.size) : 0.05;
+            const op = has(ff.opacity) ? Number(ff.opacity) : 0.1;
+            const min = has(ff.min) ? Number(ff.min) : 0.004;
+            if (!(size > 0)) throw new Error('filter-floaters: voxel size must be greater than 0');
+            if (!Number.isFinite(op) || op < 0 || op > 1) throw new Error('filter-floaters: opacity must be in [0, 1]');
+            if (!Number.isFinite(min) || min < 0) throw new Error('filter-floaters: min contribution must be >= 0');
             args.push('-G', `${size},${op},${min}`);
         }
     }
