@@ -109,6 +109,18 @@ const pushConvertActions = (args, options) => {
         args.push('-S', v.join(','));
     }
 
+    const fv = options.filterValue;
+    if (fv && typeof fv === 'object') {
+        const col = String(fv.column ?? '').trim();
+        if (!/^[A-Za-z0-9_]+$/.test(col)) throw new Error(`filter-value: invalid column name "${fv.column}"`);
+        if (!['lt', 'lte', 'gt', 'gte', 'eq', 'neq'].includes(fv.comparator)) {
+            throw new Error(`filter-value: invalid comparator "${fv.comparator}"`);
+        }
+        const val = Number(fv.value);
+        if (!Number.isFinite(val)) throw new Error(`filter-value: invalid value "${fv.value}"`);
+        args.push('-V', `${col},${fv.comparator},${val}`);
+    }
+
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);

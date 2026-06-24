@@ -453,7 +453,8 @@ updateConvertRows();
 // reveal each optional filter's inputs only when its checkbox is on
 const ACTION_TOGGLES: [string, string][] = [
     ['filter-box-on', 'filter-box-rows'],
-    ['filter-sphere-on', 'filter-sphere-rows']
+    ['filter-sphere-on', 'filter-sphere-rows'],
+    ['filter-value-on', 'filter-value-rows']
 ];
 const syncActionRows = () => {
     for (const [cb, rows] of ACTION_TOGGLES) $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked);
@@ -507,6 +508,11 @@ convertRun.onclick = () => {
                 Number($<HTMLInputElement>('sphere-z').value),
                 Number($<HTMLInputElement>('sphere-r').value)
             ] : undefined,
+            filterValue: $<HTMLInputElement>('filter-value-on').checked ? {
+                column: $<HTMLSelectElement>('fv-column').value,
+                comparator: $<HTMLSelectElement>('fv-cmp').value,
+                value: Number($<HTMLInputElement>('fv-value').value)
+            } : undefined,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
