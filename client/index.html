@@ -115,6 +115,10 @@
                             <label class="axis"><span>z</span><input type="number" id="tf-rotate-z" value="0" step="5" required title="Rotate Z (deg)" /></label>
                         </div>
                     </div>
+                    <label class="field" title="Uniformly scale every gaussian by this factor (-s/--scale). 1 = no scaling; 0.5 = half size; 2 = double.">
+                        <span>Scale <em>(uniform factor)</em></span>
+                        <input type="number" id="tf-scale" value="1" step="0.1" required title="Uniform scale factor" />
+                    </label>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>

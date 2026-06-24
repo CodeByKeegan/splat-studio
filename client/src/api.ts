@@ -38,6 +38,7 @@ export interface ConvertRequest {
         // (not applied to LOD bakes). translate/rotate are [x,y,z]; scale a factor.
         translate?: [number, number, number];
         rotate?: [number, number, number];
+        scale?: number;
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;

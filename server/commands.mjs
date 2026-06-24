@@ -71,6 +71,12 @@ const pushConvertActions = (args, options) => {
         args.push('-r', vec3Arg(rot, 'rotate').join(','));
     }
 
+    if (options.scale != null && options.scale !== '' && Number(options.scale) !== 1) {
+        const s = Number(options.scale);
+        if (!Number.isFinite(s)) throw new Error(`Invalid scale value: ${options.scale}`);
+        args.push('-s', String(s));
+    }
+
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
