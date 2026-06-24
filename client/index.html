@@ -200,6 +200,13 @@
                             </label>
                         </div>
                     </div>
+                    <label class="check" title="Remove gaussians that don't contribute to any solid voxel — stray floaters (-G/--filter-floaters). Runs on the GPU."><input type="checkbox" id="filter-floaters-on" /> Remove floaters</label>
+                    <span class="hint" title="GPU pass — incompatible with 'CPU only'. Leave the fields blank to use the CLI defaults (voxel 0.05, opacity 0.1, min 0.004).">GPU pass — leave fields blank for defaults</span>
+                    <div class="field-row hidden" id="filter-floaters-rows">
+                        <label class="field half" title="Voxel size in world units for the floater test (default 0.05)"><span>Voxel size</span><input type="number" id="ff-size" step="0.01" min="0" placeholder="0.05" title="Voxel size (default 0.05)" /></label>
+                        <label class="field half" title="Opacity cutoff (default 0.1)"><span>Opacity</span><input type="number" id="ff-op" step="0.05" min="0" max="1" placeholder="0.1" title="Opacity cutoff (default 0.1)" /></label>
+                        <label class="field half" title="Minimum contribution (default 0.004)"><span>Min contrib</span><input type="number" id="ff-min" step="0.001" min="0" placeholder="0.004" title="Min contribution (default 0.004)" /></label>
+                    </div>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>

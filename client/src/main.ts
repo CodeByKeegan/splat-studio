@@ -454,7 +454,8 @@ updateConvertRows();
 const ACTION_TOGGLES: [string, string][] = [
     ['filter-box-on', 'filter-box-rows'],
     ['filter-sphere-on', 'filter-sphere-rows'],
-    ['filter-value-on', 'filter-value-rows']
+    ['filter-value-on', 'filter-value-rows'],
+    ['filter-floaters-on', 'filter-floaters-rows']
 ];
 const syncActionRows = () => {
     for (const [cb, rows] of ACTION_TOGGLES) $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked);
@@ -512,6 +513,11 @@ convertRun.onclick = () => {
                 column: $<HTMLSelectElement>('fv-column').value,
                 comparator: $<HTMLSelectElement>('fv-cmp').value,
                 value: Number($<HTMLInputElement>('fv-value').value)
+            } : undefined,
+            filterFloaters: $<HTMLInputElement>('filter-floaters-on').checked ? {
+                size: $<HTMLInputElement>('ff-size').value,
+                opacity: $<HTMLInputElement>('ff-op').value,
+                min: $<HTMLInputElement>('ff-min').value
             } : undefined,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),

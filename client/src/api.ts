@@ -43,6 +43,7 @@ export interface ConvertRequest {
         filterBox?: string[]; // 6 raw values [minX,minY,minZ,maxX,maxY,maxZ]; blank = unbounded
         filterSphere?: [number, number, number, number]; // [x,y,z,radius]
         filterValue?: { column: string; comparator: string; value: number };
+        filterFloaters?: { size: string; opacity: string; min: string }; // GPU; blank = defaults
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;

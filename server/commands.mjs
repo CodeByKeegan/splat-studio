@@ -121,6 +121,19 @@ const pushConvertActions = (args, options) => {
         args.push('-V', `${col},${fv.comparator},${val}`);
     }
 
+    const ff = options.filterFloaters;
+    if (ff && typeof ff === 'object') {
+        const has = (x) => x != null && String(x).trim() !== '';
+        if (!has(ff.size) && !has(ff.opacity) && !has(ff.min)) {
+            args.push('-G'); // bare flag → CLI defaults (0.05, 0.1, 0.004)
+        } else {
+            const size = num(has(ff.size) ? ff.size : 0.05, 0.05, 0, 1e6);
+            const op = num(has(ff.opacity) ? ff.opacity : 0.1, 0.1, 0, 1);
+            const min = num(has(ff.min) ? ff.min : 0.004, 0.004, 0, 1);
+            args.push('-G', `${size},${op},${min}`);
+        }
+    }
+
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
