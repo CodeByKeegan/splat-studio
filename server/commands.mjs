@@ -83,6 +83,20 @@ const pushConvertActions = (args, options) => {
         args.push('-H', String(h));
     }
 
+    if (Array.isArray(options.filterBox)) {
+        if (options.filterBox.length !== 6) throw new Error('filter-box needs 6 values (min x,y,z, max x,y,z)');
+        // blank or "-" leaves that side unbounded (the CLI maps it to ±Infinity)
+        const parts = options.filterBox.map((s) => {
+            const t = String(s ?? '').trim();
+            if (t === '' || t === '-') return '';
+            const n = Number(t);
+            if (!Number.isFinite(n)) throw new Error(`filter-box: invalid number "${t}"`);
+            return String(n);
+        });
+        if (parts.every((p) => p === '')) throw new Error('filter-box: set at least one bound');
+        args.push('-B', parts.join(','));
+    }
+
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);

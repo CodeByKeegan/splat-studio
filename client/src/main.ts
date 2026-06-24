@@ -450,6 +450,13 @@ lodMode.onchange = updateConvertRows;
 restoreFormState();
 updateConvertRows();
 
+// reveal each optional filter's inputs only when its checkbox is on
+const syncActionRows = () => {
+    $('filter-box-rows').classList.toggle('hidden', !$<HTMLInputElement>('filter-box-on').checked);
+};
+for (const id of ['filter-box-on']) $(id).addEventListener('change', syncActionRows);
+syncActionRows();
+
 convertRun.onclick = () => {
     const input = convertInput.value;
     if (!input) return showToast('Pick an input file first', true);
@@ -486,6 +493,10 @@ convertRun.onclick = () => {
             ],
             scale: Number($<HTMLInputElement>('tf-scale').value),
             filterHarmonics: $<HTMLSelectElement>('convert-harmonics').value,
+            filterBox: $<HTMLInputElement>('filter-box-on').checked ? [
+                $<HTMLInputElement>('box-min-x').value, $<HTMLInputElement>('box-min-y').value, $<HTMLInputElement>('box-min-z').value,
+                $<HTMLInputElement>('box-max-x').value, $<HTMLInputElement>('box-max-y').value, $<HTMLInputElement>('box-max-z').value
+            ] : undefined,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),

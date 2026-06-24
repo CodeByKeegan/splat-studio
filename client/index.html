@@ -130,6 +130,21 @@
                             <option value="3">3</option>
                         </select>
                     </label>
+                    <label class="check" title="Keep only gaussians inside an axis-aligned box (-B/--filter-box). Leave a min/max field blank for no limit on that side."><input type="checkbox" id="filter-box-on" /> Crop to box</label>
+                    <div class="field hidden" id="filter-box-rows" title="Box corners in splat-transform world units (same axes as the collision seed). Blank = unbounded on that side.">
+                        <div class="label-row"><span>Box min <em>(x, y, z)</em></span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="box-min-x" step="0.1" placeholder="−∞" title="Box min X (blank = unbounded)" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="box-min-y" step="0.1" placeholder="−∞" title="Box min Y (blank = unbounded)" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="box-min-z" step="0.1" placeholder="−∞" title="Box min Z (blank = unbounded)" /></label>
+                        </div>
+                        <div class="label-row"><span>Box max <em>(x, y, z)</em></span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="box-max-x" step="0.1" placeholder="+∞" title="Box max X (blank = unbounded)" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="box-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="box-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
+                        </div>
+                    </div>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
