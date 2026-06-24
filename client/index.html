@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Splat Studio</title>
+    <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+    <div id="app">
+        <aside id="sidebar">
+            <header id="app-header" title="A local GUI for @playcanvas/splat-transform: convert splat formats, bundle SOG, generate collision meshes, and preview everything in 3D">
+                <h1>Splat Studio</h1>
+                <span class="subtitle">splat-transform GUI</span>
+            </header>
+            <div id="project-bar" title="Each project is its own folder of splats and outputs. Switching projects filters everything below and clears the viewport.">
+                <select id="project-select" title="Active project"></select>
+                <button id="project-new" title="Create a new project (a new folder in the workspace)">+ New</button>
+            </div>
+
+            <section class="panel" id="panel-files">
+                <h2 title="Files live in the local workspace/ folder. Click 'view' to display one in the 3D viewer.">Files</h2>
+                <div id="drop-zone" title="Drop anywhere in the window — files land in the workspace">
+                    Drop splat files anywhere or
+                    <button type="button" class="link" id="browse-btn">browse</button>
+                    <input type="file" id="file-input" multiple
+                        accept=".ply,.sog,.spz,.splat,.ksplat,.lcc,.json" hidden />
+                    <span class="hint">.ply · .compressed.ply · .sog · .spz · .splat · .ksplat · .lcc · meta.json</span>
+                </div>
+                <ul id="file-list" class="file-list"></ul>
+            </section>
+
+            <section class="panel" id="panel-convert">
+                <h2 title="Convert between gaussian splat formats using splat-transform">Convert</h2>
+                <label class="field" title="Source file — anything splat-transform can read, including formats the viewer can't display (.spz, .splat, .ksplat, .lcc)">
+                    <span>Input</span>
+                    <select id="convert-input"></select>
+                </label>
+                <label class="field" title="Output format. SOG bundling is filename-driven: the single-file form writes name.sog, the folder forms write a directory">
+                    <span>Output format</span>
+                    <select id="convert-format">
+                        <option value="sog" selected title="Single compressed .sog file (a ZIP of meta.json + WebP textures) — ~95% smaller than PLY">SOG — single .sog file</option>
+                        <option value="sog-unbundled" title="SOG as a folder: meta.json + WebP textures, for streaming-friendly hosting">SOG — unbundled folder (meta.json + WebP)</option>
+                        <option value="lod" title="Multi-LOD streamed SOG: lod-meta.json + per-LOD chunk folders. The engine streams chunks by camera distance — the format for big scenes">SOG — streamed LOD folder (lod-meta.json + chunks)</option>
+                        <option value="ply" title="Standard uncompressed 3DGS PLY">PLY</option>
+                        <option value="compressed-ply" title="SuperSplat compressed PLY — smaller, still a single .ply">Compressed PLY</option>
+                        <option value="spz" title="Niantic SPZ format">SPZ</option>
+                        <option value="glb" title="glTF binary with the KHR_gaussian_splatting extension">GLB (KHR_gaussian_splatting)</option>
+                        <option value="csv" title="Raw gaussian data as CSV — for analysis, not rendering">CSV</option>
+                        <option value="html" title="Self-contained HTML viewer page with the splat embedded">HTML viewer</option>
+                    </select>
+                </label>
+                <label class="field" id="row-iterations" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
+                    <span>SH compression iterations</span>
+                    <input type="number" id="convert-iterations" value="10" min="1" max="100" required />
+                </label>
+                <label class="field hidden" id="row-spz-version" title="SPZ container version (--spz-version). 4 is current; use 3 for older consumers">
+                    <span>SPZ version</span>
+                    <select id="convert-spz-version">
+                        <option value="4" selected>4</option>
+                        <option value="3">3</option>
+                    </select>
+                </label>
+                <label class="field hidden" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
+                    <span>LOD source</span>
+                    <select id="lod-mode">
+                        <option value="decimate" selected>Decimate input automatically</option>
+                        <option value="combine">Combine existing files as levels</option>
+                    </select>
+                </label>
+                <div class="field-row hidden" id="row-lod-levels">
+                    <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
+                        <span>LOD levels</span>
+                        <input type="number" id="lod-levels" value="3" min="1" max="8" required />
+                    </label>
+                    <label class="field half" title="Each successive level keeps this percentage of the previous one (-F/--decimate, GPU-accelerated)">
+                        <span>Keep per level (%)</span>
+                        <input type="number" id="lod-keep" value="50" min="5" max="95" required />
+                    </label>
+                </div>
+                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before">
+                    <span>Additional levels <em>(Input = LOD 0, highest detail)</em></span>
+                    <div id="lod-file-rows"></div>
+                    <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
+                </div>
+                <div class="field-row hidden" id="row-lod-chunks">
+                    <label class="field half" title="Approximate gaussians per streamed chunk, in thousands (-C/--lod-chunk-count). Default 512">
+                        <span>Chunk size (K splats)</span>
+                        <input type="number" id="lod-chunk-count" value="512" min="16" max="8192" required />
+                    </label>
+                    <label class="field half" title="Approximate world-space size of a chunk in meters (-X/--lod-chunk-extent, whole meters). Default 16">
+                        <span>Chunk extent (m)</span>
+                        <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
+                    </label>
+                </div>
+                <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (-F/--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
+                    <span>Decimate to (count or %)</span>
+                    <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
+                </label>
+                <div class="field-row">
+                    <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
+                    <label class="check" title="Force CPU compression (-g cpu). 5–10× slower; only affects SOG SH compression. Voxel/collision and cluster filtering always need the GPU"><input type="checkbox" id="convert-cpu" /> CPU only</label>
+                </div>
+                <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>
+            </section>
+
+            <section class="panel" id="panel-collision">
+                <h2 title="Voxelize the splat and extract a collision triangle mesh (.collision.glb) plus a sparse voxel octree (.voxel.json/.bin) for runtime collision">Collision</h2>
+                <label class="field" title="Source splat to generate collision from">
+                    <span>Input</span>
+                    <select id="collision-input"></select>
+                </label>
+                <label class="field" title="Presets mirror SuperSplat Studio's one-click options; they just set the controls below. Editing any control switches to Custom">
+                    <span>Preset <em>— sets the controls below</em></span>
+                    <select id="collision-preset">
+                        <option value="indoor" selected title="Room scans: seal the model from outside air, then carve the walkable interior open from the seed">Indoor (seal exterior + carve)</option>
+                        <option value="outdoor" title="Terrain: fill each column up from the bottom so the ground is solid">Outdoor (floor fill)</option>
+                        <option value="object" title="Single object: plain voxelization, no hole sealing or carving">Object (voxelize only)</option>
+                        <option value="custom" title="Your own combination of the controls below">Custom (edited below)</option>
+                    </select>
+                </label>
+
+                <div class="group">Voxelize</div>
+                <div class="field-row">
+                    <label class="field half" title="Voxel edge length in meters (--voxel-params). Smaller = more detail but more memory/time; 0.05 m = 5 cm voxels">
+                        <span>Voxel size (m)</span>
+                        <input type="number" id="voxel-size" value="0.05" step="0.005" min="0.001" required />
+                    </label>
+                    <label class="field half" title="Gaussians with opacity below this are ignored when voxelizing (--voxel-params). Raise it to ignore wispy fog/floaters">
+                        <span>Opacity cutoff (0–1)</span>
+                        <input type="number" id="voxel-opacity" value="0.1" step="0.05" min="0" max="1" required />
+                    </label>
+                </div>
+                <label class="check" title="Keep only the cluster of splats connected to the seed position, removing disconnected floaters before voxelizing (-D/--filter-cluster). GPU-only. On multi-million-gaussian scenes this pass can exceed the Windows GPU watchdog and kill the job (DEVICE_HUNG)"><input type="checkbox" id="filter-cluster" checked />
+                    Filter to connected cluster at seed</label>
+                <span class="hint" title="The cluster filter runs one long GPU dispatch per region; Windows resets the GPU if a dispatch exceeds ~2 s">GPU pass — uncheck for multi-million-splat scenes (watchdog risk)</span>
+                <div class="field" title="A point inside the scene (--seed-pos) used by the cluster filter, hole sealing and carving. For a room: ~1 m above the floor">
+                    <div class="label-row">
+                        <span>Seed point <em>(a spot inside the scene)</em></span>
+                        <label class="check inline" title="Show the seed marker (yellow) and its drag gizmo in the viewport — drag the gizmo arrows to move the seed"><input type="checkbox" id="show-seed-marker" checked /> show</label>
+                    </div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="seed-x" value="0" step="0.1" required title="Seed X (CLI axes)" /></label>
+                        <label class="axis"><span>y · up</span><input type="number" id="seed-y" value="1" step="0.1" required title="Seed Y, up (CLI axes)" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="seed-z" value="0" step="0.1" required title="Seed Z (CLI axes)" /></label>
+                        <button id="seed-from-camera" title="Set the seed from the current camera position, converted to splat-transform's coordinate space — fly inside the scene first, then click">📷 from camera</button>
+                    </div>
+                    <span class="hint">Typed XYZ use CLI axes (rotated 180° from the viewer) — prefer 📷.</span>
+                </div>
+
+                <div class="group">Seal</div>
+                <div class="field-row">
+                    <label class="field half" title="How splat holes get sealed so the volume is watertight">
+                        <span>Hole sealing</span>
+                        <select id="fill-mode">
+                            <option value="external" selected title="Flood-fill from outside the model; anything unreachable becomes solid (--voxel-external-fill). Best for interior scans">External fill (indoor)</option>
+                            <option value="floor" title="Fill each vertical column upward from the bottom until hitting solid (--voxel-floor-fill). Best for terrain">Floor fill (outdoor)</option>
+                            <option value="none" title="No sealing — voxelize exactly what's there">None</option>
+                        </select>
+                    </label>
+                    <label class="field half" id="row-fill-size" title="Dilation distance in meters for the fill — how big a hole gets sealed over. Default 1.6">
+                        <span>Seal holes up to (m)</span>
+                        <input type="number" id="fill-size" value="1.6" step="0.1" min="0" required />
+                    </label>
+                </div>
+
+                <div class="group with-toggle">Carve
+                    <label class="check inline" title="Show the carve capsule (cyan) at the seed in the viewport, sized to the height/radius below — independent of whether carving runs"><input type="checkbox" id="show-capsule" checked /> show capsule</label>
+                </div>
+                <label class="check" title="Flood-fill walkable space from the seed with a player-sized capsule, keeping it open through the sealing step (--voxel-carve). Essential after external fill, or the whole interior reads as solid"><input type="checkbox" id="carve" checked />
+                    Carve walkable space from seed (capsule)</label>
+                <div class="field-row" id="carve-params">
+                    <label class="field half" title="Carve capsule height in meters (player height). Default 1.6">
+                        <span>Capsule height (m)</span>
+                        <input type="number" id="carve-height" value="1.6" step="0.1" min="0.1" required />
+                    </label>
+                    <label class="field half" title="Carve capsule radius in meters (player radius). Default 0.2">
+                        <span>Capsule radius (m)</span>
+                        <input type="number" id="carve-radius" value="0.2" step="0.05" min="0.05" required />
+                    </label>
+                </div>
+
+                <div class="group">Mesh</div>
+                <label class="field" title="How the triangle mesh is extracted from the voxels (-K/--collision-mesh)">
+                    <span>Mesh style</span>
+                    <select id="mesh-shape">
+                        <option value="smooth" selected title="Marching cubes with lossless coplanar merging — fewer, smoother triangles">Smooth (marching cubes)</option>
+                        <option value="faces" title="Exact axis-aligned voxel faces — watertight, blocky, faithful to the voxels">Faces (exact voxel faces)</option>
+                    </select>
+                </label>
+                <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb, which auto-loads as a wireframe">Generate collision</button>
+            </section>
+
+            <section class="panel" id="panel-viewer">
+                <h2 title="Display options for the 3D view. Camera: drag to orbit, right-drag to pan, WASD to fly">Viewer</h2>
+                <div class="field-row">
+                    <label class="check" title="Show or hide the loaded gaussian splat"><input type="checkbox" id="show-splat" checked /> Splat</label>
+                    <label class="check" title="Show or hide the collision wireframe overlay"><input type="checkbox" id="show-collision" checked /> Collision</label>
+                    <label class="check" title="Show or hide the voxel octree boxes"><input type="checkbox" id="show-voxels" checked /> Voxels</label>
+                </div>
+                <label class="field" title="How the collision mesh is drawn. X-ray: all edges visible through everything — fine for small meshes, noise on dense ones. Hidden-line: only front-surface edges (a depth prepass culls the rest) — use for dense meshes. Solid: lit translucent surface + hidden-line edges — best for checking placement against the splat and inspecting carved interiors (fly inside with WASD)">
+                    <span>Collision style</span>
+                    <select id="collision-style">
+                        <option value="xray" selected>X-ray wireframe</option>
+                        <option value="hidden">Hidden-line wireframe</option>
+                        <option value="solid">Solid + edges</option>
+                    </select>
+                </label>
+                <div class="field-row">
+                    <label class="field half" title="Color of the collision wireframe">
+                        <span>Wire color</span>
+                        <input type="color" id="wire-color" value="#00ff66" />
+                    </label>
+                    <label class="field half" title="Opacity of the collision wireframe">
+                        <span>Wire opacity</span>
+                        <input type="range" id="wire-opacity" min="0.05" max="1" step="0.05" value="0.6" />
+                    </label>
+                </div>
+                <div class="field-row">
+                    <label class="field half" title="Color of the voxel boxes">
+                        <span>Voxel color</span>
+                        <input type="color" id="voxel-color" value="#ff9e40" />
+                    </label>
+                    <label class="field half" title="Opacity of the voxel boxes">
+                        <span>Voxel opacity</span>
+                        <input type="range" id="voxel-opacity" min="0.05" max="1" step="0.05" value="0.35" />
+                    </label>
+                </div>
+                <div class="field-row">
+                    <label class="check" title="Unchecked: oriented for splat-transform output (180° about Y, aligned automatically). Check this for collision meshes from other tools that are already in viewer/engine space"><input type="checkbox" id="collision-flip" />
+                        Flip collision</label>
+                </div>
+                <div class="field-row">
+                    <button id="frame-scene" title="Re-center and re-distance the camera to fit the loaded scene">Frame scene</button>
+                    <button id="clear-viewport" title="Unload all layers (splat, collision, voxels) and empty the viewport, freeing their GPU memory">Clear viewport</button>
+                </div>
+            </section>
+
+            <section class="panel" id="panel-job">
+                <h2 title="The most recent background job. Each job is one splat-transform CLI run">Job
+                    <span id="job-title" class="job-title"></span>
+                    <span id="job-status" class="badge" title="running / done / error"></span>
+                    <button id="job-cancel" class="hidden" title="Kill the running splat-transform process">cancel</button></h2>
+                <code id="job-command" title="The exact CLI command this job ran — copy it to reproduce outside the GUI"></code>
+                <pre id="job-log" class="log" title="Live output from the splat-transform process"></pre>
+            </section>
+        </aside>
+
+        <div id="resizer" title="Drag to resize panel — arrow keys also work when focused" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
+
+        <main id="viewport">
+            <canvas id="gs-canvas"></canvas>
+            <div id="hud">
+                <span id="hud-splat" class="chip hidden" title="Currently displayed splat"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the splat from the viewport (frees its GPU memory)">✕</button></span>
+                <span id="hud-collision" class="chip hidden" title="Currently displayed collision mesh"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the collision mesh from the viewport">✕</button></span>
+                <span id="hud-voxel" class="chip hidden" title="Currently displayed voxel octree"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the voxels from the viewport">✕</button></span>
+            </div>
+            <div id="toast-stack"></div>
+        </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

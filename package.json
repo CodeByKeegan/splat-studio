@@ -1,0 +1,25 @@
+{
+  "name": "splat-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "GUI for @playcanvas/splat-transform: SOG bundling, splat format conversion and collision generation, with a PlayCanvas viewer that overlays the collision mesh as a wireframe on the gaussian splat",
+  "scripts": {
+    "dev": "concurrently -k -n server,vite -c blue,magenta \"node server/index.mjs\" \"vite\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server/index.mjs",
+    "demo": "node scripts/make-test-splat.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@playcanvas/splat-transform": "^2.5.2",
+    "express": "^4.21.2",
+    "playcanvas": "^2.19.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.0.0"
+  }
+}
