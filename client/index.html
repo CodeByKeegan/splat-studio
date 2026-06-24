@@ -107,6 +107,14 @@
                             <label class="axis"><span>z</span><input type="number" id="tf-translate-z" value="0" step="0.1" required title="Translate Z" /></label>
                         </div>
                     </div>
+                    <div class="field" title="Rotate every gaussian by Euler angles (x, y, z) in degrees (-r/--rotate). All three zero = no rotation.">
+                        <div class="label-row"><span>Rotate <em>(°, Euler x · y · z)</em></span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="tf-rotate-x" value="0" step="5" required title="Rotate X (deg)" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="tf-rotate-y" value="0" step="5" required title="Rotate Y (deg)" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="tf-rotate-z" value="0" step="5" required title="Rotate Z (deg)" /></label>
+                        </div>
+                    </div>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>

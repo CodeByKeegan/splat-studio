@@ -479,6 +479,11 @@ convertRun.onclick = () => {
                 Number($<HTMLInputElement>('tf-translate-y').value),
                 Number($<HTMLInputElement>('tf-translate-z').value)
             ],
+            rotate: [
+                Number($<HTMLInputElement>('tf-rotate-x').value),
+                Number($<HTMLInputElement>('tf-rotate-y').value),
+                Number($<HTMLInputElement>('tf-rotate-z').value)
+            ],
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),

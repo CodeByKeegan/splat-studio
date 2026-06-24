@@ -66,6 +66,11 @@ const pushConvertActions = (args, options) => {
         args.push('-t', vec3Arg(tr, 'translate').join(','));
     }
 
+    const rot = options.rotate;
+    if (Array.isArray(rot) && rot.some((v) => Number(v) !== 0)) {
+        args.push('-r', vec3Arg(rot, 'rotate').join(','));
+    }
+
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
