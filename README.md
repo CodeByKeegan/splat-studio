@@ -85,6 +85,35 @@ Then in the browser:
    documented in its header; validated against real output by
    `node scripts/test-voxel-parse.mjs <name>`).
 
+## Desktop app (standalone)
+
+Splat Studio also ships as a self-contained Windows desktop app (Electron) — no
+Node install, terminal, or `npm run dev` required. The Electron main process
+([electron/main.mjs](electron/main.mjs)) picks a free port, launches the Express
+server (the Electron binary runs as Node via `ELECTRON_RUN_AS_NODE`, so it can
+still spawn the native-WebGPU `splat-transform` CLI), waits for it to come up,
+then opens the UI in a Chromium window.
+
+```bash
+npm install
+npm run make-icon   # regenerate build/icon.ico (committed; only needed if changed)
+npm run dist:win    # build dist/ and package to release/
+```
+
+`release/` then contains:
+
+- **`Splat Studio Setup <version>.exe`** — NSIS installer (per-user, lets you
+  choose the install dir, creates Start-menu/desktop shortcuts).
+- **`SplatStudio-<version>-portable.exe`** — single self-contained exe; run it
+  from anywhere, nothing is installed.
+
+`npm run pack:dir` produces an unpacked `release/win-unpacked/Splat Studio.exe`
+for a quick smoke test without building the installers.
+
+On first run the workspace defaults to `Documents\Splat Studio`; **File → Change
+Workspace Folder…** points it at any folder of project subfolders (the choice is
+remembered). **File → Open Workspace in Explorer** reveals it on disk.
+
 ## Notes
 
 - **GPU required** for voxelization/collision and `--filter-cluster` (the CLI uses

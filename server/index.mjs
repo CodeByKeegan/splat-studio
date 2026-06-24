@@ -10,14 +10,13 @@ import { createJob, getJob, cancelJob, listJobs } from './jobs.mjs';
 import { buildConvertCommand, buildCollisionCommand, recordOutputs, cliPath } from './commands.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Each top-level subfolder of the workspace is a "project". Default to the
-// splats/ folder so the root is correct no matter how the server is launched —
-// dev.cmd also sets SPLAT_WORKSPACE, but a plain `npm run dev` / preview-harness
-// start would otherwise fall back to the bundle-littered ./workspace.
-const DEFAULT_WORKSPACE = 'C:\\Users\\keega\\Documents\\ClaudeWorkbench\\splats';
+// Each top-level subfolder of the workspace is a "project". The launcher
+// (dev.cmd) and the packaged Electron app both set SPLAT_WORKSPACE to a real
+// folder of projects; the ./workspace fallback only applies to a bare
+// `node server/index.mjs`.
 const workspaceDir = process.env.SPLAT_WORKSPACE
     ? path.resolve(process.env.SPLAT_WORKSPACE)
-    : DEFAULT_WORKSPACE;
+    : path.join(rootDir, 'workspace');
 const distDir = path.join(rootDir, 'dist');
 await fs.mkdir(workspaceDir, { recursive: true });
 

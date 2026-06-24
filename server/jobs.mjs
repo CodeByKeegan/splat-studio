@@ -36,6 +36,10 @@ export const createJob = ({ title, args, cwd, expectedOutputs = [], viewables = 
     };
     jobs.set(id, job);
 
+    // process.execPath is a real Node binary in every mode — `node` in dev, the
+    // bundled node.exe in the packaged app (the Electron main process launches
+    // the server with it, not via ELECTRON_RUN_AS_NODE, because the CLI's native
+    // WebGPU/Dawn device crashes when hosted inside the Electron binary).
     const child = spawn(process.execPath, args, { cwd, windowsHide: true });
     children.set(id, child);
 
