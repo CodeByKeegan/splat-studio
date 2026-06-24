@@ -45,6 +45,34 @@ const OUTPUT_NAMES = {
 
 export const convertFormats = Object.keys(OUTPUT_NAMES);
 
+const vec3Arg = (v, name) => {
+    if (!Array.isArray(v) || v.length !== 3) throw new Error(`${name} needs 3 numbers`);
+    return v.map((x) => {
+        const n = Number(x);
+        if (!Number.isFinite(n)) throw new Error(`${name}: invalid number "${x}"`);
+        return n;
+    });
+};
+
+// Transform/filter actions applied to the working set before the output is
+// written (CLI grammar: input [ACTIONS] output). Fixed pipeline order; only
+// non-default values emit a flag. Not used by the LOD path, which bakes levels
+// of its own.
+const pushConvertActions = (args, options) => {
+    if (options.filterNaN) args.push('-N');
+
+    const tr = options.translate;
+    if (Array.isArray(tr) && tr.some((v) => Number(v) !== 0)) {
+        args.push('-t', vec3Arg(tr, 'translate').join(','));
+    }
+
+    if (options.decimate != null && options.decimate !== '') {
+        const d = String(options.decimate).trim();
+        if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
+        args.push('-F', d);
+    }
+};
+
 // CLI grammar: splat-transform [GLOBAL] input [ACTIONS] output [ACTIONS]
 export const buildConvertCommand = ({ input, format, options = {}, workspaceDir }) => {
     const makeName = Object.hasOwn(OUTPUT_NAMES, format) ? OUTPUT_NAMES[format] : null;
@@ -125,12 +153,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     }
 
     args.push(input);
-    if (options.filterNaN) args.push('-N');
-    if (options.decimate != null && options.decimate !== '') {
-        const d = String(options.decimate).trim();
-        if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
-        args.push('-F', d);
-    }
+    pushConvertActions(args, options);
     args.push(output);
 
     return {

@@ -97,6 +97,17 @@
                     <span>Decimate to (count or %)</span>
                     <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
                 </label>
+                <div id="convert-actions" title="Transforms and filters applied to the splat before it's written. They run in a fixed pipeline order and don't apply to streamed-LOD bakes.">
+                    <div class="group">Transform</div>
+                    <div class="field" title="Move every gaussian by (x, y, z) before writing (-t/--translate), in splat-transform world units. All three zero = no move.">
+                        <div class="label-row"><span>Translate <em>(x, y, z)</em></span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="tf-translate-x" value="0" step="0.1" required title="Translate X" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="tf-translate-y" value="0" step="0.1" required title="Translate Y" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="tf-translate-z" value="0" step="0.1" required title="Translate Z" /></label>
+                        </div>
+                    </div>
+                </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
                     <label class="check" title="Force CPU compression (-g cpu). 5–10× slower; only affects SOG SH compression. Voxel/collision and cluster filtering always need the GPU"><input type="checkbox" id="convert-cpu" /> CPU only</label>

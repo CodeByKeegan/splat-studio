@@ -437,6 +437,7 @@ const updateConvertRows = () => {
     $('row-iterations').classList.toggle('hidden', !(f === 'sog' || f === 'sog-unbundled' || f === 'html' || isLod));
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
     $('row-decimate').classList.toggle('hidden', isLod); // lod has its own level controls
+    $('convert-actions').classList.toggle('hidden', isLod); // transforms/filters don't apply to LOD bakes
     $('row-lod-mode').classList.toggle('hidden', !isLod);
     $('row-lod-levels').classList.toggle('hidden', !isLod || combine);
     $('row-lod-files').classList.toggle('hidden', !isLod || !combine);
@@ -473,6 +474,11 @@ convertRun.onclick = () => {
             decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
             filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
             device: $<HTMLInputElement>('convert-cpu').checked ? 'cpu' : 'auto',
+            translate: [
+                Number($<HTMLInputElement>('tf-translate-x').value),
+                Number($<HTMLInputElement>('tf-translate-y').value),
+                Number($<HTMLInputElement>('tf-translate-z').value)
+            ],
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),

@@ -34,6 +34,9 @@ export interface ConvertRequest {
         decimate?: string;
         filterNaN?: boolean;
         device?: 'auto' | 'cpu';
+        // transform/filter actions applied to the working set before writing
+        // (not applied to LOD bakes). translate/rotate are [x,y,z]; scale a factor.
+        translate?: [number, number, number];
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;
