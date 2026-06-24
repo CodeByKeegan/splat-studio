@@ -4,7 +4,7 @@ export interface FileEntry {
     name: string;
     size: number;
     mtime: number;
-    kind: 'splat' | 'lod' | 'voxel' | 'collision' | 'glb' | 'export' | 'other';
+    kind: 'splat' | 'lod' | 'voxel' | 'collision' | 'glb' | 'export' | 'generator' | 'other';
     viewable: ViewKind | null;
 }
 
@@ -40,6 +40,8 @@ export interface ConvertRequest {
         lodChunkExtent?: number;
         /** combine mode: files for LOD 1..n (the main input is LOD 0) */
         lodFiles?: string[];
+        /** .mjs generator params, raw "key=val,key=val" forwarded to -p/--params */
+        params?: string;
     };
 }
 
@@ -119,6 +121,14 @@ export const startCollision = async (req: CollisionRequest): Promise<string> =>
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...req, project })
+    }))).jobId;
+
+/** Analysis-only run: per-column stats (-m) to the job log, no file written. */
+export const startAnalyze = async (input: string): Promise<string> =>
+    (await jsonOrThrow(await fetch('/api/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input, project })
     }))).jobId;
 
 export const getJob = async (id: string): Promise<Job> =>

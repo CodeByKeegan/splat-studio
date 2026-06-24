@@ -85,6 +85,20 @@ Then in the browser:
    documented in its header; validated against real output by
    `node scripts/test-voxel-parse.mjs <name>`).
 
+## Analyze & procedural generators
+
+- **Analyze** panel — pick any splat and **Summarize stats** to print per-column
+  statistics (min · max · median · mean · stdDev, NaN/Inf counts and a histogram)
+  to the Job log without writing a file (`-m/--summary` with a `null` output).
+- **`.mjs` generators** — a JavaScript module that procedurally synthesizes a
+  splat is a first-class Convert/Analyze input. Drop one in or click **+ sample
+  generator** (writes [`examples/gen-grid.mjs`](examples/gen-grid.mjs)), pick it
+  as the Convert input, and pass **Generator params** like
+  `width=16,height=16,scale=4` (`-p/--params`). A generator must `export` a
+  `Generator` class with a static `create(params)` returning
+  `{ count, columnNames, getRow(index, row) }`; column values are raw (log-space
+  scale, logit opacity, SH-DC colour). Local-only.
+
 ## Desktop app (standalone)
 
 Splat Studio also ships as a self-contained Windows desktop app (Electron) — no

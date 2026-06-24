@@ -125,6 +125,15 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     }
 
     args.push(input);
+    // .mjs generator parameters (-p key=val,...); a per-input action, so it must
+    // sit right after the input token. Only meaningful for generator inputs.
+    if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
+        const p = String(options.params).trim();
+        if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
+            throw new Error(`Invalid generator params: ${p} (use key=val,key=val)`);
+        }
+        args.push('-p', p);
+    }
     if (options.filterNaN) args.push('-N');
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
@@ -175,6 +184,27 @@ export const buildCollisionCommand = ({ input, options = {} }) => {
         args,
         expectedOutputs: [voxelOut, `${base}.voxel.bin`, collisionOut],
         viewables: [{ name: collisionOut, as: 'collision' }]
+    };
+};
+
+// Analysis-only: print per-column statistics (-m) with a `null` output so no
+// file is written. -q drops the progress chrome, leaving a clean Markdown stats
+// table in the job log. For a .mjs generator input, params shape the scene first.
+export const buildSummaryCommand = ({ input, options = {} }) => {
+    const args = [cliPath, '--no-tty', '-q', input];
+    if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
+        const p = String(options.params).trim();
+        if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
+            throw new Error(`Invalid generator params: ${p} (use key=val,key=val)`);
+        }
+        args.push('-p', p);
+    }
+    args.push('-m', 'null');
+    return {
+        title: `Summary of ${input}`,
+        args,
+        expectedOutputs: [], // analysis-only — stats live in the job log
+        viewables: []
     };
 };
 
