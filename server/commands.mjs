@@ -77,6 +77,12 @@ const pushConvertActions = (args, options) => {
         args.push('-s', String(s));
     }
 
+    if (options.filterHarmonics != null && options.filterHarmonics !== '') {
+        const h = Number(options.filterHarmonics);
+        if (![0, 1, 2, 3].includes(h)) throw new Error(`Invalid filter-harmonics value: ${options.filterHarmonics} (must be 0-3)`);
+        args.push('-H', String(h));
+    }
+
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);

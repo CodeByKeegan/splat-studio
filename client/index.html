@@ -119,6 +119,17 @@
                         <span>Scale <em>(uniform factor)</em></span>
                         <input type="number" id="tf-scale" value="1" step="0.1" required title="Uniform scale factor" />
                     </label>
+                    <div class="group">Filter</div>
+                    <label class="field" title="Strip spherical-harmonic colour bands above this level (-H/--filter-harmonics). Lower = smaller files and flatter, less view-dependent shading. 0 keeps base colour only; 'Keep all' leaves SH untouched.">
+                        <span>Strip SH bands above</span>
+                        <select id="convert-harmonics">
+                            <option value="" selected>Keep all</option>
+                            <option value="0">0 — base colour only</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                        </select>
+                    </label>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>

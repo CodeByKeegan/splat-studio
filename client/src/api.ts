@@ -39,6 +39,7 @@ export interface ConvertRequest {
         translate?: [number, number, number];
         rotate?: [number, number, number];
         scale?: number;
+        filterHarmonics?: string; // '' | '0' | '1' | '2' | '3'
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;

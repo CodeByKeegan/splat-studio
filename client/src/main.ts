@@ -485,6 +485,7 @@ convertRun.onclick = () => {
                 Number($<HTMLInputElement>('tf-rotate-z').value)
             ],
             scale: Number($<HTMLInputElement>('tf-scale').value),
+            filterHarmonics: $<HTMLSelectElement>('convert-harmonics').value,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
