@@ -97,6 +97,18 @@ const pushConvertActions = (args, options) => {
         args.push('-B', parts.join(','));
     }
 
+    const sph = options.filterSphere;
+    if (Array.isArray(sph)) {
+        if (sph.length !== 4) throw new Error('filter-sphere needs 4 values (x, y, z, radius)');
+        const v = sph.map((x) => {
+            const n = Number(x);
+            if (!Number.isFinite(n)) throw new Error(`filter-sphere: invalid number "${x}"`);
+            return n;
+        });
+        if (v[3] < 0) throw new Error('filter-sphere: radius must be >= 0');
+        args.push('-S', v.join(','));
+    }
+
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);

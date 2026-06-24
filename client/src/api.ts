@@ -41,6 +41,7 @@ export interface ConvertRequest {
         scale?: number;
         filterHarmonics?: string; // '' | '0' | '1' | '2' | '3'
         filterBox?: string[]; // 6 raw values [minX,minY,minZ,maxX,maxY,maxZ]; blank = unbounded
+        filterSphere?: [number, number, number, number]; // [x,y,z,radius]
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;

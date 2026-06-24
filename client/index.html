@@ -145,6 +145,16 @@
                             <label class="axis"><span>z</span><input type="number" id="box-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
                         </div>
                     </div>
+                    <label class="check" title="Keep only gaussians inside a sphere (-S/--filter-sphere)."><input type="checkbox" id="filter-sphere-on" /> Crop to sphere</label>
+                    <div class="field hidden" id="filter-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the collision seed).">
+                        <div class="label-row"><span>Sphere centre <em>(x, y, z)</em> + radius</span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="sphere-x" value="0" step="0.1" required title="Sphere centre X" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="sphere-y" value="0" step="0.1" required title="Sphere centre Y" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="sphere-z" value="0" step="0.1" required title="Sphere centre Z" /></label>
+                            <label class="axis"><span>r</span><input type="number" id="sphere-r" value="1" step="0.1" min="0" required title="Sphere radius" /></label>
+                        </div>
+                    </div>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>

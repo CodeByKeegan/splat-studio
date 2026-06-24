@@ -451,10 +451,14 @@ restoreFormState();
 updateConvertRows();
 
 // reveal each optional filter's inputs only when its checkbox is on
+const ACTION_TOGGLES: [string, string][] = [
+    ['filter-box-on', 'filter-box-rows'],
+    ['filter-sphere-on', 'filter-sphere-rows']
+];
 const syncActionRows = () => {
-    $('filter-box-rows').classList.toggle('hidden', !$<HTMLInputElement>('filter-box-on').checked);
+    for (const [cb, rows] of ACTION_TOGGLES) $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked);
 };
-for (const id of ['filter-box-on']) $(id).addEventListener('change', syncActionRows);
+for (const [cb] of ACTION_TOGGLES) $(cb).addEventListener('change', syncActionRows);
 syncActionRows();
 
 convertRun.onclick = () => {
@@ -496,6 +500,12 @@ convertRun.onclick = () => {
             filterBox: $<HTMLInputElement>('filter-box-on').checked ? [
                 $<HTMLInputElement>('box-min-x').value, $<HTMLInputElement>('box-min-y').value, $<HTMLInputElement>('box-min-z').value,
                 $<HTMLInputElement>('box-max-x').value, $<HTMLInputElement>('box-max-y').value, $<HTMLInputElement>('box-max-z').value
+            ] : undefined,
+            filterSphere: $<HTMLInputElement>('filter-sphere-on').checked ? [
+                Number($<HTMLInputElement>('sphere-x').value),
+                Number($<HTMLInputElement>('sphere-y').value),
+                Number($<HTMLInputElement>('sphere-z').value),
+                Number($<HTMLInputElement>('sphere-r').value)
             ] : undefined,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
