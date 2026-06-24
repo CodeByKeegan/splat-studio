@@ -44,6 +44,7 @@ export interface ConvertRequest {
         filterSphere?: [number, number, number, number]; // [x,y,z,radius]
         filterValue?: { column: string; comparator: string; value: number };
         filterFloaters?: { size: string; opacity: string; min: string }; // GPU; blank = defaults
+        mortonOrder?: boolean;
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;

@@ -519,6 +519,7 @@ convertRun.onclick = () => {
                 opacity: $<HTMLInputElement>('ff-op').value,
                 min: $<HTMLInputElement>('ff-min').value
             } : undefined,
+            mortonOrder: $<HTMLInputElement>('convert-morton').checked,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),

@@ -139,6 +139,8 @@ const pushConvertActions = (args, options) => {
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
         args.push('-F', d);
     }
+
+    if (options.mortonOrder) args.push('-M'); // reorder last, after geometry is final
 };
 
 // CLI grammar: splat-transform [GLOBAL] input [ACTIONS] output [ACTIONS]

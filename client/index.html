@@ -207,6 +207,7 @@
                         <label class="field half" title="Opacity cutoff (default 0.1)"><span>Opacity</span><input type="number" id="ff-op" step="0.05" min="0" max="1" placeholder="0.1" title="Opacity cutoff (default 0.1)" /></label>
                         <label class="field half" title="Minimum contribution (default 0.004)"><span>Min contrib</span><input type="number" id="ff-min" step="0.001" min="0" placeholder="0.004" title="Min contribution (default 0.004)" /></label>
                     </div>
+                    <label class="check" title="Reorder gaussians along a Morton / Z-order curve for better spatial locality and faster streaming (-M/--morton-order). Applied last, after any transforms and filters."><input type="checkbox" id="convert-morton" /> Reorder (Morton / Z-order)</label>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
