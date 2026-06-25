@@ -33,6 +33,9 @@ export class SplatViewer {
     private voxelMesh: pc.Mesh | null = null;
     private voxelVb: pc.VertexBuffer | null = null;
     private voxelMaterial!: pc.StandardMaterial;
+    private boundsEntity: pc.Entity | null = null;
+    private boundsMaterial!: pc.StandardMaterial;
+    private boundsVisible = false;
     private depthMaterial!: pc.StandardMaterial;
     private solidMaterial!: pc.StandardMaterial;
     private collisionSurfMIs: pc.MeshInstance[] = [];
@@ -155,6 +158,15 @@ export class SplatViewer {
         this.voxelMaterial.depthWrite = false;
         this.voxelMaterial.update();
 
+        // axis-aligned bounding-box overlay (drawn as a wireframe unit cube,
+        // scaled/positioned to the loaded splat's world AABB)
+        this.boundsMaterial = new pc.StandardMaterial();
+        this.boundsMaterial.useLighting = false;
+        this.boundsMaterial.emissive = new pc.Color(0.45, 0.85, 1);
+        this.boundsMaterial.depthTest = false;
+        this.boundsMaterial.depthWrite = false;
+        this.boundsMaterial.update();
+
         // depth-only prepass: fills the depth buffer so the wireframe becomes
         // hidden-line instead of X-ray (draws no color)
         this.depthMaterial = new pc.StandardMaterial();
@@ -271,7 +283,10 @@ export class SplatViewer {
             if (entity.gsplat?.customAabb) break;
             await new Promise((r) => setTimeout(r, 50));
         }
-        if (this.splatEntity === entity) this.frame();
+        if (this.splatEntity === entity) {
+            this.frame();
+            this.refreshBounds(); // AABB is known now
+        }
     }
 
     /** @returns true if this load applied; false if superseded by a newer load or a remove. */
@@ -447,10 +462,57 @@ export class SplatViewer {
         this.voxelMaterial.update();
     }
 
+    // ----- bounding-box overlay -----
+    // The splat lives under sceneRoot's 180° X rotation (an axis flip), so its
+    // world AABB stays axis-aligned: world min/max = center ± halfExtents.
+    private worldSplatAabb(): { min: pc.Vec3; max: pc.Vec3 } | null {
+        const aabb = this.splatEntity?.gsplat?.customAabb;
+        if (!aabb || !this.splatEntity) return null;
+        const c = this.splatEntity.getWorldTransform().transformPoint(aabb.center);
+        const he = aabb.halfExtents;
+        return {
+            min: new pc.Vec3(c.x - he.x, c.y - he.y, c.z - he.z),
+            max: new pc.Vec3(c.x + he.x, c.y + he.y, c.z + he.z)
+        };
+    }
+
+    setBoundsVisible(visible: boolean): void {
+        this.boundsVisible = visible;
+        if (visible) this.refreshBounds();
+        else if (this.boundsEntity) this.boundsEntity.enabled = false;
+    }
+
+    /** Redraw the box from the current splat's world AABB (no-op while hidden). */
+    refreshBounds(): void {
+        if (!this.boundsVisible) return;
+        const b = this.worldSplatAabb();
+        if (!b) { if (this.boundsEntity) this.boundsEntity.enabled = false; return; }
+        if (!this.boundsEntity) {
+            const mesh = pc.Mesh.fromGeometry(this.app.graphicsDevice, new pc.BoxGeometry());
+            const mi = new pc.MeshInstance(mesh, this.boundsMaterial);
+            mi.renderStyle = pc.RENDERSTYLE_WIREFRAME;
+            this.boundsEntity = new pc.Entity('bounds');
+            this.boundsEntity.addComponent('render', { meshInstances: [mi], layers: [pc.LAYERID_IMMEDIATE] });
+            this.app.root.addChild(this.boundsEntity);
+        }
+        this.boundsEntity.enabled = true;
+        this.boundsEntity.setLocalScale(
+            Math.max(b.max.x - b.min.x, 1e-4),
+            Math.max(b.max.y - b.min.y, 1e-4),
+            Math.max(b.max.z - b.min.z, 1e-4)
+        );
+        this.boundsEntity.setLocalPosition(
+            (b.min.x + b.max.x) / 2,
+            (b.min.y + b.max.y) / 2,
+            (b.min.z + b.max.z) / 2
+        );
+    }
+
     clearSplat(): void {
         this.splatSeq++; // invalidate any in-flight loadSplat
         this.splatEntity?.destroy();
         this.splatEntity = null;
+        if (this.boundsEntity) this.boundsEntity.enabled = false;
         if (this.splatAsset) {
             this.app.assets.remove(this.splatAsset);
             this.splatAsset.unload();

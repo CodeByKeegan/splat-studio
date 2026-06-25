@@ -13,6 +13,16 @@ export interface Viewable {
     as: ViewKind;
 }
 
+/** A live slider a .mjs generator advertises via its static `Generator.params`. */
+export interface GenParam {
+    name: string;
+    label?: string;
+    min?: number;
+    max?: number;
+    step?: number;
+    default?: number;
+}
+
 export interface Job {
     id: string;
     title: string;
@@ -130,6 +140,10 @@ export const startAnalyze = async (input: string): Promise<string> =>
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, project })
     }))).jobId;
+
+/** A .mjs generator's advertised param schema, or null if it exposes none. */
+export const getGeneratorParams = async (input: string): Promise<GenParam[] | null> =>
+    (await jsonOrThrow(await fetch(`/api/generator-params?${pq()}&input=${encodeURIComponent(input)}`))).params;
 
 export const getJob = async (id: string): Promise<Job> =>
     jsonOrThrow(await fetch(`/api/jobs/${id}`));
