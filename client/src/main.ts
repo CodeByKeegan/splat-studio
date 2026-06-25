@@ -979,6 +979,15 @@ const setActiveMarker = (which: 'a' | 'b'): void => {
 editAbtn.onclick = () => setActiveMarker('a');
 editBbtn.onclick = () => setActiveMarker('b');
 
+$<HTMLButtonElement>('apply-direct-scale').onclick = () => {
+    const input = editInput.value;
+    if (!input) return showToast('Pick a splat to edit', true);
+    const factor = Number($<HTMLInputElement>('direct-scale').value);
+    if (!(factor > 0)) return showToast('Enter a positive scale factor', true);
+    if (factor === 1) return showToast('Scale factor 1 leaves the splat unchanged', true);
+    void runJob(() => api.startConvert({ input, format: 'ply', options: { transform: { scale: factor } } }), $<HTMLButtonElement>('apply-direct-scale'));
+};
+
 $<HTMLButtonElement>('apply-scale').onclick = () => {
     const input = editInput.value;
     if (!input) return showToast('Pick a splat to edit', true);

@@ -306,6 +306,10 @@
                 <h2 title="Viewport-driven edits: measure a feature to set real-world scale, or pick a new origin. Applies splat-transform -s/-t to write a new, edited splat">Edit</h2>
                 <label class="field" title="Splat to edit — load it in the viewer too, then measure/pick against it"><span>Input</span><select id="edit-input"></select></label>
 
+                <div class="group">Scale</div>
+                <label class="field" title="Uniform scale factor applied to the splat (-s/--scale). 2 = twice as large, 0.5 = half size"><span>Scale factor</span><input type="number" id="direct-scale" step="0.1" min="0.0001" value="1" /></label>
+                <button id="apply-direct-scale" class="primary" title="Scale the splat by this factor (-s/--scale), writing a new scaled splat that auto-loads">Apply scale</button>
+
                 <div class="group">Measure → scale</div>
                 <label class="check" title="Click the splat to drop two points (A green, B orange) on the ends of a feature whose real-world size you know. Points snap to the splat surface and hide behind it as you orbit"><input type="checkbox" id="measure-toggle" /> Measure mode</label>
                 <span class="hint" id="measure-readout">Enable, then click the splat to place points.</span>
