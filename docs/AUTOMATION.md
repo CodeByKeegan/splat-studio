@@ -81,6 +81,27 @@ flowchart LR
 - **Renderer** is the Vite/TypeScript UI plus the PlayCanvas viewport (`viewer.ts`),
   which renders splats, collision wireframes, voxels, gizmos, and the measure tools.
 
+## The release pipeline
+
+Every push/merge to `main` ships a build. `.github/workflows/release.yml` runs on
+`windows-latest`:
+
+```mermaid
+flowchart LR
+    PUSH([push to main]) --> CI[GitHub Actions<br/>windows-latest]
+    CI --> V[version = 0.1.&lt;run&gt;]
+    V --> FN[stage node.exe] --> B[build client] --> EB[electron-builder --win]
+    EB --> REL[[GitHub Release<br/>installer + portable + latest.yml]]
+    REL -. on launch .-> APP[installed app]
+    APP --> CHK{newer release<br/>than this build?}
+    CHK -- yes --> POP[dialog → open downloads page]
+    CHK -- no --> OK[stay]
+```
+
+The installed app checks the GitHub Releases API on startup (and via **Help → Check
+for Updates…**); when a newer version exists it offers to open the downloads page.
+It's a check-and-link updater by design — the user chooses when to update.
+
 ## The dependency-update loop
 
 A scheduled agent runs the `splat-studio-update-deps` skill on a cadence (weekly).

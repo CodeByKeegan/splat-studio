@@ -19,8 +19,10 @@ meshes, and edit splats — all with a live PlayCanvas 3D viewport.
 - [Edit: measure-to-scale & set origin](#edit-measure-to-scale--set-origin)
 - [Collision: voxels & mesh](#collision-voxels--mesh)
 - [Viewer options](#viewer-options)
+- [Scene hierarchy](#scene-hierarchy)
 - [The 3D viewport](#the-3d-viewport)
 - [Coordinate notes](#coordinate-notes)
+- [Updates](#updates)
 
 ---
 
@@ -196,13 +198,14 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
    cutoff** (ignore wispy gaussians).
 4. **Seed point** — a spot *inside* the scene used by sealing, carving and the
    cluster filter. Type XYZ, or fly inside with WASD and click **📷 from camera**
-   (recommended — typed axes are CLI-space, rotated 180° from the viewer). The seed
-   shows as a yellow marker in the viewport.
+   (recommended — typed axes are CLI-space, rotated 180° from the viewer). To see and
+   drag the seed in the viewport, select **Carve capsule** in the
+   [Scene panel](#scene-hierarchy).
 5. **Seal** — choose hole sealing (external fill for interiors, floor fill for
    terrain, or none) and the distance to seal over.
 6. **Carve** — flood-fill walkable space from the seed with a player-sized capsule
-   (height/radius). The capsule previews in cyan in the viewport so you can size it
-   against the splat. Essential after external fill.
+   (height/radius). Select **Carve capsule** in the Scene panel to preview it in cyan
+   and size it against the splat. Essential after external fill.
 7. **Mesh style** — smooth (marching cubes) or exact voxel faces — then **Generate
    collision**. Outputs auto-load as a wireframe overlay.
 
@@ -218,6 +221,9 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
 
 Display controls for the 3D view:
 
+- **Camera control** — **Fly** (default): mouse-look + **WASD** to move, ideal for
+  inspecting carved interiors from inside. **Orbit**: drag to rotate around the focus
+  point. Right-drag pans and scroll zooms in both.
 - **Splat / Collision / Voxels / Bounds** — toggle each layer. **Bounds** draws the
   splat's axis-aligned bounding box (floaters stretch it — a quick outlier check).
 - **Collision style** — *X-ray* (all edges through everything, for small meshes),
@@ -228,6 +234,26 @@ Display controls for the 3D view:
   already in viewer/engine space (splat-transform output is aligned automatically).
 - **Frame scene** — re-fit the camera. **Clear viewport** — unload everything and
   free GPU memory.
+
+---
+
+## Scene hierarchy
+
+![Scene hierarchy](screenshots/scene-hierarchy.png)
+
+The **Scene** panel (🗂️ in the icon rail) lists the objects currently in the
+viewport and lets you select one to move it with a gizmo — **selecting nothing shows
+no gizmo**.
+
+- **Splat / Collision mesh / Voxels** — appear once loaded; selecting them just
+  clears any active gizmo.
+- **Carve capsule** (✥) — select it to show the seed marker + carve capsule and a
+  **translate gizmo**; drag the gizmo to position the collision seed (the Collision
+  panel's seed XYZ update live). It's hidden again when deselected.
+- **Render camera** (✥) — appears while a WebP render is set up; select it to move the
+  render camera with a gizmo. Use the **Move / Rotate** toggle to switch between a
+  translate and a rotate gizmo — dragging updates the WebP **Camera** / **Look-at**
+  fields, and the frustum preview follows.
 
 ---
 
@@ -246,6 +272,17 @@ Display controls for the 3D view:
 - `splat-transform`'s voxel/collision pipeline uses a different up-axis convention,
   so **typed** seed/translate coordinates are in CLI space (rotated 180° about Y from
   the viewer). Prefer **📷 from camera** / clicking the splat, which convert for you.
+
+---
+
+## Updates
+
+Every push to the project's `main` branch builds a new Windows release (installer +
+portable exe) and publishes it to
+[GitHub Releases](https://github.com/CodeByKeegan/splat-studio/releases). The
+installed app checks for a newer release on launch and, if one exists, offers to open
+the downloads page — or check any time via **Help → Check for Updates…**. See
+[AUTOMATION.md](AUTOMATION.md) for the release pipeline.
 
 ---
 

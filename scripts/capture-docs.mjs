@@ -96,8 +96,10 @@ window.__doc = {
       if (opts.numbered) {
         const b = document.createElement('div');
         b.className = '__doc-badge'; b.textContent = String(i + 1);
+        // keep the badge clear of the icon rail (~44px) so it is never clipped
+        const bx = Math.max(r.left - pad - 11, 46);
         Object.assign(b.style, {
-          position: 'fixed', left: (r.left - pad - 12) + 'px', top: (r.top - pad - 12) + 'px',
+          position: 'fixed', left: bx + 'px', top: (r.top - pad - 11) + 'px',
           width: '22px', height: '22px', borderRadius: '50%', background: '#ffcf4d', color: '#1a1205',
           font: '700 13px Segoe UI, sans-serif', display: 'grid', placeItems: 'center',
           boxShadow: '0 2px 6px rgba(0,0,0,.5)', pointerEvents: 'none', zIndex: 99999
@@ -178,10 +180,23 @@ async function run() {
     add('convert-webp', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true})); setTimeout(()=>window.__doc.hl('#convert-format'),50);`); await sleep(300); });
     add('analyze-panel', async () => { await js(`window.__doc.rail('panel-analyze'); window.__doc.hl('#panel-analyze');`); });
     add('collision-panel', async () => { await js(`window.__doc.rail('panel-collision'); window.__doc.hl('#panel-collision');`); });
-    add('viewer-panel', async () => { await js(`window.__doc.rail('panel-viewer'); window.__doc.hl('#panel-viewer');`); });
+    add('viewer-panel', async () => { await js(`var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.rail('panel-viewer'); window.__doc.hl(['#camera-mode','#collision-style'],{numbered:true});`); });
 
-    // measure mode: place two points on the demo splat, then highlight the readout
+    // scene hierarchy: webp on so the render camera lists, then select the capsule
+    // so its gizmo appears in the viewport
+    add('scene-hierarchy', async () => {
+        await js(`var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true}));`);
+        await js(`window.__doc.rail('panel-scene');`);
+        await sleep(150);
+        await js(`(function(){var rows=[...document.querySelectorAll('#scene-list .scene-item')];var cap=rows.find(r=>/capsule/i.test(r.textContent));if(cap)cap.click();return true;})()`);
+        await sleep(300);
+        await js(`window.__doc.hl('#scene-list',{});`);
+    });
+
+    // measure mode: place two points on the demo splat, then highlight the
+    // (non-adjacent) controls so the numbered badges never crowd each other
     add('edit-measure', async () => {
+        await js(`var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true}));`);
         await js(`window.__doc.rail('panel-edit');`);
         await js(`var mt=document.getElementById('measure-toggle'); if(!mt.checked){mt.checked=true; mt.dispatchEvent(new Event('change',{bubbles:true}));}`);
         await sleep(200);
@@ -192,7 +207,7 @@ async function run() {
               c.dispatchEvent(new PointerEvent('pointerup',{clientX:x,clientY:y,button:0,bubbles:true}));}
             click(0.46,0.5); click(0.6,0.62); return true; })()`);
         await sleep(300);
-        await js(`window.__doc.hl(['#measure-edit-row','#measure-readout','#apply-scale'],{numbered:true});`);
+        await js(`window.__doc.hl(['#measure-toggle','#measure-edit-row','#apply-scale'],{numbered:true});`);
     });
 
     for (const s of scenes) {

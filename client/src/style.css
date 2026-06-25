@@ -572,6 +572,9 @@ body.dropping #viewport::after {
 .stats-table td.hist { font-family: "Cascadia Mono", Consolas, monospace; color: var(--accent); letter-spacing: -1px; }
 .stats-table tr.row-bad td { color: var(--error); }
 #measure-edit-row button.active { border-color: var(--accent); color: var(--accent); }
+/* breathing room so the measure controls (and any doc highlights) don't crowd */
+#measure-readout { display: block; margin: 7px 0; }
+#measure-edit-row { margin-top: 8px; }
 
 /* ----- icon-rail navigation (SuperSplat-style: jump to a panel, or hide the
    whole sidebar to maximize the 3D viewport) ----- */
