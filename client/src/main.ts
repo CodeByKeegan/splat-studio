@@ -629,6 +629,7 @@ $<HTMLButtonElement>('webp-from-viewer').onclick = () => {
     const pose = viewer.cameraRenderPose();
     $<HTMLInputElement>('webp-camera').value = pose.camera;
     $<HTMLInputElement>('webp-lookat').value = pose.lookAt;
+    updateRenderFrustum();
     showToast('Camera set from viewer — adjust if needed');
 };
 
@@ -653,6 +654,26 @@ const webpImageOptions = (): api.ImageOptions => ({
     shutter: numOrUndef('webp-shutter'),
     motionSamples: numOrUndef('webp-motionsamples')
 });
+
+// show the WebP render camera as a frustum in the viewport while WebP is selected
+const updateRenderFrustum = (): void => {
+    if (!viewer) return;
+    const m = /^(\d+)x(\d+)$/i.exec($<HTMLInputElement>('webp-resolution').value.trim());
+    const aspect = m ? Number(m[1]) / Number(m[2]) : 16 / 9;
+    const equirect = $<HTMLSelectElement>('webp-projection').value === 'equirect';
+    viewer.setRenderFrustum(
+        $<HTMLInputElement>('webp-camera').value,
+        $<HTMLInputElement>('webp-lookat').value,
+        Number($<HTMLInputElement>('webp-fov').value),
+        aspect,
+        convertFormat.value === 'webp' && !equirect
+    );
+};
+for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', 'webp-projection']) {
+    $(id).addEventListener('input', updateRenderFrustum);
+    $(id).addEventListener('change', updateRenderFrustum);
+}
+convertFormat.addEventListener('change', updateRenderFrustum);
 
 const doGenerateView = (): void => {
     const input = convertInput.value;
@@ -1244,6 +1265,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         // live measure readout while a marker is dragged
         v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
         syncPreview(); // reflect restored Convert fields once the viewer is up
+        updateRenderFrustum(); // show the WebP frustum if WebP is the restored format
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
     })
     .catch((err) => {

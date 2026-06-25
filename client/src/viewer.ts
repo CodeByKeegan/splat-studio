@@ -62,6 +62,8 @@ export class SplatViewer {
     private gizmoTarget: 'seed' | 'a' | 'b' = 'seed';
     /** fired while a measure/origin marker moves; arg is the A–B distance (world units) */
     onMeasureChange?: (distance: number) => void;
+    // WebP render-camera frustum preview (drawn each frame when set)
+    private renderFrustum: { camera: pc.Vec3; lookAt: pc.Vec3; fov: number; aspect: number } | null = null;
     private splatSeq = 0;
     private collisionSeq = 0;
     private voxelSeq = 0;
@@ -289,9 +291,9 @@ export class SplatViewer {
         // draw the A–B segment each frame while measuring (depthTest off → through the splat)
         app.on('update', () => {
             if (this.editMode === 'measure') {
-                (this.app as unknown as { drawLine: (a: pc.Vec3, b: pc.Vec3, c: pc.Color, d?: boolean) => void })
-                    .drawLine(this.mA.getPosition(), this.mB.getPosition(), new pc.Color(1, 1, 0.35), false);
+                this.drawLine3(this.mA.getPosition(), this.mB.getPosition(), new pc.Color(1, 1, 0.35));
             }
+            if (this.renderFrustum) this.drawRenderFrustum();
         });
 
         // ----- crop-region preview (filter-box / filter-sphere) -----
@@ -764,6 +766,52 @@ export class SplatViewer {
         const f = this.camera.forward;
         const flip = (x: number, y: number, z: number) => `${round(x)},${round(-y)},${round(-z)}`;
         return { camera: flip(p.x, p.y, p.z), lookAt: flip(p.x + f.x, p.y + f.y, p.z + f.z) };
+    }
+
+    private drawLine3(a: pc.Vec3, b: pc.Vec3, color: pc.Color): void {
+        (this.app as unknown as { drawLine: (a: pc.Vec3, b: pc.Vec3, c: pc.Color, d?: boolean) => void })
+            .drawLine(a, b, color, false);
+    }
+
+    /**
+     * Show/update the WebP render camera as a frustum in the viewport. camera and
+     * lookAt are "x,y,z" in CLI render space (raw splat), mapped to viewer space
+     * with the sceneRoot R_x(180) flip (x, -y, -z). Pass show=false to hide.
+     */
+    setRenderFrustum(camera: string, lookAt: string, fov: number, aspect: number, show: boolean): void {
+        const parse = (s: string): pc.Vec3 | null => {
+            const p = String(s).split(',').map(Number);
+            return p.length === 3 && p.every(Number.isFinite) ? new pc.Vec3(p[0], -p[1], -p[2]) : null;
+        };
+        const c = parse(camera);
+        const l = parse(lookAt);
+        this.renderFrustum = show && c && l
+            ? { camera: c, lookAt: l, fov: Number.isFinite(fov) && fov > 0 ? fov : 60, aspect: aspect > 0 ? aspect : 16 / 9 }
+            : null;
+    }
+
+    private drawRenderFrustum(): void {
+        const rf = this.renderFrustum;
+        if (!rf) return;
+        const C = rf.camera;
+        const fwd = rf.lookAt.clone().sub(C);
+        const dist = Math.max(fwd.length(), 0.5);
+        fwd.normalize();
+        let right = new pc.Vec3().cross(fwd, pc.Vec3.UP);
+        if (right.length() < 1e-4) right = new pc.Vec3(1, 0, 0);
+        right.normalize();
+        const up = new pc.Vec3().cross(right, fwd).normalize();
+        const halfH = dist * Math.tan((rf.fov * Math.PI / 180) / 2);
+        const halfW = halfH * rf.aspect;
+        const center = C.clone().add(fwd.clone().mulScalar(dist));
+        const corner = (sx: number, sy: number): pc.Vec3 =>
+            center.clone().add(right.clone().mulScalar(sx * halfW)).add(up.clone().mulScalar(sy * halfH));
+        const tl = corner(-1, 1), tr = corner(1, 1), br = corner(1, -1), bl = corner(-1, -1);
+        const col = new pc.Color(1, 0.62, 0.25);
+        for (const cn of [tl, tr, br, bl]) this.drawLine3(C, cn, col); // edges from the eye
+        this.drawLine3(tl, tr, col); this.drawLine3(tr, br, col);      // far rectangle
+        this.drawLine3(br, bl, col); this.drawLine3(bl, tl, col);
+        this.drawLine3(C, rf.lookAt, new pc.Color(1, 0.85, 0.3));      // optical axis to the target
     }
 
     /**
