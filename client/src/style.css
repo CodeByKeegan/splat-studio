@@ -74,9 +74,18 @@ button.primary:focus-visible { outline-color: var(--text); }
     --dv-tab-divider-color: var(--border);
     --dv-separator-border: var(--border);
 }
-/* PR2: no menu to reopen tabs yet — hide the close button so nothing dead-ends.
-   (PR3 restores per-panel closability + a Window menu to reopen.) */
-#dock .dv-default-tab-action { display: none !important; }
+/* top menu bar dropdowns (Window / Layout) */
+.menu { position: relative; }
+.menu-btn { background: none; border: 1px solid transparent; color: var(--text); padding: 3px 9px; border-radius: 5px; font: inherit; cursor: pointer; }
+.menu-btn:hover { background: var(--bg-input); }
+.menu-drop {
+    position: absolute; top: 100%; left: 0; margin-top: 3px;
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); padding: 4px; min-width: 180px; z-index: 1000;
+}
+.menu-item { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; color: var(--text); padding: 5px 8px; border-radius: 4px; font: inherit; cursor: pointer; text-align: left; }
+.menu-item:hover { background: var(--bg-input); }
+.menu-check { width: 14px; flex-shrink: 0; color: var(--accent); }
 
 .panel {
     padding: 12px 14px 16px;

@@ -2,7 +2,7 @@ import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
 import { createDockview, markDockviewPackageLoaded } from 'dockview-core';
-import type { DockviewApi, IContentRenderer } from 'dockview-core';
+import type { DockviewApi, IContentRenderer, ITabRenderer, TabPartInitParameters } from 'dockview-core';
 import 'dockview-core/dist/styles/dockview.css';
 markDockviewPackageLoaded(); // silence the "internal package" dev notice — we use the core directly on purpose
 
@@ -1185,21 +1185,52 @@ function selectScene(id: SelId): void {
 // dockview reparents the node (never recreates it), so the PlayCanvas canvas
 // survives every dock/redock and tab switch. Built BEFORE the viewer boots so the
 // canvas is already mounted in the visible dock.
-export const DOCK_PANELS: { id: string; title: string; closable: boolean }[] = [
-    { id: 'panel-files', title: 'Files', closable: true },
-    { id: 'panel-convert', title: 'Convert', closable: true },
-    { id: 'panel-analyze', title: 'Analyze', closable: true },
-    { id: 'panel-edit', title: 'Edit', closable: true },
-    { id: 'panel-collision', title: 'Collision', closable: true },
-    { id: 'panel-scene', title: 'Scene', closable: true },
-    { id: 'panel-viewer', title: 'Viewer', closable: true },
-    { id: 'panel-job', title: 'Job', closable: false }
+// every dockable window: the panels, the 3D viewport, and (PR4) the camera view.
+// component is the createComponent key; closable=false omits the tab close button.
+type Win = { id: string; component: string; title: string; closable: boolean };
+const WINDOWS: Win[] = [
+    { id: 'panel-files', component: 'panel-files', title: 'Files', closable: true },
+    { id: 'panel-convert', component: 'panel-convert', title: 'Convert', closable: true },
+    { id: 'panel-analyze', component: 'panel-analyze', title: 'Analyze', closable: true },
+    { id: 'panel-edit', component: 'panel-edit', title: 'Edit', closable: true },
+    { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
+    { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
+    { id: 'panel-viewer', component: 'panel-viewer', title: 'Viewer options', closable: true },
+    { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
+    { id: 'panel-job', component: 'panel-job', title: 'Job', closable: false }
 ];
+const winById = (id: string): Win | undefined => WINDOWS.find((w) => w.id === id);
+const nodeOf = (component: string): HTMLElement => $(component === 'viewer' ? 'viewport' : component);
 
+// Adopts an existing DOM node as panel content. On dispose (tab closed) the node
+// is returned to the hidden pool so getElementById still finds it for a reopen —
+// the node (and the PlayCanvas canvas inside #viewport) is never destroyed.
 class AdoptPanel implements IContentRenderer {
     readonly element: HTMLElement;
     constructor(node: HTMLElement) { this.element = node; }
     init(): void {}
+    dispose(): void { document.getElementById('panel-pool')?.appendChild(this.element); }
+}
+
+// Tab renderer with a close button only for closable windows (3D viewer + Job
+// are non-closable; everything else can be closed and reopened from the menu).
+class AppTab implements ITabRenderer {
+    readonly element = document.createElement('div');
+    private content = document.createElement('div');
+    private close = document.createElement('div');
+    constructor() {
+        this.element.className = 'dv-default-tab';
+        this.content.className = 'dv-default-tab-content';
+        this.close.className = 'dv-default-tab-action';
+        this.close.textContent = '✕';
+        this.element.append(this.content, this.close);
+    }
+    init(p: TabPartInitParameters): void {
+        this.content.textContent = p.title ?? p.api.id;
+        const closable = winById(p.api.id)?.closable !== false;
+        this.close.style.display = closable ? '' : 'none';
+        this.close.onclick = (e) => { e.stopPropagation(); p.api.close(); };
+    }
 }
 
 const dock: DockviewApi = createDockview($('dock'), {
@@ -1207,11 +1238,12 @@ const dock: DockviewApi = createDockview($('dock'), {
     // when its tab is inactive — so getElementById + bound handlers stay live and
     // the PlayCanvas canvas is never torn down.
     defaultRenderer: 'always',
-    // o.name is the component string from addPanel: 'viewer' → #viewport, else a panel id
-    createComponent: (o) => new AdoptPanel(o.name === 'viewer' ? $('viewport') : $(o.name))
+    createComponent: (o) => new AdoptPanel(nodeOf(o.name)),
+    defaultTabComponent: 'app-tab',
+    createTabComponent: (o) => (o.name === 'app-tab' ? new AppTab() : undefined)
 });
 
-const titleOf = (id: string): string => DOCK_PANELS.find((p) => p.id === id)?.title ?? id;
+const titleOf = (id: string): string => winById(id)?.title ?? id;
 
 function applyDefaultLayout(): void {
     dock.clear();
@@ -1221,7 +1253,7 @@ function applyDefaultLayout(): void {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-viewer', component: 'panel-viewer', title: 'Viewer', position: { referencePanel: 'panel-scene', direction: 'within' } });
+    dock.addPanel({ id: 'panel-viewer', component: 'panel-viewer', title: titleOf('panel-viewer'), position: { referencePanel: 'panel-scene', direction: 'within' } });
     dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Job', position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
@@ -1229,10 +1261,86 @@ function applyDefaultLayout(): void {
     dock.getPanel('panel-job')?.group.api.setSize({ height: 180 });
     dock.getPanel('panel-files')?.api.setActive();
 }
+
+// open (or focus) a window; close removes its tab (the node returns to the pool)
+function openWindow(w: Win): void {
+    const existing = dock.getPanel(w.id);
+    if (existing) { existing.api.setActive(); return; }
+    dock.addPanel({ id: w.id, component: w.component, title: w.title });
+}
+function closeWindow(w: Win): void {
+    if (!w.closable) return;
+    const p = dock.getPanel(w.id);
+    if (p) dock.removePanel(p);
+}
+
 applyDefaultLayout();
 // keep the scene list fresh when the Scene tab is shown
 dock.getPanel('panel-scene')?.api.onDidVisibilityChange((e) => { if (e.isVisible) rebuildSceneList(); });
 (window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
+
+// ---------- top menu bar (Window / Layout) ----------
+const LAYOUT_VERSION = 1;
+let saveTimer: number | undefined;
+const persistNow = (): void => { void api.saveLayout({ __v: LAYOUT_VERSION, dockview: dock.toJSON() as unknown as Record<string, unknown> }); };
+
+type MenuItem = { label: string; checked?: boolean; onClick: () => void };
+function makeMenu(label: string, itemsFn: () => MenuItem[]): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'menu';
+    const btn = document.createElement('button');
+    btn.className = 'menu-btn';
+    btn.textContent = label;
+    const drop = document.createElement('div');
+    drop.className = 'menu-drop hidden';
+    wrap.append(btn, drop);
+    const close = (): void => { drop.classList.add('hidden'); document.removeEventListener('pointerdown', onDoc, true); };
+    const onDoc = (e: PointerEvent): void => { if (!wrap.contains(e.target as Node)) close(); };
+    btn.onclick = () => {
+        if (!drop.classList.contains('hidden')) { close(); return; }
+        drop.innerHTML = '';
+        for (const it of itemsFn()) {
+            const row = document.createElement('button');
+            row.className = 'menu-item';
+            row.innerHTML = `<span class="menu-check">${it.checked ? '✓' : ''}</span><span>${it.label}</span>`;
+            row.onclick = () => { close(); it.onClick(); };
+            drop.appendChild(row);
+        }
+        drop.classList.remove('hidden');
+        document.addEventListener('pointerdown', onDoc, true);
+    };
+    return wrap;
+}
+
+function buildMenuBar(): void {
+    const bar = $('menubar');
+    bar.innerHTML = '';
+    bar.append(
+        makeMenu('Window', () => WINDOWS.map((w) => ({
+            label: w.title,
+            checked: !!dock.getPanel(w.id),
+            onClick: () => { if (dock.getPanel(w.id)) { if (w.closable) closeWindow(w); else openWindow(w); } else openWindow(w); }
+        }))),
+        makeMenu('Layout', () => [
+            { label: 'Reset to default', onClick: () => { applyDefaultLayout(); persistNow(); } },
+            { label: 'Save layout', onClick: persistNow }
+        ])
+    );
+}
+buildMenuBar();
+
+// ---------- per-workspace layout persistence ----------
+async function bootLayout(): Promise<void> {
+    let saved: api.Layout | null = null;
+    try { saved = await api.getLayout(); } catch { /* offline / first run → keep default */ }
+    const s = saved as { __v?: number; dockview?: unknown } | null;
+    if (s && s.__v === LAYOUT_VERSION && s.dockview) {
+        try { dock.fromJSON(s.dockview as Parameters<DockviewApi['fromJSON']>[0]); }
+        catch { applyDefaultLayout(); }
+    }
+    dock.onDidLayoutChange(() => { clearTimeout(saveTimer); saveTimer = window.setTimeout(persistNow, 400); });
+}
+void bootLayout();
 
 // ---------- projects ----------
 const projectSelect = $<HTMLSelectElement>('project-select');
