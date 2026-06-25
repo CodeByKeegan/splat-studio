@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "node server/index.mjs",
     "demo": "node scripts/make-test-splat.mjs",
+    "test": "node tests/e2e.mjs",
     "typecheck": "tsc --noEmit",
     "make-icon": "node scripts/make-icon.mjs",
     "fetch-node": "node scripts/fetch-node.mjs",
