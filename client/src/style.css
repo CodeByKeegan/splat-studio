@@ -353,6 +353,7 @@ body.dropping #viewport::after {
 .file-list .tag.collision { color: var(--accent-2); }
 .file-list .tag.lod { color: #c792ea; }
 .file-list .tag.voxel { color: #ff9e40; }
+.file-list .tag.generator { color: #5dd1c0; }
 .file-list button {
     padding: 4px 10px;
     font-size: var(--fs-sm);
