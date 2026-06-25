@@ -7,3 +7,4 @@ verify-ws/
 docs/.capture-workspace/
 *.log
 *.tsbuildinfo
+.editor-design.md

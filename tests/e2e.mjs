@@ -115,6 +115,19 @@ try {
         assert(json.projects.includes(PROJECT), `projects: ${JSON.stringify(json.projects)}`);
     });
 
+    await check('per-workspace layout round-trips (empty → save → read)', async () => {
+        const fresh = await api('GET', '/api/layout');
+        assert(fresh.status === 200 && JSON.stringify(fresh.json) === '{}', `fresh: ${fresh.status} ${JSON.stringify(fresh.json)}`);
+        const save = await api('POST', '/api/layout', { __v: 1, dockview: { grid: 'x' } });
+        assert(save.status === 200 && save.json.ok, `save: ${save.status} ${JSON.stringify(save.json)}`);
+        const read = await api('GET', '/api/layout');
+        assert(read.json.__v === 1 && read.json.dockview?.grid === 'x', `read: ${JSON.stringify(read.json)}`);
+        const bad = await api('POST', '/api/layout', [1, 2, 3]);
+        assert(bad.status === 400, `array body should 400, got ${bad.status}`);
+        const projects = await api('GET', '/api/projects');
+        assert(!projects.json.projects.includes('.splat-studio-layout.json'), 'layout dotfile must not appear as a project');
+    });
+
     await check('classifies file kinds (splat + generator)', async () => {
         const { json } = await api('GET', `/api/files?project=${PROJECT}`);
         const kinds = Object.fromEntries(json.files.map((f) => [f.name, f.kind]));

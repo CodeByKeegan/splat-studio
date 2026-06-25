@@ -130,6 +130,18 @@ const pq = () => `project=${encodeURIComponent(project)}`;
 export const listProjects = async (): Promise<string[]> =>
     (await jsonOrThrow(await fetch('/api/projects'))).projects;
 
+/** The workspace-wide UI layout blob (dockable-editor arrangement). Not project-scoped. */
+export type Layout = Record<string, unknown>;
+export const getLayout = async (): Promise<Layout> =>
+    jsonOrThrow(await fetch('/api/layout'));
+export const saveLayout = async (layout: Layout): Promise<void> => {
+    await jsonOrThrow(await fetch('/api/layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(layout)
+    }));
+};
+
 /** GPU adapters (-L/--list-gpus) for the device dropdown. */
 export const listGpus = async (): Promise<Gpu[]> =>
     (await jsonOrThrow(await fetch('/api/gpus'))).gpus;

@@ -19,6 +19,9 @@ const workspaceDir = process.env.SPLAT_WORKSPACE
     ? path.resolve(process.env.SPLAT_WORKSPACE)
     : path.join(rootDir, 'workspace');
 const distDir = path.join(rootDir, 'dist');
+// per-workspace UI layout (dockable-editor arrangement). A root dotfile: it's a
+// FILE so listProjects (which filters on isDirectory) never surfaces it.
+const layoutFile = path.join(workspaceDir, '.splat-studio-layout.json');
 await fs.mkdir(workspaceDir, { recursive: true });
 
 // deliberately not PORT: dev harnesses set that for the frontend (vite on 5173)
@@ -306,11 +309,38 @@ app.post('/api/jobs/:id/cancel', (req, res) => {
     res.json({ cancelled: cancelJob(req.params.id) });
 });
 
+// ---------- per-workspace UI layout ----------
+app.get('/api/layout', async (req, res) => {
+    try {
+        res.json(JSON.parse(await fs.readFile(layoutFile, 'utf8')));
+    } catch (err) {
+        if (err.code === 'ENOENT') return res.json({}); // first run → client applies defaults
+        res.status(500).json({ error: `Failed to read layout: ${err.message}` });
+    }
+});
+
+app.post('/api/layout', json, async (req, res) => {
+    const layout = req.body;
+    if (layout === null || typeof layout !== 'object' || Array.isArray(layout)) {
+        return res.status(400).json({ error: 'Layout must be a JSON object' });
+    }
+    const tmp = `${layoutFile}.${Date.now().toString(36)}.tmp`;
+    try {
+        await fs.writeFile(tmp, JSON.stringify(layout, null, 2)); // tmp + rename = atomic
+        await fs.rename(tmp, layoutFile);
+        res.json({ ok: true });
+    } catch (err) {
+        await fs.rm(tmp, { force: true }).catch(() => {});
+        res.status(500).json({ error: `Failed to save layout: ${err.message}` });
+    }
+});
+
 // files are served with the project as the first path segment; since projects
 // are subfolders of workspaceDir, static resolves them directly (and brings its
 // own traversal protection). The engine fetches bundle siblings (LOD chunks,
 // unbundled-SOG textures) by relative URL, so project must be a path prefix.
-app.use('/files', express.static(workspaceDir, { fallthrough: false }));
+// dotfiles:'deny' keeps the layout dotfile from being served over /files.
+app.use('/files', express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' }));
 
 if (existsSync(distDir)) {
     app.use(express.static(distDir));
