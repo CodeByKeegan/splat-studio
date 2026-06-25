@@ -17,6 +17,7 @@ const convertInput = $<HTMLSelectElement>('convert-input');
 const collisionInput = $<HTMLSelectElement>('collision-input');
 const analyzeInput = $<HTMLSelectElement>('analyze-input');
 const editInput = $<HTMLSelectElement>('edit-input');
+const skyboxSelect = $<HTMLSelectElement>('skybox-select');
 const toastStack = $<HTMLDivElement>('toast-stack');
 const hudSplat = $<HTMLSpanElement>('hud-splat');
 const hudCollision = $<HTMLSpanElement>('hud-collision');
@@ -111,6 +112,22 @@ const refreshFiles = async (highlight?: Set<string>) => {
     fillSelect(analyzeInput, convertNames);
     for (const select of [collisionInput, editInput, ...lodRowSelects()]) {
         fillSelect(select, splatFileNames);
+    }
+    // skybox picker: any image file in the project (equirect panorama)
+    {
+        const imgs = files.filter((f) => /\.(webp|jpe?g|png|hdr|avif)$/i.test(f.name)).map((f) => f.name);
+        const prev = skyboxSelect.value;
+        skyboxSelect.innerHTML = '';
+        const none = document.createElement('option');
+        none.value = ''; none.disabled = true; none.selected = true;
+        none.textContent = imgs.length ? '— pick an image —' : '— no images in project —';
+        skyboxSelect.appendChild(none);
+        for (const n of imgs) {
+            const o = document.createElement('option');
+            o.value = n; o.textContent = n.split('/').pop() ?? n;
+            if (n === prev) o.selected = true;
+            skyboxSelect.appendChild(o);
+        }
     }
     // re-apply the persisted choice once its file exists again
     for (const [select, id, names] of [
@@ -1207,6 +1224,21 @@ function selectScene(id: SelId): void {
     viewer?.selectObject(id);
     rebuildSceneList();
 }
+
+// ---------- skybox (scene environment) ----------
+$<HTMLButtonElement>('skybox-apply').onclick = () => {
+    const name = skyboxSelect.value;
+    if (!name) return showToast('Pick an image to use as the skybox', true);
+    if (!viewer) return showToast('Viewer is still starting up', true);
+    const btn = $<HTMLButtonElement>('skybox-apply');
+    btn.disabled = true;
+    showToast(`Loading skybox ${name.split('/').pop()}…`);
+    void viewer.setSkybox(api.fileUrl(name), name.split('/').pop() ?? name)
+        .then((ok) => { if (ok) showToast('Skybox applied'); })
+        .catch((err) => showToast(`Failed to load skybox: ${err}`, true))
+        .finally(() => { btn.disabled = false; });
+};
+$<HTMLButtonElement>('skybox-clear').onclick = () => { viewer?.clearSkybox(); showToast('Skybox cleared'); };
 
 // ---------- dockable layout (dockview) ----------
 // Each panel + the viewport is an existing DOM node adopted by a dock component;

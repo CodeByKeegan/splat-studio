@@ -104,6 +104,9 @@ export class SplatViewer {
     private splatSeq = 0;
     private collisionSeq = 0;
     private voxelSeq = 0;
+    private skyboxSeq = 0;
+    private skyboxCubemap: pc.Texture | null = null;
+    private skyboxAsset: pc.Asset | null = null;
 
     // crop-region preview (filter-box / filter-sphere) lives under sceneRoot, in
     // the post-transform output frame the CLI filters operate in
@@ -597,6 +600,33 @@ export class SplatViewer {
         this.clearCollision();
         this.clearVoxels();
     }
+
+    /** Apply an equirectangular image (e.g. a panorama .webp/.jpg/.hdr) as the scene skybox. */
+    async setSkybox(url: string, filename: string): Promise<boolean> {
+        const seq = ++this.skyboxSeq;
+        const asset = await this.loadAsset(url, filename, 'texture');
+        if (seq !== this.skyboxSeq) { this.app.assets.remove(asset); asset.unload(); return false; }
+        const src = asset.resource as pc.Texture;
+        src.projection = pc.TEXTUREPROJECTION_EQUIRECT;
+        const cubemap = pc.EnvLighting.generateSkyboxCubemap(src);
+        this.skyboxCubemap?.destroy();
+        this.skyboxCubemap = cubemap;
+        this.app.scene.skybox = cubemap;
+        this.app.scene.skyboxMip = 0; // use the sharp cubemap directly
+        this.skyboxAsset?.unload();
+        this.skyboxAsset = asset;
+        return true;
+    }
+
+    clearSkybox(): void {
+        this.skyboxSeq++;
+        this.app.scene.skybox = null;
+        this.skyboxCubemap?.destroy();
+        this.skyboxCubemap = null;
+        if (this.skyboxAsset) { this.app.assets.remove(this.skyboxAsset); this.skyboxAsset.unload(); this.skyboxAsset = null; }
+    }
+
+    get hasSkybox(): boolean { return this.skyboxCubemap !== null; }
 
     get hasVoxels(): boolean { return this.voxelEntity !== null; }
 

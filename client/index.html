@@ -476,6 +476,13 @@
                     <button id="cam-rotate" title="Drag the gizmo to rotate the render camera (updates the WebP Look-at)">Rotate</button>
                 </div>
                 <span class="hint" id="scene-hint">Select an object to move it. Click it again to deselect.</span>
+
+                <div class="group">Environment</div>
+                <label class="field" title="Use an equirectangular panorama image (.webp/.jpg/.png/.hdr) from this project as the scene skybox"><span>Skybox</span><select id="skybox-select"></select></label>
+                <div class="field-row">
+                    <button id="skybox-apply" title="Apply the selected image as the scene skybox">Apply</button>
+                    <button id="skybox-clear" title="Remove the skybox">Clear</button>
+                </div>
             </section>
 
             <section class="panel" id="panel-job">
