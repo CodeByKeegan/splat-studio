@@ -311,11 +311,11 @@
                 <label class="field" title="Splat to edit — load it in the viewer too, then measure/pick against it"><span>Input</span><select id="edit-input"></select></label>
 
                 <div class="group">Measure → scale</div>
-                <label class="check" title="Show two draggable markers (A green, B orange). Drag each with the gizmo to the ends of a feature whose real-world size you know"><input type="checkbox" id="measure-toggle" /> Measure mode</label>
-                <span class="hint" id="measure-readout">Enable, then drag the markers onto a known feature.</span>
+                <label class="check" title="Click the splat to drop two points (A green, B orange) on the ends of a feature whose real-world size you know. Points snap to the splat surface and hide behind it as you orbit"><input type="checkbox" id="measure-toggle" /> Measure mode</label>
+                <span class="hint" id="measure-readout">Enable, then click the splat to place points.</span>
                 <div class="field-row hidden" id="measure-edit-row">
-                    <button id="measure-edit-a" class="active" title="Move marker A (green) with the gizmo">Move A</button>
-                    <button id="measure-edit-b" title="Move marker B (orange) with the gizmo">Move B</button>
+                    <button id="measure-edit-a" class="active" title="The next click places point A (green)">Place A</button>
+                    <button id="measure-edit-b" title="The next click places point B (orange)">Place B</button>
                 </div>
                 <label class="field" title="The real-world length the A–B span should equal. The splat scales uniformly so it matches (-s/--scale)">
                     <span>Real A–B length (m)</span>
@@ -324,7 +324,7 @@
                 <button id="apply-scale" class="primary" title="Scale the splat so the A–B span equals the real length, writing a new splat that auto-loads">Apply scale</button>
 
                 <div class="group">Set origin</div>
-                <label class="check" title="Show one draggable marker. Drag it to the point that should become the origin (0,0,0)"><input type="checkbox" id="origin-toggle" /> Pick origin point</label>
+                <label class="check" title="Click the splat at the point that should become the origin (0,0,0). The point snaps to the surface"><input type="checkbox" id="origin-toggle" /> Pick origin point</label>
                 <button id="apply-origin" class="primary" title="Recenter the splat so the marker sits at the origin (-t/--translate), writing a new splat that auto-loads">Set as origin</button>
             </section>
 

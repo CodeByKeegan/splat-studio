@@ -920,8 +920,26 @@ const measureReadout = $<HTMLSpanElement>('measure-readout');
 const editAbtn = $<HTMLButtonElement>('measure-edit-a');
 const editBbtn = $<HTMLButtonElement>('measure-edit-b');
 
+let nextMarker: 'a' | 'b' = 'a';
+const reflectActiveMarker = (which: 'a' | 'b'): void => {
+    nextMarker = which;
+    editAbtn.classList.toggle('active', which === 'a');
+    editBbtn.classList.toggle('active', which === 'b');
+};
+
 const updateMeasureReadout = (d?: number): void => {
-    const dist = d ?? viewer?.measureDistance() ?? 0;
+    if (!viewer) return;
+    if (originToggle.checked) {
+        measureReadout.textContent = viewer.markersPlaced
+            ? 'Origin point set — click again to move it, then Set as origin.'
+            : 'Click the splat where the new origin should be.';
+        return;
+    }
+    if (measureToggle.checked && !viewer.markersPlaced) {
+        measureReadout.textContent = `Click the splat to place point ${nextMarker.toUpperCase()}.`;
+        return;
+    }
+    const dist = d ?? viewer.measureDistance();
     const len = Number($<HTMLInputElement>('measure-length').value);
     measureReadout.textContent = len > 0 && dist > 0
         ? `A–B = ${dist.toFixed(3)} m → scale ×${(len / dist).toFixed(4)}`
@@ -932,10 +950,11 @@ const setEditTool = (mode: 'none' | 'measure' | 'origin'): void => {
     measureToggle.checked = mode === 'measure';
     originToggle.checked = mode === 'origin';
     $('measure-edit-row').classList.toggle('hidden', mode !== 'measure');
+    reflectActiveMarker('a');
     viewer?.setEditMode(mode);
-    if (mode === 'measure') updateMeasureReadout();
-    else if (mode === 'origin') measureReadout.textContent = 'Drag the marker to the new origin point.';
-    else measureReadout.textContent = 'Enable, then drag the markers onto a known feature.';
+    if (mode === 'measure') measureReadout.textContent = 'Click the splat to place point A.';
+    else if (mode === 'origin') measureReadout.textContent = 'Click the splat where the new origin should be.';
+    else measureReadout.textContent = 'Enable a tool, then click the splat to place points.';
 };
 measureToggle.onchange = () => setEditTool(measureToggle.checked ? 'measure' : 'none');
 originToggle.onchange = () => setEditTool(originToggle.checked ? 'origin' : 'none');
@@ -943,8 +962,8 @@ $<HTMLInputElement>('measure-length').oninput = () => updateMeasureReadout();
 
 const setActiveMarker = (which: 'a' | 'b'): void => {
     viewer?.setActiveMarker(which);
-    editAbtn.classList.toggle('active', which === 'a');
-    editBbtn.classList.toggle('active', which === 'b');
+    reflectActiveMarker(which);
+    updateMeasureReadout();
 };
 editAbtn.onclick = () => setActiveMarker('a');
 editBbtn.onclick = () => setActiveMarker('b');
@@ -952,10 +971,10 @@ editBbtn.onclick = () => setActiveMarker('b');
 $<HTMLButtonElement>('apply-scale').onclick = () => {
     const input = editInput.value;
     if (!input) return showToast('Pick a splat to edit', true);
-    if (!viewer || !measureToggle.checked) return showToast('Enable Measure mode and place the markers first', true);
+    if (!viewer || !measureToggle.checked || !viewer.markersPlaced) return showToast('Click the splat to place points A and B first', true);
     const dist = viewer.measureDistance();
     const len = Number($<HTMLInputElement>('measure-length').value);
-    if (!(dist > 0)) return showToast('Markers are at the same spot', true);
+    if (!(dist > 0)) return showToast('Points A and B are at the same spot', true);
     if (!(len > 0)) return showToast('Enter the real A–B length', true);
     void runJob(() => api.startConvert({ input, format: 'ply', options: { transform: { scale: len / dist } } }), $<HTMLButtonElement>('apply-scale'));
 };
@@ -963,7 +982,7 @@ $<HTMLButtonElement>('apply-scale').onclick = () => {
 $<HTMLButtonElement>('apply-origin').onclick = () => {
     const input = editInput.value;
     if (!input) return showToast('Pick a splat to edit', true);
-    if (!viewer || !originToggle.checked) return showToast('Enable "Pick origin" and place the marker first', true);
+    if (!viewer || !originToggle.checked || !viewer.markersPlaced) return showToast('Click the splat to place the origin point first', true);
     const t = viewer.originTranslateCli();
     void runJob(() => api.startConvert({ input, format: 'ply', options: { transform: { translate: `${t.x},${t.y},${t.z}` } } }), $<HTMLButtonElement>('apply-origin'));
 };
@@ -1289,8 +1308,10 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         v.setSeedMarkerVisible($<HTMLInputElement>('show-seed-marker').checked);
         v.setCapsuleVisible($<HTMLInputElement>('show-capsule').checked);
         v.setBoundsVisible($<HTMLInputElement>('show-bounds').checked);
-        // live measure readout while a marker is dragged
+        // live measure readout + active-marker highlight as points are clicked in
         v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
+        v.onActiveMarkerChange = (which) => reflectActiveMarker(which);
+        v.onEditPlaced = () => updateMeasureReadout();
         syncPreview(); // reflect restored Convert fields once the viewer is up
         updateRenderFrustum(); // show the WebP frustum if WebP is the restored format
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle

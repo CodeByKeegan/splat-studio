@@ -54,14 +54,25 @@ export class SplatViewer {
     onSeedMove?: (cli: { x: number; y: number; z: number }) => void;
     /** fired when a gizmo drag finishes */
     onSeedMoveEnd?: () => void;
-    // edit tools (measure / set-origin): two draggable markers in world space
+    // edit tools (measure / set-origin): two markers placed by clicking the splat
     private mA!: pc.Entity;
     private mB!: pc.Entity;
     private editMaterial!: pc.StandardMaterial;
     private editMode: 'none' | 'measure' | 'origin' = 'none';
     private gizmoTarget: 'seed' | 'a' | 'b' = 'seed';
+    private activeMarker: 'a' | 'b' = 'a';
+    private placed = { a: false, b: false };
+    // splat gaussian centres (entity-local), for click-to-place ray picking and
+    // CPU occlusion of the markers — no collision mesh needed
+    private pickCenters: Float32Array | null = null;
+    private occCenters: Float32Array | null = null;
+    private lastCamKey = '';
     /** fired while a measure/origin marker moves; arg is the A–B distance (world units) */
     onMeasureChange?: (distance: number) => void;
+    /** fired after a click places a marker; arg is which marker the next click will set */
+    onActiveMarkerChange?: (which: 'a' | 'b') => void;
+    /** fired after any edit-marker placement (measure or origin) */
+    onEditPlaced?: () => void;
     // WebP render-camera frustum preview (drawn each frame when set)
     private renderFrustum: { camera: pc.Vec3; lookAt: pc.Vec3; fov: number; aspect: number } | null = null;
     private splatSeq = 0;
@@ -270,14 +281,15 @@ export class SplatViewer {
         this.gizmo.on('transform:end', () => { if (this.gizmoTarget === 'seed') this.onSeedMoveEnd?.(); });
 
         // edit markers (measure / set-origin) live in world space so the distance
-        // between them is the real splat distance (sceneRoot's flip is a rotation)
+        // between them is the real splat distance (sceneRoot's flip is a rotation).
+        // unit-radius spheres scaled per frame to a constant on-screen size.
         this.editMaterial = new pc.StandardMaterial();
         this.editMaterial.useLighting = false;
-        this.editMaterial.depthTest = false; // always findable through the splat
+        this.editMaterial.depthTest = false; // markers hidden behind the splat via CPU occlusion, not the depth buffer
         this.editMaterial.update();
         const marker = (name: string, color: pc.Color): pc.Entity => {
             const mat = this.editMaterial.clone(); mat.emissive = color; mat.update();
-            const mesh = pc.Mesh.fromGeometry(device, new pc.SphereGeometry({ radius: 0.07 }));
+            const mesh = pc.Mesh.fromGeometry(device, new pc.SphereGeometry({ radius: 1 }));
             const e = new pc.Entity(name);
             e.addComponent('render', { meshInstances: [new pc.MeshInstance(mesh, mat)], layers: [pc.LAYERID_IMMEDIATE] });
             e.enabled = false;
@@ -286,13 +298,10 @@ export class SplatViewer {
         };
         this.mA = marker('measure-a', new pc.Color(0.2, 1, 0.45));
         this.mB = marker('measure-b', new pc.Color(1, 0.5, 0.2));
-        this.mA.setPosition(0.4, 0, 0);
-        this.mB.setPosition(-0.4, 0, 0);
-        // draw the A–B segment each frame while measuring (depthTest off → through the splat)
+        // place a marker by clicking the splat surface (no gizmo drag)
+        this.installClickToPlace(canvas);
         app.on('update', () => {
-            if (this.editMode === 'measure') {
-                this.drawLine3(this.mA.getPosition(), this.mB.getPosition(), new pc.Color(1, 1, 0.35));
-            }
+            if (this.editMode !== 'none') this.updateEditMarkers();
             if (this.renderFrustum) this.drawRenderFrustum();
         });
 
@@ -375,6 +384,7 @@ export class SplatViewer {
         this.sceneRoot.addChild(entity);
         this.splatEntity = entity;
         this.splatAsset = asset;
+        this.buildCenterCaches(asset);
         this.applyPreviewXform(); // a newly loaded splat inherits the active preview transform
 
         // customAabb appears once the engine has run a frame; don't block the
@@ -618,6 +628,8 @@ export class SplatViewer {
         this.splatSeq++; // invalidate any in-flight loadSplat
         this.splatEntity?.destroy();
         this.splatEntity = null;
+        this.pickCenters = null;
+        this.occCenters = null;
         if (this.boundsEntity) this.boundsEntity.enabled = false;
         if (this.splatAsset) {
             this.app.assets.remove(this.splatAsset);
@@ -701,28 +713,161 @@ export class SplatViewer {
         this.gizmo.attach(target === 'seed' ? this.seedNode : target === 'a' ? this.mA : this.mB);
     }
 
-    /** 'measure' shows two markers; 'origin' shows one; 'none' hands the gizmo back. */
-    setEditMode(mode: 'none' | 'measure' | 'origin'): void {
-        this.editMode = mode;
-        this.mA.enabled = mode === 'measure' || mode === 'origin';
-        this.mB.enabled = mode === 'measure';
-        if (mode !== 'none') {
-            this.placeMarkersOnSplat(mode === 'measure');
-            this.attachGizmo('a');
-        } else if (this.seedMarker.enabled) {
-            this.attachGizmo('seed');
-        } else {
-            this.gizmo.detach();
+    /** Cache the splat's gaussian centres (entity-local) for click-picking + occlusion. */
+    private buildCenterCaches(asset: pc.Asset): void {
+        const res = asset.resource as unknown as { _centers?: Float32Array };
+        const centers = res?._centers ?? null;
+        this.pickCenters = centers;
+        if (!centers) { this.occCenters = null; return; }
+        const n = centers.length / 3;
+        const target = 40000; // downsample for cheap per-frame occlusion tests
+        const stride = Math.max(1, Math.floor(n / target));
+        if (stride === 1) { this.occCenters = centers; return; }
+        const occ = new Float32Array(Math.ceil(n / stride) * 3);
+        let w = 0;
+        for (let i = 0; i < n; i += stride) { const j = i * 3; occ[w++] = centers[j]; occ[w++] = centers[j + 1]; occ[w++] = centers[j + 2]; }
+        this.occCenters = occ.subarray(0, w);
+    }
+
+    /**
+     * Click-to-place: on a non-drag left click in an edit mode, ray-pick the
+     * front splat surface and drop the active marker there.
+     */
+    private installClickToPlace(canvas: HTMLCanvasElement): void {
+        let downX = 0, downY = 0, downT = 0, btn = 0;
+        canvas.addEventListener('pointerdown', (e) => { downX = e.clientX; downY = e.clientY; downT = e.timeStamp; btn = e.button; });
+        canvas.addEventListener('pointerup', (e) => {
+            if (this.editMode === 'none' || btn !== 0 || e.button !== 0) return;
+            const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+            if (moved > 5 || e.timeStamp - downT > 600) return; // a drag/hold = camera orbit, not a placement
+            const rect = canvas.getBoundingClientRect();
+            const hit = this.pickSurfacePoint(e.clientX - rect.left, e.clientY - rect.top);
+            if (hit) this.placeActiveMarker(hit);
+        });
+    }
+
+    /**
+     * Cast a ray through the clicked pixel and return the front-most splat
+     * surface point (world space), or null over empty space. Works against the
+     * raw gaussian centres — no collision mesh required.
+     */
+    pickSurfacePoint(px: number, py: number): pc.Vec3 | null {
+        const centers = this.pickCenters;
+        const e = this.splatEntity;
+        if (!centers || !e) return null;
+        const camC = this.camera.camera as pc.CameraComponent;
+        const near = camC.screenToWorld(px, py, camC.nearClip);
+        const far = camC.screenToWorld(px, py, camC.farClip);
+        if (!Number.isFinite(near.x) || !Number.isFinite(far.x)) return null;
+        const dir = far.clone().sub(near).normalize();
+        const inv = e.getWorldTransform().clone().invert();
+        const o = inv.transformPoint(near.clone());
+        const d = inv.transformVector(dir.clone()).normalize();
+        const n = centers.length / 3;
+        const stride = Math.max(1, Math.floor(n / 600000)); // cap the per-click scan
+        const h = (this.app.graphicsDevice.height || 900);
+        const coneTan = Math.tan((camC.fov * Math.PI / 180) / h * 6); // ~6px pick radius
+        let bestT = Infinity, bx = 0, by = 0, bz = 0;
+        const ox = o.x, oy = o.y, oz = o.z, dx = d.x, dy = d.y, dz = d.z;
+        for (let i = 0; i < n; i += stride) {
+            const j = i * 3;
+            const ax = centers[j] - ox, ay = centers[j + 1] - oy, az = centers[j + 2] - oz;
+            const t = ax * dx + ay * dy + az * dz;
+            if (t <= 0 || t >= bestT) continue;
+            const qx = ax - dx * t, qy = ay - dy * t, qz = az - dz * t;
+            if (qx * qx + qy * qy + qz * qz <= (coneTan * t) * (coneTan * t)) { bestT = t; bx = centers[j]; by = centers[j + 1]; bz = centers[j + 2]; }
+        }
+        if (bestT === Infinity) return null;
+        return e.getWorldTransform().transformPoint(new pc.Vec3(bx, by, bz));
+    }
+
+    /** True if the splat surface sits between the camera and this world point. */
+    private isMarkerOccluded(world: pc.Vec3): boolean {
+        const occ = this.occCenters;
+        const e = this.splatEntity;
+        if (!occ || !e) return false;
+        const inv = e.getWorldTransform().clone().invert();
+        const m = inv.transformPoint(world.clone());
+        const c = inv.transformPoint(this.camera.getPosition().clone());
+        let dx = m.x - c.x, dy = m.y - c.y, dz = m.z - c.z;
+        const tM = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (tM < 1e-4) return false;
+        dx /= tM; dy /= tM; dz /= tM;
+        const camC = this.camera.camera as pc.CameraComponent;
+        const h = (this.app.graphicsDevice.height || 900);
+        const coneTan = Math.tan((camC.fov * Math.PI / 180) / h * 5);
+        const near = tM * 0.04, farT = tM * 0.9;
+        let cnt = 0;
+        for (let k = 0; k < occ.length; k += 3) {
+            const ax = occ[k] - c.x, ay = occ[k + 1] - c.y, az = occ[k + 2] - c.z;
+            const t = ax * dx + ay * dy + az * dz;
+            if (t <= near || t >= farT) continue;
+            const qx = ax - dx * t, qy = ay - dy * t, qz = az - dz * t;
+            if (qx * qx + qy * qy + qz * qz <= (coneTan * t) * (coneTan * t)) { if (++cnt >= 4) return true; }
+        }
+        return false;
+    }
+
+    /** Drop the active marker at a world point; advance A→B in measure mode. */
+    private placeActiveMarker(world: pc.Vec3): void {
+        const which = this.editMode === 'origin' ? 'a' : this.activeMarker;
+        (which === 'a' ? this.mA : this.mB).setPosition(world);
+        this.placed[which] = true;
+        if (this.editMode === 'measure') {
+            this.activeMarker = which === 'a' ? 'b' : 'a';
+            this.onActiveMarkerChange?.(this.activeMarker);
+            this.onMeasureChange?.(this.measureDistance());
+        }
+        this.onEditPlaced?.();
+        this.lastCamKey = ''; // force a marker refresh this frame
+    }
+
+    /** Per-frame: keep markers a constant on-screen size and hide occluded ones. */
+    private updateEditMarkers(): void {
+        const camPos = this.camera.getPosition();
+        const camC = this.camera.camera as pc.CameraComponent;
+        const h = this.app.graphicsDevice.height || 900;
+        const sizeK = 2 * Math.tan((camC.fov * Math.PI / 180) / 2) / h * 5; // ~5px radius
+        const key = `${camPos.x.toFixed(2)},${camPos.y.toFixed(2)},${camPos.z.toFixed(2)}`;
+        const recompute = key !== this.lastCamKey;
+        this.lastCamKey = key;
+        const apply = (e: pc.Entity, on: boolean): boolean => {
+            if (!on) { e.enabled = false; return false; }
+            if (recompute) {
+                const dist = e.getPosition().distance(camPos);
+                const s = Math.max(dist * sizeK, 1e-3);
+                e.setLocalScale(s, s, s);
+                e.enabled = !this.isMarkerOccluded(e.getPosition());
+            }
+            return e.enabled;
+        };
+        const aVis = apply(this.mA, this.placed.a);
+        const bVis = apply(this.mB, this.editMode === 'measure' && this.placed.b);
+        if (this.editMode === 'measure' && this.placed.a && this.placed.b && (aVis || bVis)) {
+            this.drawLine3(this.mA.getPosition(), this.mB.getPosition(), new pc.Color(1, 1, 0.35));
         }
     }
 
-    /** Move the gizmo to marker A or B (measure mode only). */
+    /** 'measure' places two markers; 'origin' one; 'none' hands the gizmo back. */
+    setEditMode(mode: 'none' | 'measure' | 'origin'): void {
+        this.editMode = mode;
+        this.placed = { a: false, b: false };
+        this.activeMarker = 'a';
+        this.mA.enabled = false;
+        this.mB.enabled = false;
+        this.lastCamKey = '';
+        this.gizmo.detach();
+        if (mode === 'none' && this.seedMarker.enabled && this.cropMode === 'none') this.attachGizmo('seed');
+    }
+
+    /** Choose which marker the next click sets (measure mode only). */
     setActiveMarker(which: 'a' | 'b'): void {
-        if (this.editMode === 'measure') this.attachGizmo(which);
+        if (this.editMode === 'measure') this.activeMarker = which;
     }
 
     /** Distance between the two markers, in world units (= real splat units). */
     measureDistance(): number {
+        if (!this.placed.a || !this.placed.b) return 0;
         return this.mA.getPosition().distance(this.mB.getPosition());
     }
 
@@ -736,14 +881,9 @@ export class SplatViewer {
         return { x: round(-m.x), y: round(m.y), z: round(m.z) };
     }
 
-    // start the markers somewhere visible — inside the loaded splat's bounds
-    private placeMarkersOnSplat(both: boolean): void {
-        const aabb = this.splatEntity?.gsplat?.customAabb;
-        if (!aabb || !this.splatEntity) return;
-        const c = this.splatEntity.getWorldTransform().transformPoint(aabb.center);
-        const dx = Math.max(aabb.halfExtents.x * 0.5, 0.2);
-        this.mA.setPosition(c.x + (both ? dx : 0), c.y, c.z);
-        if (both) this.mB.setPosition(c.x - dx, c.y, c.z);
+    /** Whether the required markers for the active edit mode have been placed. */
+    get markersPlaced(): boolean {
+        return this.editMode === 'origin' ? this.placed.a : this.placed.a && this.placed.b;
     }
 
     /**
