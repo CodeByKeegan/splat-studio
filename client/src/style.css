@@ -92,6 +92,27 @@ button.primary:focus-visible { outline-color: var(--text); }
 .camera-view-canvas { max-width: 100%; max-height: 100%; background: #000; }
 .camera-view-hint { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 18px; color: var(--text-dim); font-size: var(--fs-sm); pointer-events: none; }
 
+/* viewport toolbar — overlay along the top of the 3D view */
+#viewport-toolbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 6;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 6px 10px;
+    background: linear-gradient(to bottom, rgba(20, 22, 26, 0.88), rgba(20, 22, 26, 0));
+    pointer-events: none;
+}
+#viewport-toolbar > * { pointer-events: auto; }
+.tb-select { width: auto; background: rgba(38, 42, 50, 0.94); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 3px 6px; font: inherit; font-size: var(--fs-sm); }
+.tb-check { display: inline-flex; align-items: center; gap: 4px; background: rgba(38, 42, 50, 0.94); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; font-size: var(--fs-sm); color: var(--text); white-space: nowrap; margin: 0; }
+.tb-btn { background: rgba(38, 42, 50, 0.94); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 3px 9px; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.tb-btn:hover, .tb-select:hover, .tb-check:hover { border-color: var(--accent); }
+.tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 1px 2px; }
+
+/* scene visibility eye buttons */
+.scene-eye { background: none; border: none; cursor: pointer; padding: 0 2px; font-size: 13px; line-height: 1; opacity: 0.9; flex-shrink: 0; }
+.scene-eye.off { opacity: 0.4; }
+.scene-eye:hover { opacity: 1; }
+.scene-eye-spacer { width: 17px; flex-shrink: 0; }
+
 .panel {
     padding: 12px 14px 16px;
     height: 100%;
@@ -453,7 +474,7 @@ body.dropping #viewport::after {
 
 #hud {
     position: absolute;
-    top: 10px;
+    top: 44px; /* below the viewport toolbar */
     left: 12px;
     display: flex;
     gap: 8px;

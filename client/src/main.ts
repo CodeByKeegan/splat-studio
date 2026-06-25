@@ -18,6 +18,9 @@ const collisionInput = $<HTMLSelectElement>('collision-input');
 const analyzeInput = $<HTMLSelectElement>('analyze-input');
 const editInput = $<HTMLSelectElement>('edit-input');
 const skyboxSelect = $<HTMLSelectElement>('skybox-select');
+// per-layer visibility, toggled by the Scene panel's eye buttons (replaces the old checkboxes)
+const layerVisible = { splat: true, collision: true, voxels: true };
+type LayerId = keyof typeof layerVisible;
 const toastStack = $<HTMLDivElement>('toast-stack');
 const hudSplat = $<HTMLSpanElement>('hud-splat');
 const hudCollision = $<HTMLSpanElement>('hud-collision');
@@ -262,14 +265,14 @@ const viewFile = async (name: string, as: api.ViewKind) => {
         if (as === 'splat') {
             if (!(await v.loadSplat(url, filename))) return; // superseded by a newer load / remove
             setChip(hudSplat, `splat: ${name}`);
-            $<HTMLInputElement>('show-splat').checked = true;
+            layerVisible.splat = true;
             v.setSplatVisible(true);
             currentSplatName = name;
             syncPreview(); // apply the live Convert preview if this is the input
         } else if (as === 'collision') {
             if (!(await v.loadCollision(url, filename))) return;
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
-            $<HTMLInputElement>('show-collision').checked = true;
+            layerVisible.collision = true;
             v.setCollisionVisible(true);
             // X-ray wireframe is unreadable on dense meshes — switch automatically
             const styleSelect = $<HTMLSelectElement>('collision-style');
@@ -282,7 +285,7 @@ const viewFile = async (name: string, as: api.ViewKind) => {
             const { count, truncated, applied } = await v.loadVoxels(url);
             if (!applied) return;
             setChip(hudVoxel, `voxels: ${name} (${count.toLocaleString()} boxes)`);
-            $<HTMLInputElement>('show-voxels').checked = true;
+            layerVisible.voxels = true;
             v.setVoxelsVisible(true);
             if (truncated) {
                 showToast(`Voxel display capped at ${count.toLocaleString()} boxes — regenerate with a coarser voxel size for full coverage`, true);
@@ -1123,14 +1126,18 @@ collisionRun.onclick = () => {
     }), collisionRun, $<HTMLInputElement>('collision-autoload').checked);
 };
 
-// ---------- viewer panel ----------
+// ---------- viewport toolbar + settings ----------
 // guards: handlers are live before the async viewer boot finishes
-$<HTMLInputElement>('show-splat').onchange = (e) =>
-    viewer?.setSplatVisible((e.currentTarget as HTMLInputElement).checked);
-$<HTMLInputElement>('show-collision').onchange = (e) =>
-    viewer?.setCollisionVisible((e.currentTarget as HTMLInputElement).checked);
-$<HTMLInputElement>('show-voxels').onchange = (e) =>
-    viewer?.setVoxelsVisible((e.currentTarget as HTMLInputElement).checked);
+function applyLayerVisible(id: LayerId): void {
+    if (id === 'splat') viewer?.setSplatVisible(layerVisible.splat);
+    else if (id === 'collision') viewer?.setCollisionVisible(layerVisible.collision);
+    else viewer?.setVoxelsVisible(layerVisible.voxels);
+}
+function toggleLayer(id: LayerId): void {
+    layerVisible[id] = !layerVisible[id];
+    applyLayerVisible(id);
+    rebuildSceneList();
+}
 $<HTMLInputElement>('show-bounds').onchange = (e) =>
     viewer?.setBoundsVisible((e.currentTarget as HTMLInputElement).checked);
 $<HTMLInputElement>('voxel-color').oninput = (e) =>
@@ -1212,9 +1219,15 @@ function rebuildSceneList(): void {
         const li = document.createElement('li');
         li.className = 'scene-item' + (it.id === sel ? ' selected' : '');
         li.title = it.gizmo ? 'Select to move it with a gizmo' : 'Selecting hides any gizmo';
+        const isLayer = it.id === 'splat' || it.id === 'collision' || it.id === 'voxels';
+        const vis = isLayer ? layerVisible[it.id as LayerId] : true;
+        const eye = isLayer ? `<button class="scene-eye${vis ? '' : ' off'}" title="Show / hide">${vis ? '👁' : '🙈'}</button>` : '<span class="scene-eye-spacer"></span>';
         const gizmo = it.gizmo ? '<span class="scene-gizmo" title="movable">✥</span>' : '';
-        li.innerHTML = `<span class="scene-icon">${it.icon}</span><span class="scene-name">${it.label}</span>${gizmo}`;
+        li.innerHTML = `${eye}<span class="scene-icon">${it.icon}</span><span class="scene-name">${it.label}</span>${gizmo}`;
         li.onclick = () => { selectScene(it.id === viewer!.selection ? 'none' : it.id); };
+        if (isLayer) {
+            li.querySelector('.scene-eye')?.addEventListener('click', (e) => { e.stopPropagation(); toggleLayer(it.id as LayerId); });
+        }
         sceneList.appendChild(li);
     }
     $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
@@ -1255,7 +1268,7 @@ const WINDOWS: Win[] = [
     { id: 'panel-edit', component: 'panel-edit', title: 'Edit', closable: true },
     { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
     { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
-    { id: 'panel-viewer', component: 'panel-viewer', title: 'Viewer options', closable: true },
+    { id: 'panel-settings', component: 'panel-settings', title: 'Settings', closable: true },
     { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
     { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
     { id: 'panel-job', component: 'panel-job', title: 'Job', closable: false }
@@ -1343,7 +1356,7 @@ function applyDefaultLayout(): void {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-viewer', component: 'panel-viewer', title: titleOf('panel-viewer'), position: { referencePanel: 'panel-scene', direction: 'within' } });
+    dock.addPanel({ id: 'panel-settings', component: 'panel-settings', title: titleOf('panel-settings'), position: { referencePanel: 'panel-scene', direction: 'within' } });
     dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Job', position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
@@ -1419,6 +1432,9 @@ function buildMenuBar(): void {
     );
 }
 buildMenuBar();
+
+// the viewport toolbar's ⚙ opens (or focuses) the Settings tab
+$<HTMLButtonElement>('open-settings').onclick = () => { const w = winById('panel-settings'); if (w) openWindow(w); };
 
 // ---------- per-workspace layout persistence ----------
 async function bootLayout(): Promise<void> {

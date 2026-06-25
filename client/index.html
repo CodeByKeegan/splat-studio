@@ -415,29 +415,9 @@
                 <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb">Generate collision</button>
             </section>
 
-            <section class="panel" id="panel-viewer">
-                <h2 title="Display options for the 3D view">Viewer</h2>
-                <label class="field" title="Fly: mouse-look + WASD to move (default — best for inspecting carved interiors from inside). Orbit: drag to rotate around the focus point. Right-drag pans and scroll zooms in both.">
-                    <span>Camera control</span>
-                    <select id="camera-mode">
-                        <option value="fly" selected>Fly (mouse-look + WASD)</option>
-                        <option value="orbit">Orbit (drag to rotate)</option>
-                    </select>
-                </label>
-                <div class="field-row">
-                    <label class="check" title="Show or hide the loaded gaussian splat"><input type="checkbox" id="show-splat" checked /> Splat</label>
-                    <label class="check" title="Show or hide the collision wireframe overlay"><input type="checkbox" id="show-collision" checked /> Collision</label>
-                    <label class="check" title="Show or hide the voxel octree boxes"><input type="checkbox" id="show-voxels" checked /> Voxels</label>
-                    <label class="check" title="Show the loaded splat's axis-aligned bounding box — its extent at a glance, with floaters/outliers stretching the box"><input type="checkbox" id="show-bounds" /> Bounds</label>
-                </div>
-                <label class="field" title="How the collision mesh is drawn. X-ray: all edges visible through everything — fine for small meshes, noise on dense ones. Hidden-line: only front-surface edges (a depth prepass culls the rest) — use for dense meshes. Solid: lit translucent surface + hidden-line edges — best for checking placement against the splat and inspecting carved interiors (fly inside with WASD)">
-                    <span>Collision style</span>
-                    <select id="collision-style">
-                        <option value="xray" selected>X-ray wireframe</option>
-                        <option value="hidden">Hidden-line wireframe</option>
-                        <option value="solid">Solid + edges</option>
-                    </select>
-                </label>
+            <section class="panel" id="panel-settings">
+                <h2 title="Visual settings">Settings</h2>
+                <div class="group">Overlay colors</div>
                 <div class="field-row">
                     <label class="field half" title="Color of the collision wireframe">
                         <span>Wire color</span>
@@ -458,14 +438,11 @@
                         <input type="range" id="voxel-opacity" min="0.05" max="1" step="0.05" value="0.35" />
                     </label>
                 </div>
-                <div class="field-row">
-                    <label class="check" title="Unchecked: oriented for splat-transform output (180° about Y, aligned automatically). Check this for collision meshes from other tools that are already in viewer/engine space"><input type="checkbox" id="collision-flip" />
-                        Flip collision</label>
-                </div>
-                <div class="field-row">
-                    <button id="frame-scene" title="Re-center and re-distance the camera to fit the loaded scene">Frame scene</button>
-                    <button id="clear-viewport" title="Unload all layers (splat, collision, voxels) and empty the viewport, freeing their GPU memory">Clear viewport</button>
-                </div>
+                <div class="group">Appearance <em>— coming soon</em></div>
+                <label class="field" title="App color theme (coming soon)"><span>Theme</span><select id="ui-theme" disabled><option>Dark</option></select></label>
+                <label class="field" title="UI font size (coming soon)"><span>Font size</span><select id="ui-font" disabled><option>Default</option></select></label>
+                <label class="field" title="Interface language (coming soon)"><span>Language</span><select id="ui-language" disabled><option>English</option></select></label>
+                <span class="hint">Theme, font size and language are placeholders for a future update.</span>
             </section>
 
             <section class="panel" id="panel-scene">
@@ -495,6 +472,24 @@
             </section>
             <main id="viewport">
                 <canvas id="gs-canvas"></canvas>
+                <div id="viewport-toolbar">
+                    <select id="camera-mode" class="tb-select" title="Camera control — Fly (mouse-look + WASD, default) or Orbit (drag to rotate). Right-drag pans, scroll zooms in both.">
+                        <option value="fly" selected>🎮 Fly</option>
+                        <option value="orbit">🛰️ Orbit</option>
+                    </select>
+                    <select id="collision-style" class="tb-select" title="How the collision mesh is drawn. X-ray: all edges through everything. Hidden-line: front edges only (dense meshes). Solid: lit translucent surface + edges.">
+                        <option value="xray" selected>Collision: X-ray</option>
+                        <option value="hidden">Collision: Hidden-line</option>
+                        <option value="solid">Collision: Solid</option>
+                    </select>
+                    <label class="tb-check" title="Show the loaded splat's axis-aligned bounding box"><input type="checkbox" id="show-bounds" /> Bounds</label>
+                    <label class="tb-check" title="Flip collision orientation — check for collision meshes from other tools already in viewer/engine space"><input type="checkbox" id="collision-flip" /> Flip</label>
+                    <span class="tb-sep"></span>
+                    <button id="frame-scene" class="tb-btn" title="Re-center and re-distance the camera to fit the loaded scene">⤢ Frame</button>
+                    <button id="clear-viewport" class="tb-btn" title="Unload all layers and free their GPU memory">Clear</button>
+                    <span class="tb-sep"></span>
+                    <button id="open-settings" class="tb-btn" title="Open visual settings (colors, appearance)">⚙</button>
+                </div>
                 <div id="hud">
                     <span id="hud-splat" class="chip hidden" title="Currently displayed splat"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the splat from the viewport (frees its GPU memory)">✕</button></span>
                     <span id="hud-collision" class="chip hidden" title="Currently displayed collision mesh"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the collision mesh from the viewport">✕</button></span>
