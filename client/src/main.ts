@@ -10,6 +10,7 @@ const $ = <T extends HTMLElement>(id: string): T => {
 const fileList = $<HTMLUListElement>('file-list');
 const convertInput = $<HTMLSelectElement>('convert-input');
 const collisionInput = $<HTMLSelectElement>('collision-input');
+const analyzeInput = $<HTMLSelectElement>('analyze-input');
 const toastStack = $<HTMLDivElement>('toast-stack');
 const hudSplat = $<HTMLSpanElement>('hud-splat');
 const hudCollision = $<HTMLSpanElement>('hud-collision');
@@ -40,7 +41,7 @@ const fmtSize = (bytes: number): string => {
 // ---------- persisted form state ----------
 const FORM_KEY = 'splat-studio.form';
 // selects whose options come from the workspace — restored after the file list loads
-const FILE_SELECT_IDS = new Set(['convert-input', 'collision-input']);
+const FILE_SELECT_IDS = new Set(['convert-input', 'collision-input', 'analyze-input']);
 const formState: Record<string, string | boolean> = (() => {
     try { return JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'); } catch { return {}; }
 })();
@@ -96,14 +97,24 @@ const refreshFiles = async (highlight?: Set<string>) => {
     // what the engine can render; lod-meta.json is viewable but not a CLI input
     const splatFiles = files.filter((f) => f.kind === 'splat' && !f.name.endsWith('lod-meta.json'));
     splatFileNames = splatFiles.map((f) => f.name);
-    for (const select of [convertInput, collisionInput, ...lodRowSelects()]) {
+    // .mjs generators are valid convert/analyze inputs, but not collision/LOD sources
+    const generatorNames = files.filter((f) => f.kind === 'generator').map((f) => f.name);
+    const convertNames = [...splatFileNames, ...generatorNames];
+    fillSelect(convertInput, convertNames);
+    fillSelect(analyzeInput, convertNames);
+    for (const select of [collisionInput, ...lodRowSelects()]) {
         fillSelect(select, splatFileNames);
     }
     // re-apply the persisted choice once its file exists again
-    for (const [select, id] of [[convertInput, 'convert-input'], [collisionInput, 'collision-input']] as const) {
+    for (const [select, id, names] of [
+        [convertInput, 'convert-input', convertNames],
+        [analyzeInput, 'analyze-input', convertNames],
+        [collisionInput, 'collision-input', splatFileNames]
+    ] as const) {
         const want = formState[id];
-        if (!select.value && typeof want === 'string' && splatFileNames.includes(want)) select.value = want;
+        if (!select.value && typeof want === 'string' && names.includes(want)) select.value = want;
     }
+    updateGenParamsRow();
 
     fileList.innerHTML = '';
     let firstNew: HTMLLIElement | null = null;
@@ -124,6 +135,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
             collision: 'Collision triangle mesh — view it as a wireframe over the splat',
             glb: 'glTF binary (KHR_gaussian_splatting splat export)',
             export: 'Export artifact (CSV / HTML / image)',
+            generator: 'Procedural splat generator (.mjs) — pick as a Convert input and pass -p params (Beta, local only)',
             other: 'Unrecognized file type'
         };
         const tag = document.createElement('span');
@@ -287,7 +299,12 @@ const uploadFiles = async (files: Iterable<File>) => {
         if (lastSplat && splatFileNames.includes(lastSplat)) {
             convertInput.value = lastSplat;
             collisionInput.value = lastSplat;
+            analyzeInput.value = lastSplat;
+        } else if (lastSplat && lastSplat.endsWith('.mjs')) {
+            convertInput.value = lastSplat; // generators aren't collision sources
+            analyzeInput.value = lastSplat;
         }
+        updateGenParamsRow();
     }
 };
 
@@ -320,10 +337,66 @@ window.addEventListener('drop', (e) => {
     if (e.dataTransfer?.files.length) void uploadFiles(e.dataTransfer.files);
 });
 
+// A ready-to-run .mjs generator so the generator-input + params feature is
+// usable without authoring one. Mirrors examples/gen-grid.mjs in the repo: a
+// Generator class with static create(params) returning {count, columnNames,
+// getRow}. Values are raw (log scale, logit opacity, SH-DC colour).
+const SAMPLE_GENERATOR = `// Sample procedural splat generator for @playcanvas/splat-transform.
+// Convert it in Splat Studio with params like: width=16,height=16,scale=4
+const SH_C0 = 0.28209479177387814;
+const toSH = c => (c - 0.5) / SH_C0;        // colour [0..1] -> f_dc
+const toLogit = a => Math.log(a / (1 - a)); // alpha [0..1] -> opacity
+
+class Generator {
+    static async create(params) {
+        // params is [{ name, value }, ...]; values are strings -> coerce here.
+        const map = new Map(params.map(p => [p.name, p.value]));
+        const num = (key, def) => {
+            const v = map.get(key);
+            const n = v === undefined ? def : Number(v);
+            return Number.isFinite(n) ? n : def;
+        };
+        const width = Math.max(1, Math.floor(num('width', 8)));
+        const height = Math.max(1, Math.floor(num('height', 8)));
+        const scale = num('scale', 1);
+        const logScale = Math.log(0.02 * scale); // gaussian radius, log space
+        const opacity = toLogit(0.99);
+        const spacing = 0.1 * scale;
+        return {
+            count: width * height,
+            columnNames: ['x', 'y', 'z', 'scale_0', 'scale_1', 'scale_2',
+                'rot_0', 'rot_1', 'rot_2', 'rot_3', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity'],
+            getRow(index, row) {
+                const col = index % width;
+                const rowIdx = Math.floor(index / width);
+                row.x = (col - (width - 1) / 2) * spacing;
+                row.y = 0;
+                row.z = (rowIdx - (height - 1) / 2) * spacing;
+                row.scale_0 = row.scale_1 = row.scale_2 = logScale;
+                row.rot_0 = 1; row.rot_1 = 0; row.rot_2 = 0; row.rot_3 = 0; // identity quat
+                row.f_dc_0 = toSH(col / Math.max(1, width - 1));
+                row.f_dc_1 = toSH(rowIdx / Math.max(1, height - 1));
+                row.f_dc_2 = toSH(0.5);
+                row.opacity = opacity;
+            }
+        };
+    }
+}
+
+export { Generator };
+`;
+
+$<HTMLButtonElement>('add-sample-generator').onclick = () => {
+    if (!api.getProject()) return showToast('Create or pick a project first', true);
+    const file = new File([SAMPLE_GENERATOR], 'gen-grid.mjs', { type: 'text/javascript' });
+    void uploadFiles([file]);
+};
+
 // ---------- jobs ----------
 const jobCancel = $<HTMLButtonElement>('job-cancel');
 const convertRun = $<HTMLButtonElement>('convert-run');
 const collisionRun = $<HTMLButtonElement>('collision-run');
+const analyzeRun = $<HTMLButtonElement>('analyze-run');
 let activeJobId: string | null = null;
 
 jobCancel.onclick = () => {
@@ -345,6 +418,7 @@ const runJob = async (start: () => Promise<string>, button: HTMLButtonElement) =
     const prevLabel = button.textContent;
     convertRun.disabled = true;
     collisionRun.disabled = true;
+    analyzeRun.disabled = true;
     button.textContent = 'Running…';
     try {
         const jobId = await start();
@@ -378,6 +452,7 @@ const runJob = async (start: () => Promise<string>, button: HTMLButtonElement) =
     } finally {
         convertRun.disabled = false;
         collisionRun.disabled = false;
+        analyzeRun.disabled = false;
         button.textContent = prevLabel;
         updateConvertRows(); // restores the format-specific Convert label
     }
@@ -452,8 +527,17 @@ const updateConvertRows = () => {
 };
 convertFormat.onchange = updateConvertRows;
 lodMode.onchange = updateConvertRows;
+
+// the generator-params row keys off the selected INPUT (a .mjs source), not the
+// output format, so it has its own toggle rather than living in updateConvertRows
+const updateGenParamsRow = () => {
+    $('row-gen-params').classList.toggle('hidden', !convertInput.value.endsWith('.mjs'));
+};
+convertInput.onchange = updateGenParamsRow;
+
 restoreFormState();
 updateConvertRows();
+updateGenParamsRow();
 
 // reveal each optional filter's inputs only when its checkbox is on
 const ACTION_TOGGLES: [string, string][] = [
@@ -574,9 +658,19 @@ convertRun.onclick = () => {
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
-            lodFiles
+            lodFiles,
+            params: $<HTMLInputElement>('convert-params').value.trim()
         }
     }), convertRun);
+};
+
+// ---------- analyze panel ----------
+// summary is analysis-only (null output): the per-column stats table prints to
+// the Job log, so there's nothing to load into the viewer afterwards
+analyzeRun.onclick = () => {
+    const input = analyzeInput.value;
+    if (!input) return showToast('Pick a file to analyze first', true);
+    void runJob(() => api.startAnalyze(input), analyzeRun);
 };
 
 // ---------- collision panel ----------

@@ -7,7 +7,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { createJob, getJob, cancelJob, listJobs } from './jobs.mjs';
-import { buildConvertCommand, buildCollisionCommand, recordOutputs, cliPath } from './commands.mjs';
+import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, recordOutputs, cliPath } from './commands.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Each top-level subfolder of the workspace is a "project". The launcher
@@ -82,6 +82,7 @@ const fileKind = (name) => {
     if (/\.(ply|sog|spz|splat|ksplat|lcc)$/i.test(name)) return 'splat';
     if (name.endsWith('.glb')) return 'glb';
     if (/\.(csv|html|webp)$/i.test(name)) return 'export';
+    if (/\.mjs$/i.test(name)) return 'generator'; // procedural splat source (-p params)
     return 'other';
 };
 
@@ -245,6 +246,7 @@ const startJob = async (res, build, payload) => {
 
 app.post('/api/convert', json, (req, res) => startJob(res, buildConvertCommand, req.body ?? {}));
 app.post('/api/collision', json, (req, res) => startJob(res, buildCollisionCommand, req.body ?? {}));
+app.post('/api/summary', json, (req, res) => startJob(res, buildSummaryCommand, req.body ?? {}));
 
 app.get('/api/jobs', (req, res) => res.json({ jobs: listJobs() }));
 
