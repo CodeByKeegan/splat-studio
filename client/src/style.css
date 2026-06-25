@@ -553,4 +553,37 @@ body.dropping #viewport::after {
 .stats-table tr.row-bad td { color: var(--error); }
 #measure-edit-row button.active { border-color: var(--accent); color: var(--accent); }
 
+/* ----- icon-rail navigation (SuperSplat-style: jump to a panel, or hide the
+   whole sidebar to maximize the 3D viewport) ----- */
+#icon-rail {
+    flex: 0 0 46px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 5px;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    align-items: center;
+    z-index: 4;
+}
+.rail-btn {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    font-size: 17px;
+    line-height: 1;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    padding: 0;
+    color: var(--text);
+}
+.rail-btn:hover { background: var(--bg-input); border-color: var(--border); }
+.rail-btn.active { background: var(--bg-input); border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.rail-logo { font-size: 19px; color: var(--accent); margin-bottom: 6px; }
+body.sidebar-hidden #sidebar,
+body.sidebar-hidden #resizer { display: none; }
+
 .hidden { display: none !important; }

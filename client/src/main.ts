@@ -1121,8 +1121,35 @@ for (const panel of document.querySelectorAll<HTMLElement>('.panel')) {
         const collapsed = panel.classList.toggle('collapsed');
         panelState[panel.id] = collapsed;
         localStorage.setItem(PANELS_KEY, JSON.stringify(panelState));
+        setRailActive(collapsed ? null : panel.id);
     });
 }
+
+// ---------- icon-rail navigation ----------
+const railBtns = [...document.querySelectorAll<HTMLButtonElement>('#icon-rail .rail-btn[data-panel]')];
+function setRailActive(id: string | null): void {
+    for (const b of railBtns) b.classList.toggle('active', b.dataset.panel === id);
+}
+$<HTMLButtonElement>('rail-toggle').onclick = () => document.body.classList.toggle('sidebar-hidden');
+for (const btn of railBtns) {
+    btn.onclick = () => {
+        const id = btn.dataset.panel!;
+        document.body.classList.remove('sidebar-hidden'); // ensure the sidebar is visible
+        // accordion: focus the chosen panel, collapse the others (Job panel is pinned)
+        for (const panel of document.querySelectorAll<HTMLElement>('.panel')) {
+            if (panel.id === 'panel-job') continue;
+            const open = panel.id === id;
+            panel.classList.toggle('collapsed', !open);
+            panelState[panel.id] = !open;
+        }
+        localStorage.setItem(PANELS_KEY, JSON.stringify(panelState));
+        document.getElementById(id)?.scrollIntoView({ block: 'start' });
+        setRailActive(id);
+    };
+}
+// reflect the initially-expanded panel in the rail
+setRailActive([...document.querySelectorAll<HTMLElement>('.panel')]
+    .find((p) => p.id !== 'panel-job' && !p.classList.contains('collapsed'))?.id ?? null);
 
 // ---------- sidebar resizer ----------
 const appEl = $<HTMLDivElement>('app');

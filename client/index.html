@@ -8,6 +8,15 @@
 </head>
 <body>
     <div id="app">
+        <nav id="icon-rail" aria-label="Panels">
+            <button class="rail-btn rail-logo" id="rail-toggle" title="Show/hide the panels — maximize the 3D viewport">▤</button>
+            <button class="rail-btn" data-panel="panel-files" title="Files">📁</button>
+            <button class="rail-btn" data-panel="panel-convert" title="Convert formats / render">🔀</button>
+            <button class="rail-btn" data-panel="panel-analyze" title="Analyze (summary stats)">📊</button>
+            <button class="rail-btn" data-panel="panel-edit" title="Edit (measure / set origin)">✥</button>
+            <button class="rail-btn" data-panel="panel-collision" title="Collision mesh">🧱</button>
+            <button class="rail-btn" data-panel="panel-viewer" title="Viewer options">👁</button>
+        </nav>
         <aside id="sidebar">
             <header id="app-header" title="A local GUI for @playcanvas/splat-transform: convert splat formats, bundle SOG, generate collision meshes, and preview everything in 3D">
                 <h1>Splat Studio</h1>
