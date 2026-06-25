@@ -1,5 +1,8 @@
 # Splat Studio
 
+<!-- versions: kept in sync by the weekly dependency-update routine -->
+**Built with PlayCanvas `2.19.6` · @playcanvas/splat-transform `2.5.2`**
+
 A local GUI for [`@playcanvas/splat-transform`](https://github.com/playcanvas/splat-transform):
 splat format conversion, SOG bundling and collision-mesh generation, with a PlayCanvas
 3D viewer — all in a dockable, Unity/Unreal-style tab editor you can rearrange and

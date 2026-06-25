@@ -44,10 +44,12 @@ npm test
 Both must pass. For UI/viewer changes, drive a browser preview against an
 isolated server (own port, temp workspace) and confirm the new control works.
 
-## 5. Refresh docs
-Run **splat-studio-update-docs** so the user guide and screenshots reflect any new
-flag or panel: `npm run docs:capture`, then reconcile `docs/USER_GUIDE.md` (and
-`docs/AUTOMATION.md` if a loop changed). Fold the doc diff into this same PR.
+## 5. Refresh docs + version line
+Update the README "Built with PlayCanvas `X` · @playcanvas/splat-transform `Y`" line
+to the new versions (the CI release notes pick them up automatically from
+node_modules). Then run **splat-studio-update-docs** so the user guide and screenshots
+reflect any new flag or panel: `npm run docs:capture`, reconcile `docs/USER_GUIDE.md`
+(and `docs/AUTOMATION.md` if a loop changed). Fold the doc diff into this same PR.
 
 ## 6. Ship
 Commit (author CodeByKeegan, no AI attribution), push, open a PR titled

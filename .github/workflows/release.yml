@@ -47,6 +47,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --win --publish always
 
+      - name: Annotate release with upstream versions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ver() { node -e "console.log(require('fs').readFileSync('node_modules/$1/package.json','utf8').match(/\"version\":\s*\"([^\"]+)\"/)[1])"; }
+          PC=$(ver playcanvas)
+          ST=$(ver @playcanvas/splat-transform)
+          NOTES="Splat Studio v$VERSION
+
+          Built with **PlayCanvas $PC** and **@playcanvas/splat-transform $ST**.
+
+          Windows: Splat-Studio-Setup-$VERSION.exe (installer) or SplatStudio-$VERSION-portable.exe (portable)."
+          gh release edit "v$VERSION" --notes "$NOTES"
+
       - name: Summary
         shell: bash
         run: echo "Published release v$VERSION (NSIS installer + portable exe)." >> "$GITHUB_STEP_SUMMARY"
