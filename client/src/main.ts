@@ -1056,6 +1056,7 @@ for (const id of ['fill-mode', 'carve', 'filter-cluster', 'voxel-size', 'voxel-o
     $(id).addEventListener('input', () => { preset.value = 'custom'; });
 }
 carveBox.addEventListener('input', syncCollisionRows);
+carveBox.addEventListener('change', () => rebuildSceneList()); // capsule item depends on carve
 fillMode.addEventListener('input', syncCollisionRows);
 syncCollisionRows();
 
@@ -1145,18 +1146,33 @@ const camRotateBtn = $<HTMLButtonElement>('cam-rotate');
 camMoveBtn.onclick = () => { viewer?.setCameraGizmoMode('move'); camMoveBtn.classList.add('active'); camRotateBtn.classList.remove('active'); };
 camRotateBtn.onclick = () => { viewer?.setCameraGizmoMode('rotate'); camRotateBtn.classList.add('active'); camMoveBtn.classList.remove('active'); };
 
+// the Collision panel is "selected" when its tab is the shown one in its group
+// (isVisible is always true under 'always', and isActive is the single globally
+// focused panel — so compare the group's active tab)
+function collisionActive(): boolean {
+    const p = dock.getPanel('panel-collision');
+    return !!p && p.group.activePanel?.id === 'panel-collision';
+}
+
 const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has: () => boolean }[] = [
     { id: 'splat', label: 'Splat', icon: '✨', gizmo: false, has: () => !!viewer?.hasSplat },
     { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
     { id: 'voxels', label: 'Voxels', icon: '🧊', gizmo: false, has: () => !!viewer?.hasVoxels },
-    { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat },
+    // capsule only while actively setting up collision carving (Collision tab + carve on)
+    { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && carveBox.checked },
+    // render camera only when a WebP render is actually being set up
     { id: 'render-camera', label: 'Render camera', icon: '🎥', gizmo: true, has: () => !!viewer?.hasRenderCamera }
 ];
 
 function rebuildSceneList(): void {
     if (!viewer) return;
-    const sel = viewer.selection;
     const items = SCENE_ITEMS.filter((it) => it.has());
+    // if the selected object is no longer listed (e.g. capsule when collision
+    // hidden, render camera when leaving WebP), clear the selection + its gizmo
+    if (viewer.selection !== 'none' && !items.some((it) => it.id === viewer!.selection)) {
+        viewer.selectObject('none');
+    }
+    const sel = viewer.selection;
     sceneList.innerHTML = '';
     if (!items.length) {
         const li = document.createElement('li');
@@ -1306,8 +1322,9 @@ function closeWindow(w: Win): void {
 }
 
 applyDefaultLayout();
-// keep the scene list fresh when the Scene tab is shown
-dock.getPanel('panel-scene')?.api.onDidVisibilityChange((e) => { if (e.isVisible) rebuildSceneList(); });
+// keep the scene list fresh when tabs change (the capsule item depends on the
+// Collision tab being visible) or the Scene tab is shown
+dock.onDidActivePanelChange(() => rebuildSceneList());
 (window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
 
 // ---------- top menu bar (Window / Layout) ----------
