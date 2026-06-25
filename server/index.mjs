@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createJob, getJob, cancelJob, listJobs } from './jobs.mjs';
 import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, recordOutputs, cliPath } from './commands.mjs';
@@ -265,6 +265,33 @@ const listGpus = () => new Promise((resolve) => {
     });
 });
 app.get('/api/gpus', async (req, res) => res.json({ gpus: await listGpus() }));
+
+// Read a .mjs generator's advertised param schema (its static `Generator.params`)
+// by importing it in a throwaway child Node: isolates a crashing/looping module
+// (5s timeout) and dodges the ESM cache so an edited generator re-reads. Lets the
+// UI render live sliders for generators that opt in. Returns null on any failure.
+const readGeneratorParams = (absPath) => new Promise((resolve) => {
+    const url = pathToFileURL(absPath).href;
+    const code = `import(${JSON.stringify(url)}).then(m => process.stdout.write(JSON.stringify(m.Generator?.params ?? null))).catch(() => process.stdout.write('null'));`;
+    const child = spawn(process.execPath, ['-e', code], { windowsHide: true, timeout: 5000 });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.on('error', () => resolve(null));
+    child.on('close', () => { try { resolve(JSON.parse(out || 'null')); } catch { resolve(null); } });
+});
+
+app.get('/api/generator-params', async (req, res) => {
+    try {
+        const projectDir = resolveProject(req.query.project);
+        const input = String(req.query.input ?? '');
+        if (!isSafeRelPath(input) || !/\.mjs$/i.test(input) || !existsSync(toAbs(projectDir, input))) {
+            return res.status(400).json({ error: 'Not a generator file' });
+        }
+        res.json({ params: await readGeneratorParams(toAbs(projectDir, input)) });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
 
 app.get('/api/jobs', (req, res) => res.json({ jobs: listJobs() }));
 

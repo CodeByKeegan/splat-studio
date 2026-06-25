@@ -17,6 +17,13 @@ const toSH = c => (c - 0.5) / SH_C0;        // colour [0..1] -> f_dc
 const toLogit = a => Math.log(a / (1 - a)); // alpha  [0..1] -> opacity
 
 class Generator {
+    // Optional: advertise params so the GUI renders live sliders for them.
+    static params = [
+        { name: 'width', label: 'Width', min: 1, max: 64, step: 1, default: 16 },
+        { name: 'height', label: 'Height', min: 1, max: 64, step: 1, default: 16 },
+        { name: 'scale', label: 'Scale (m)', min: 0.5, max: 20, step: 0.5, default: 4 }
+    ];
+
     static async create(params) {
         const map = new Map(params.map(p => [p.name, p.value]));
         const num = (key, def) => {

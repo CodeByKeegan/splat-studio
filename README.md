@@ -87,17 +87,25 @@ Then in the browser:
 
 ## Analyze & procedural generators
 
-- **Analyze** panel — pick any splat and **Summarize stats** to print per-column
-  statistics (min · max · median · mean · stdDev, NaN/Inf counts and a histogram)
-  to the Job log without writing a file (`-m/--summary` with a `null` output).
+- **Analyze** panel — pick any splat and **Summarize stats** (`-m/--summary`,
+  `null` output, writes nothing). Results render as a **persistent card**:
+  headline tiles (gaussian count, X×Y×Z extent, a NaN/Inf flag) over a per-column
+  table with histograms, with a **copy** button for the raw Markdown. The card
+  survives later jobs (unlike the transient Job log).
 - **`.mjs` generators** — a JavaScript module that procedurally synthesizes a
   splat is a first-class Convert/Analyze input. Drop one in or click **+ sample
-  generator** (writes [`examples/gen-grid.mjs`](examples/gen-grid.mjs)), pick it
-  as the Convert input, and pass **Generator params** like
-  `width=16,height=16,scale=4` (`-p/--params`). A generator must `export` a
-  `Generator` class with a static `create(params)` returning
-  `{ count, columnNames, getRow(index, row) }`; column values are raw (log-space
-  scale, logit opacity, SH-DC colour). Local-only.
+  generator** (writes [`examples/gen-grid.mjs`](examples/gen-grid.mjs)), then pick
+  it as the Convert input. A generator must `export` a `Generator` class with a
+  static `create(params)` returning `{ count, columnNames, getRow(index, row) }`;
+  column values are raw (log-space scale, logit opacity, SH-DC colour). Local-only.
+  - **Generator params** (`-p/--params`): pass `width=16,height=16,scale=4`. If
+    the generator advertises a static `params` schema (`[{name,label,min,max,step,
+    default}]`), the GUI renders **live sliders** instead of the freeform field.
+  - **✨ Generate & view** runs the generator and loads the result straight into
+    the 3D viewer in one click; releasing a slider regenerates and re-previews.
+- **Bounds** (Viewer panel) — overlay the loaded splat's axis-aligned bounding
+  box; its extent and any floaters/outliers (which stretch the box) show at a
+  glance.
 
 ## Render to image (WebP) & output options
 

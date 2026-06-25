@@ -343,6 +343,13 @@ const toSH = c => (c - 0.5) / SH_C0;        // colour [0..1] -> f_dc
 const toLogit = a => Math.log(a / (1 - a)); // alpha [0..1] -> opacity
 
 class Generator {
+    // Optional: advertise params so the GUI renders live sliders for them.
+    static params = [
+        { name: 'width', label: 'Width', min: 1, max: 64, step: 1, default: 16 },
+        { name: 'height', label: 'Height', min: 1, max: 64, step: 1, default: 16 },
+        { name: 'scale', label: 'Scale (m)', min: 0.5, max: 20, step: 0.5, default: 4 }
+    ];
+
     static async create(params) {
         // params is [{ name, value }, ...]; values are strings -> coerce here.
         const map = new Map(params.map(p => [p.name, p.value]));
@@ -409,8 +416,10 @@ const panelValid = (panelId: string): boolean => {
 
 // jobs are serialized: one GPU, one Job panel — and concurrent GPU jobs
 // multiply the TDR risk
-const runJob = async (start: () => Promise<string>, button: HTMLButtonElement) => {
+let jobBusy = false;
+const runJob = async (start: () => Promise<string>, button: HTMLButtonElement): Promise<api.Job | undefined> => {
     const prevLabel = button.textContent;
+    jobBusy = true;
     convertRun.disabled = true;
     collisionRun.disabled = true;
     analyzeRun.disabled = true;
@@ -435,16 +444,19 @@ const runJob = async (start: () => Promise<string>, button: HTMLButtonElement) =
             for (const v of job.viewables) {
                 await viewFile(v.name, v.as);
             }
-            showToast(`${job.title} — done: ${job.outputs.join(', ')}`);
+            showToast(job.outputs.length ? `${job.title} — done: ${job.outputs.join(', ')}` : `${job.title} — done`);
         } else if (/DEVICE_HUNG|device lost/i.test(job.log)) {
             showToast(`${job.title} — the GPU watchdog reset the device (TDR). On large scenes this is usually the cluster-filter pass: retry with "Filter to connected cluster" unchecked.`, true);
         } else {
             const lastLine = job.log.split('\n').map((l) => l.trim()).filter(Boolean).pop();
             showToast(`${job.title} — failed: ${lastLine?.slice(0, 160) ?? 'see the Job panel log'}`, true);
         }
+        return job;
     } catch (err) {
         showToast(`Couldn't start job: ${err}`, true);
+        return undefined;
     } finally {
+        jobBusy = false;
         convertRun.disabled = false;
         collisionRun.disabled = false;
         analyzeRun.disabled = false;
@@ -526,13 +538,69 @@ const updateConvertRows = () => {
 convertFormat.onchange = updateConvertRows;
 lodMode.onchange = updateConvertRows;
 
-// input-driven rows: generator params for a .mjs source, LOD-select for an .lcc
-const updateInputRows = () => {
-    const v = convertInput.value.toLowerCase();
-    $('row-gen-params').classList.toggle('hidden', !v.endsWith('.mjs'));
-    $('row-lod-select').classList.toggle('hidden', !v.endsWith('.lcc'));
+// ----- generator + input-driven rows -----
+// Keys off the selected INPUT (not the output format): a .mjs source → generator
+// params (live sliders if the generator advertises a `params` schema, else a
+// freeform field) + Generate & view; an .lcc source → LOD-select.
+let genSchema: api.GenParam[] | null = null;
+let genSchemaFor = '';
+const generateViewBtn = $<HTMLButtonElement>('generate-view');
+
+const renderGenSliders = (schema: api.GenParam[]) => {
+    const container = $('gen-sliders');
+    container.innerHTML = '';
+    for (const p of schema) {
+        const row = document.createElement('label');
+        row.className = 'gen-slider';
+        const label = document.createElement('span');
+        label.className = 'gen-slider-label';
+        label.textContent = p.label ?? p.name;
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.dataset.name = p.name;
+        input.min = String(p.min ?? 0);
+        input.max = String(p.max ?? 100);
+        input.step = String(p.step ?? 1);
+        input.value = String(p.default ?? p.min ?? 0);
+        const val = document.createElement('span');
+        val.className = 'gen-slider-val';
+        val.textContent = input.value;
+        input.oninput = () => { val.textContent = input.value; };
+        input.onchange = scheduleGenPreview; // regenerate on release
+        row.append(label, input, val);
+        container.appendChild(row);
+    }
 };
-convertInput.onchange = updateInputRows;
+
+const currentGenParams = (): string => {
+    if (genSchema && genSchemaFor === convertInput.value) {
+        return [...$('gen-sliders').querySelectorAll<HTMLInputElement>('input[type=range]')]
+            .map((i) => `${i.dataset.name}=${i.value}`).join(',');
+    }
+    return $<HTMLInputElement>('convert-params').value.trim();
+};
+
+const updateInputRows = async (): Promise<void> => {
+    const input = convertInput.value;
+    const isMjs = input.toLowerCase().endsWith('.mjs');
+    $('row-lod-select').classList.toggle('hidden', !input.toLowerCase().endsWith('.lcc'));
+    $('row-gen-actions').classList.toggle('hidden', !isMjs);
+    if (!isMjs) {
+        $('row-gen-params').classList.add('hidden');
+        $('row-gen-sliders').classList.add('hidden');
+        genSchema = null; genSchemaFor = '';
+        return;
+    }
+    if (genSchemaFor !== input) {
+        genSchemaFor = input;
+        genSchema = await api.getGeneratorParams(input).catch(() => null);
+        if (genSchema) renderGenSliders(genSchema);
+    }
+    const hasSchema = Array.isArray(genSchema) && genSchema.length > 0;
+    $('row-gen-sliders').classList.toggle('hidden', !hasSchema);
+    $('row-gen-params').classList.toggle('hidden', hasSchema);
+};
+convertInput.onchange = () => void updateInputRows();
 
 // populate the device dropdown with GPU adapters (-L), then reapply any saved choice
 void api.listGpus().then((gpus) => {
@@ -578,9 +646,22 @@ const webpImageOptions = (): api.ImageOptions => ({
     motionSamples: numOrUndef('webp-motionsamples')
 });
 
+const doGenerateView = (): void => {
+    const input = convertInput.value;
+    if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator as the Convert input', true); return; }
+    if (jobBusy) { scheduleGenPreview(); return; } // coalesce while a job runs
+    void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn);
+};
+let genPreviewTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleGenPreview(): void {
+    clearTimeout(genPreviewTimer);
+    genPreviewTimer = setTimeout(doGenerateView, 250);
+}
+generateViewBtn.onclick = doGenerateView;
+
 restoreFormState();
 updateConvertRows();
-updateInputRows();
+void updateInputRows();
 
 convertRun.onclick = () => {
     const input = convertInput.value;
@@ -615,19 +696,101 @@ convertRun.onclick = () => {
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
             lodFiles,
-            params: $<HTMLInputElement>('convert-params').value.trim(),
+            params: currentGenParams(),
             image: convertFormat.value === 'webp' ? webpImageOptions() : undefined
         }
     }), convertRun);
 };
 
-// ---------- analyze panel ----------
-// summary is analysis-only (null output): the per-column stats table prints to
-// the Job log, so there's nothing to load into the viewer afterwards
-analyzeRun.onclick = () => {
+// ---------- analyze panel + persistent stats card ----------
+interface StatRow { col: string; min: string; max: string; median: string; mean: string; std: string; nans: string; infs: string; hist: string; }
+
+// parse the Markdown table the CLI's -m/--summary prints to stdout (job log)
+const parseSummary = (log: string): { rowCount: number; rows: StatRow[] } | null => {
+    const start = log.indexOf('# Summary');
+    if (start < 0) return null;
+    const block = log.slice(start);
+    const rc = block.match(/Row Count:\*\*\s*(\d+)/);
+    const rows: StatRow[] = [];
+    for (const line of block.split('\n')) {
+        if (!line.trim().startsWith('|')) continue;
+        const c = line.split('|').slice(1, -1).map((s) => s.trim());
+        if (c.length < 9 || c[0] === 'Column' || /^-+$/.test(c[0])) continue;
+        rows.push({ col: c[0], min: c[1], max: c[2], median: c[3], mean: c[4], std: c[5], nans: c[6], infs: c[7], hist: c[8] });
+    }
+    return rows.length ? { rowCount: rc ? Number(rc[1]) : NaN, rows } : null;
+};
+
+const fmtNum = (s: string): string => {
+    const n = Number(s);
+    if (!Number.isFinite(n)) return s;
+    if (n !== 0 && (Math.abs(n) >= 100000 || Math.abs(n) < 0.001)) return n.toPrecision(4);
+    return String(Math.round(n * 1000) / 1000);
+};
+
+let lastSummaryMarkdown = '';
+const renderSummaryCard = (name: string, log: string): void => {
+    const result = $('analyze-result');
+    const summary = parseSummary(log);
+    if (!summary) { result.classList.add('hidden'); showToast('Could not parse summary output', true); return; }
+    lastSummaryMarkdown = log.slice(log.indexOf('# Summary')).trim();
+    $('analyze-result-name').textContent = name;
+
+    const extent = (col: string): number => {
+        const r = summary.rows.find((x) => x.col === col);
+        return r ? Number(r.max) - Number(r.min) : NaN;
+    };
+    const [ex, ey, ez] = ['x', 'y', 'z'].map(extent);
+    const issues = summary.rows.reduce((a, r) => a + (Number(r.nans) || 0) + (Number(r.infs) || 0), 0);
+
+    const tiles = $('stat-tiles');
+    tiles.innerHTML = '';
+    const tile = (label: string, value: string, cls = ''): void => {
+        const t = document.createElement('div');
+        t.className = `tile ${cls}`.trim();
+        const v = document.createElement('span'); v.className = 'tile-val'; v.textContent = value;
+        const l = document.createElement('span'); l.className = 'tile-label'; l.textContent = label;
+        t.append(v, l);
+        tiles.appendChild(t);
+    };
+    tile('Gaussians', Number.isFinite(summary.rowCount) ? summary.rowCount.toLocaleString() : '—');
+    tile('Extent (m)', [ex, ey, ez].every(Number.isFinite)
+        ? `${fmtNum(String(ex))} × ${fmtNum(String(ey))} × ${fmtNum(String(ez))}` : '—');
+    tile(issues ? 'NaN / Inf' : 'Data', issues ? String(issues) : '✓ clean', issues ? 'bad' : 'good');
+
+    const table = $<HTMLTableElement>('stats-table');
+    table.innerHTML = '';
+    const thead = table.createTHead().insertRow();
+    for (const h of ['Column', 'min', 'max', 'median', 'mean', 'σ', 'NaN', 'Inf', 'dist']) {
+        const th = document.createElement('th'); th.textContent = h; thead.appendChild(th);
+    }
+    const tbody = table.createTBody();
+    for (const r of summary.rows) {
+        const tr = tbody.insertRow();
+        if ((Number(r.nans) || 0) + (Number(r.infs) || 0) > 0) tr.className = 'row-bad';
+        const cells = [r.col, fmtNum(r.min), fmtNum(r.max), fmtNum(r.median), fmtNum(r.mean), fmtNum(r.std), r.nans, r.infs, r.hist];
+        cells.forEach((text, i) => {
+            const td = tr.insertCell();
+            td.textContent = text;
+            if (i === 0) td.className = 'col';
+            if (i === 8) td.className = 'hist';
+        });
+    }
+    result.classList.remove('hidden');
+};
+
+$<HTMLButtonElement>('stats-copy').onclick = () => {
+    if (!lastSummaryMarkdown) return;
+    void navigator.clipboard.writeText(lastSummaryMarkdown)
+        .then(() => showToast('Summary copied'))
+        .catch(() => showToast('Copy failed', true));
+};
+
+analyzeRun.onclick = async () => {
     const input = analyzeInput.value;
     if (!input) return showToast('Pick a file to analyze first', true);
-    void runJob(() => api.startAnalyze(input), analyzeRun);
+    const job = await runJob(() => api.startAnalyze(input), analyzeRun);
+    if (job?.status === 'done') renderSummaryCard(input, job.log);
 };
 
 // ---------- collision panel ----------
@@ -734,6 +897,8 @@ $<HTMLInputElement>('show-collision').onchange = (e) =>
     viewer?.setCollisionVisible((e.currentTarget as HTMLInputElement).checked);
 $<HTMLInputElement>('show-voxels').onchange = (e) =>
     viewer?.setVoxelsVisible((e.currentTarget as HTMLInputElement).checked);
+$<HTMLInputElement>('show-bounds').onchange = (e) =>
+    viewer?.setBoundsVisible((e.currentTarget as HTMLInputElement).checked);
 $<HTMLInputElement>('show-seed-marker').onchange = (e) =>
     viewer?.setSeedMarkerVisible((e.currentTarget as HTMLInputElement).checked);
 $<HTMLInputElement>('show-capsule').onchange = (e) =>
@@ -905,6 +1070,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         syncSeedViz();
         v.setSeedMarkerVisible($<HTMLInputElement>('show-seed-marker').checked);
         v.setCapsuleVisible($<HTMLInputElement>('show-capsule').checked);
+        v.setBoundsVisible($<HTMLInputElement>('show-bounds').checked);
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
     })
     .catch((err) => {

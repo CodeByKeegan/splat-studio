@@ -42,6 +42,13 @@
                     <span>Generator params <em>(.mjs input only)</em></span>
                     <input type="text" id="convert-params" placeholder="width=16,height=16,scale=4" />
                 </label>
+                <div class="field hidden" id="row-gen-sliders" title="Live generator parameters (-p/--params). The generator advertises these via a static `params` schema; drag a slider and release to regenerate and preview">
+                    <span>Generator params <em>(live)</em></span>
+                    <div id="gen-sliders"></div>
+                </div>
+                <div class="field-row hidden" id="row-gen-actions">
+                    <button id="generate-view" title="Run the .mjs generator with the params above and load the result straight into the 3D viewer (one click — no convert-then-find-the-file)">✨ Generate &amp; view</button>
+                </div>
                 <label class="field hidden" id="row-lod-select" title="LCC input: comma-separated LOD levels to read (-O/--lod-select), e.g. 0,1,2. Empty reads all">
                     <span>LCC LOD levels <em>(.lcc input only)</em></span>
                     <input type="text" id="convert-lod-select" placeholder="e.g. 0,1,2 — empty = all" />
@@ -164,7 +171,17 @@
                     <span>Input</span>
                     <select id="analyze-input"></select>
                 </label>
-                <button id="analyze-run" class="primary" title="Run -m/--summary as a background job: per-column min · max · median · mean · stdDev, NaN/Inf counts and a histogram print to the Job log as a table. Writes nothing (analysis-only, null output)">Summarize stats</button>
+                <button id="analyze-run" class="primary" title="Run -m/--summary as a background job: per-column min · max · median · mean · stdDev, NaN/Inf counts and a histogram. Results render below and persist. Writes nothing (analysis-only, null output)">Summarize stats</button>
+                <div id="analyze-result" class="analyze-result hidden">
+                    <div class="result-head">
+                        <span id="analyze-result-name" class="result-name" title="The summarized file"></span>
+                        <button type="button" class="link" id="stats-copy" title="Copy the raw Markdown summary to the clipboard">copy</button>
+                    </div>
+                    <div class="stat-tiles" id="stat-tiles"></div>
+                    <div class="stats-table-wrap">
+                        <table class="stats-table" id="stats-table"></table>
+                    </div>
+                </div>
             </section>
 
             <section class="panel" id="panel-collision">
@@ -260,6 +277,7 @@
                     <label class="check" title="Show or hide the loaded gaussian splat"><input type="checkbox" id="show-splat" checked /> Splat</label>
                     <label class="check" title="Show or hide the collision wireframe overlay"><input type="checkbox" id="show-collision" checked /> Collision</label>
                     <label class="check" title="Show or hide the voxel octree boxes"><input type="checkbox" id="show-voxels" checked /> Voxels</label>
+                    <label class="check" title="Show the loaded splat's axis-aligned bounding box — its extent at a glance, with floaters/outliers stretching the box"><input type="checkbox" id="show-bounds" /> Bounds</label>
                 </div>
                 <label class="field" title="How the collision mesh is drawn. X-ray: all edges visible through everything — fine for small meshes, noise on dense ones. Hidden-line: only front-surface edges (a depth prepass culls the rest) — use for dense meshes. Solid: lit translucent surface + hidden-line edges — best for checking placement against the splat and inspecting carved interiors (fly inside with WASD)">
                     <span>Collision style</span>

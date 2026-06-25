@@ -525,4 +525,31 @@ body.dropping #viewport::after {
 }
 .toast.error { border-color: var(--error); color: var(--error); }
 
+/* ----- generator sliders + generate & view ----- */
+#gen-sliders { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.gen-slider { display: grid; grid-template-columns: 78px 1fr 44px; align-items: center; gap: 8px; }
+.gen-slider-label { font-size: var(--fs-sm); color: var(--text-dim); }
+.gen-slider input[type=range] { width: 100%; }
+.gen-slider-val { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; text-align: right; }
+#generate-view { background: var(--bg-input); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; }
+#generate-view:hover { background: var(--accent); color: #08121f; }
+
+/* ----- analyze stats card ----- */
+.analyze-result { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.result-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.result-name { font-size: var(--fs-sm); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile-val { font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.tile-label { font-size: var(--fs-xs); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.tile.good .tile-val { color: var(--ok); }
+.tile.bad .tile-val { color: var(--error); }
+.stats-table-wrap { overflow-x: auto; max-height: 320px; }
+.stats-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.stats-table th, .stats-table td { padding: 3px 6px; text-align: right; white-space: nowrap; }
+.stats-table th { color: var(--text-dim); font-weight: 500; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-panel); }
+.stats-table td.col { text-align: left; color: var(--text-dim); }
+.stats-table td.hist { font-family: "Cascadia Mono", Consolas, monospace; color: var(--accent); letter-spacing: -1px; }
+.stats-table tr.row-bad td { color: var(--error); }
+
 .hidden { display: none !important; }
