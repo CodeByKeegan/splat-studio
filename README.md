@@ -5,6 +5,9 @@ splat format conversion, SOG bundling and collision-mesh generation, with a Play
 3D viewer that renders the generated collision mesh as a wireframe overlay on the
 gaussian splat.
 
+📖 **[User Guide](docs/USER_GUIDE.md)** (illustrated, every feature) ·
+⚙️ **[Automation Architecture](docs/AUTOMATION.md)** (how the app keeps itself current)
+
 ## Stack
 
 - **Backend** — Express server (`server/`) that spawns the `splat-transform` CLI

@@ -44,7 +44,12 @@ npm test
 Both must pass. For UI/viewer changes, drive a browser preview against an
 isolated server (own port, temp workspace) and confirm the new control works.
 
-## 5. Ship
+## 5. Refresh docs
+Run **splat-studio-update-docs** so the user guide and screenshots reflect any new
+flag or panel: `npm run docs:capture`, then reconcile `docs/USER_GUIDE.md` (and
+`docs/AUTOMATION.md` if a loop changed). Fold the doc diff into this same PR.
+
+## 6. Ship
 Commit (author CodeByKeegan, no AI attribution), push, open a PR titled
 `chore: bump <pkg> to <version> (+ N new flags wired)`, with a Verification
 section listing the `npm test` result and any new flags surfaced.

@@ -17,6 +17,7 @@ This is the safety net every change and dependency bump runs through.
 | `splat-studio-test` | Run/extend the regression suite. |
 | `splat-studio-add-feature` | Wire a new CLI flag (or viewer feature) into the GUI end-to-end, with a test. |
 | `splat-studio-update-deps` | The autonomous routine: detect a dependency update, bump it, wire new flags, run tests, open a PR. |
+| `splat-studio-update-docs` | Regenerate the user guide + screenshots so docs never drift from the UI. |
 
 ## The scheduled routine
 A cron agent runs `splat-studio-update-deps` on a schedule. Each run:
@@ -27,6 +28,21 @@ A cron agent runs `splat-studio-update-deps` on a schedule. Each run:
 
 So new upstream features flow into the GUI automatically, gated by review (a PR)
 and the regression suite.
+
+## Documentation that maintains itself
+The user guide is a build artifact, not hand-kept prose. `npm run docs:capture`
+runs the real app in an Electron window (`scripts/capture-docs.mjs`) against the
+synthetic demo splat and re-captures every annotated panel screenshot into
+`docs/screenshots/`. The dependency-update run ends by invoking
+`splat-studio-update-docs`, which re-captures and reconciles `docs/USER_GUIDE.md`
+with the current panels/flags — so docs are refreshed in the same PR that adds a
+feature, and never drift from the shipping UI.
+
+## Architecture & diagrams
+See **[docs/AUTOMATION.md](docs/AUTOMATION.md)** for the full architecture with
+diagrams (the app's process model, the dependency-update loop, and the
+documentation-refresh loop), and **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** for the
+illustrated guide to every feature.
 
 ## Conventions
 Branch + PR per change (worktrees preferred); commits authored **CodeByKeegan**

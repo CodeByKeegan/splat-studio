@@ -4,5 +4,6 @@ workspace/
 release/
 vendor/
 verify-ws/
+docs/.capture-workspace/
 *.log
 *.tsbuildinfo
