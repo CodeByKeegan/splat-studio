@@ -79,7 +79,10 @@ flowchart LR
 - **Server** is a thin Express layer: it lists projects/files, and runs each GUI
   action as one `splat-transform` CLI job, streaming the command + output back.
 - **Renderer** is the Vite/TypeScript UI plus the PlayCanvas viewport (`viewer.ts`),
-  which renders splats, collision wireframes, voxels, gizmos, and the measure tools.
+  which renders splats, collision wireframes, voxels, gizmos, the measure tools, and a
+  render-to-texture camera preview. The shell is a dockable tab editor (dockview-core);
+  panels + the viewport are tabs, with the layout persisted per workspace via
+  `/api/layout`.
 
 ## The release pipeline
 

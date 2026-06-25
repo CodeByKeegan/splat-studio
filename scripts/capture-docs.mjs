@@ -74,6 +74,7 @@ const startServer = async (port) => {
 const PAGE_HELPERS = `
 window.__doc = {
   clear() { document.querySelectorAll('.__doc-hl,.__doc-badge').forEach(n => n.remove()); },
+  closeMenus() { document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); },
   hl(selectors, opts) {
     opts = opts || {};
     this.clear();
@@ -109,9 +110,17 @@ window.__doc = {
     });
     return sels.length;
   },
+  // focus a panel's dock tab (replaces the old icon rail). panel = the dock id.
   rail(panel) {
-    const b = document.querySelector('.rail-btn[data-panel="' + panel + '"]');
-    if (b) b.click();
+    document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); // close any open menu
+    const dock = window.__dock;
+    if (!dock) return;
+    if (!dock.getPanel(panel)) {
+      const w = { 'panel-files':'Files','panel-convert':'Convert','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','panel-viewer':'Viewer options','camera-view':'Camera view' }[panel];
+      try { dock.addPanel({ id: panel, component: panel, title: w || panel }); } catch (e) {}
+    }
+    const p = dock.getPanel(panel);
+    if (p) p.api.setActive();
   }
 };
 true;
@@ -173,24 +182,41 @@ async function run() {
     const add = (name, fn) => scenes.push({ name, fn });
 
     add('app-overview', async () => { await js(`window.__doc.clear()`); });
-    add('icon-rail', async () => { await js(`window.__doc.hl('#icon-rail',{pad:2})`); });
-    add('files-panel', async () => { await js(`window.__doc.rail('panel-files'); window.__doc.hl(['#drop-zone','#file-list'],{numbered:true});`); });
+    add('editor-chrome', async () => { await js(`window.__doc.hl(['#app-brand','#menubar','#project-bar'],{numbered:true,pad:3});`); });
+    add('window-menu', async () => {
+        await js(`window.__doc.clear(); var b=[...document.querySelectorAll('#menubar .menu-btn')].find(x=>x.textContent==='Window'); if(b)b.click();`);
+        await sleep(200);
+        await js(`var d=document.querySelector('#menubar .menu-drop:not(.hidden)'); window.__doc.hl(d?[d]:['#menubar'],{});`);
+    });
+    add('files-panel', async () => { await js(`window.__doc.clear(); window.__doc.rail('panel-files'); window.__doc.hl(['#drop-zone','#file-list'],{numbered:true});`); });
     add('convert-formats', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.hl(['#convert-input','#convert-format'],{numbered:true});`); });
     add('convert-transforms', async () => { await js(`window.__doc.rail('panel-convert'); var g=[...document.querySelectorAll('#panel-convert .group')].find(e=>/transform/i.test(e.textContent)); window.__doc.hl(g?[g.parentElement]:['#panel-convert'],{});`); });
     add('convert-webp', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true})); setTimeout(()=>window.__doc.hl('#convert-format'),50);`); await sleep(300); });
-    add('analyze-panel', async () => { await js(`window.__doc.rail('panel-analyze'); window.__doc.hl('#panel-analyze');`); });
+    add('analyze-panel', async () => { await js(`var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.rail('panel-analyze'); window.__doc.hl('#panel-analyze');`); });
     add('collision-panel', async () => { await js(`window.__doc.rail('panel-collision'); window.__doc.hl('#panel-collision');`); });
-    add('viewer-panel', async () => { await js(`var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.rail('panel-viewer'); window.__doc.hl(['#camera-mode','#collision-style'],{numbered:true});`); });
+    add('viewer-panel', async () => { await js(`window.__doc.rail('panel-viewer'); window.__doc.hl(['#camera-mode','#collision-style'],{numbered:true});`); });
 
-    // scene hierarchy: webp on so the render camera lists, then select the capsule
-    // so its gizmo appears in the viewport
+    // scene hierarchy: keep the Collision tab active + carve on (so the capsule
+    // qualifies), webp on (so the render camera lists), then select the capsule
     add('scene-hierarchy', async () => {
-        await js(`var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true}));`);
-        await js(`window.__doc.rail('panel-scene');`);
-        await sleep(150);
+        await js(`var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true}));
+            window.__doc.rail('panel-collision');
+            var cv=document.getElementById('carve'); if(!cv.checked){cv.checked=true; cv.dispatchEvent(new Event('change',{bubbles:true}));}
+            window.__doc.rail('panel-scene');`);
+        await sleep(200);
         await js(`(function(){var rows=[...document.querySelectorAll('#scene-list .scene-item')];var cap=rows.find(r=>/capsule/i.test(r.textContent));if(cap)cap.click();return true;})()`);
         await sleep(300);
         await js(`window.__doc.hl('#scene-list',{});`);
+    });
+
+    // live camera view: open the panel, WebP on, aim the render camera at the splat
+    add('camera-view', async () => {
+        await js(`window.__doc.clear();
+            var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true}));
+            window.__doc.rail('camera-view');
+            (function(){var v=window.__viewer; if(!v||!v.splatEntity)return; var a=v.splatEntity.gsplat.customAabb, wt=v.splatEntity.getWorldTransform(); var C=wt.transformPoint(a.center.clone()), r=a.halfExtents.length(); v.camera.setPosition(C.x+r*1.1,C.y+r*0.6,C.z+r*1.1); v.camera.lookAt(C); var p=v.cameraRenderPose(); document.getElementById('webp-camera').value=p.camera; document.getElementById('webp-lookat').value=p.lookAt; document.getElementById('convert-format').dispatchEvent(new Event('change',{bubbles:true}));})();`);
+        await sleep(1200); // let the render-to-texture readback fill the preview
+        await js(`var c=document.querySelector('.camera-view-canvas'); window.__doc.hl(c?[c]:['.camera-view-panel'],{});`);
     });
 
     // measure mode: place two points on the demo splat, then highlight the

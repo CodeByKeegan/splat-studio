@@ -11,17 +11,21 @@ drift. Work on a branch + PR like any other change.
 
 ## 1. Recapture the screenshots
 ```
-npm run docs:capture
+npm run docs:capture   # guide screenshots (annotated, demo splat)
+npm run docs:readme    # README hero shots (Acropolis + HOTP from the real workspace)
 ```
-This generates the demo splat, builds the client, then runs
-`scripts/capture-docs.mjs` — a real Electron window driven over the embedded server
-against the synthetic `demo-room` splat. It overwrites `docs/screenshots/*.png` in
-place, so the git diff shows exactly which panels changed visually.
+`docs:capture` builds the client, then runs `scripts/capture-docs.mjs` — a real
+Electron window (rAF runs, so the dock + WebGPU viewport render; the headless
+preview can't) driven over the embedded server against the synthetic `demo-room`
+splat. It overwrites `docs/screenshots/*.png` in place, so the git diff shows exactly
+which panels changed visually. `docs:readme` does the same against the real workspace
+(`SPLAT_WORKSPACE`) to refresh `readme-acropolis.png` / `readme-hotp.png`.
 
 - If you **added a panel or a documented control**, add a scene to the `scenes`
-  array in `scripts/capture-docs.mjs` (open the panel via `window.__doc.rail(...)`,
-  set any state, then `window.__doc.hl([selectors], {numbered:true})`), and reference
-  the new `screenshots/<name>.png` from the guide.
+  array in `scripts/capture-docs.mjs`. Focus its dock tab via `window.__doc.rail('<dock-id>')`
+  (it activates/opens the tab in the dockview editor), set any state, then
+  `window.__doc.hl([selectors], {numbered:true})`, and reference the new
+  `screenshots/<name>.png` from the guide.
 - Captures must be non-empty (the script prints KB + dimensions per shot and retries
   empty frames). If a shot is 0 KB, the window wasn't foreground/painting — the
   script already forces `alwaysOnTop` + a paint tick; re-run.

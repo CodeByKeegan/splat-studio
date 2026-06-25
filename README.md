@@ -2,8 +2,16 @@
 
 A local GUI for [`@playcanvas/splat-transform`](https://github.com/playcanvas/splat-transform):
 splat format conversion, SOG bundling and collision-mesh generation, with a PlayCanvas
-3D viewer that renders the generated collision mesh as a wireframe overlay on the
-gaussian splat.
+3D viewer — all in a dockable, Unity/Unreal-style tab editor you can rearrange and
+save per workspace.
+
+![Splat Studio with the Acropolis scan](docs/screenshots/readme-acropolis.png)
+
+> The dockable editor: panels and the 3D viewport are tabs you can move, resize, float,
+> close, and reopen from the **Window** menu — the layout is saved per workspace. Above:
+> the Acropolis scan; below: HOTP.
+
+![Splat Studio with the HOTP scan](docs/screenshots/readme-hotp.png)
 
 📖 **[User Guide](docs/USER_GUIDE.md)** (illustrated, every feature) ·
 ⚙️ **[Automation Architecture](docs/AUTOMATION.md)** (how the app keeps itself current)

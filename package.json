@@ -16,6 +16,7 @@
     "make-icon": "node scripts/make-icon.mjs",
     "fetch-node": "node scripts/fetch-node.mjs",
     "docs:capture": "node scripts/make-test-splat.mjs && npm run build && electron scripts/capture-docs.mjs",
+    "docs:readme": "npm run build && electron scripts/capture-readme.mjs",
     "electron": "electron .",
     "prepack:win": "npm run fetch-node && npm run build",
     "pack:dir": "npm run prepack:win && electron-builder --dir --win",

@@ -20,6 +20,7 @@ meshes, and edit splats — all with a live PlayCanvas 3D viewport.
 - [Collision: voxels & mesh](#collision-voxels--mesh)
 - [Viewer options](#viewer-options)
 - [Scene hierarchy](#scene-hierarchy)
+- [Camera view](#camera-view)
 - [The 3D viewport](#the-3d-viewport)
 - [Coordinate notes](#coordinate-notes)
 - [Updates](#updates)
@@ -30,22 +31,34 @@ meshes, and edit splats — all with a live PlayCanvas 3D viewport.
 
 ![Splat Studio overview](screenshots/app-overview.png)
 
-Three regions:
+Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and the
+3D viewport is a tab you can **drag to re-dock, resize, float, close, and reopen**.
 
-1. **Icon rail** (far left) — switches the active panel and maximizes the viewport.
-2. **Sidebar** — the active panel's controls, with a pinned **Job** panel at the
-   bottom that streams the running `splat-transform` command and its output.
-3. **Viewport** (right) — the live 3D view. Drag to orbit, right-drag to pan,
-   scroll to zoom, and **W A S D** to fly (handy for inspecting carved interiors).
+- **Top menu bar** — the app title, the **Window** and **Layout** menus, and the
+  project picker.
+- **Dock** — the default layout puts the panel tabs (Files, Convert, Analyze, Edit,
+  Collision) on the left, the **3D viewport** in the center, the **Job** panel
+  (live `splat-transform` output) below it, and **Scene** / **Viewer options** on the
+  right. Drag any tab to rearrange; drag a tab out to float it in its own window.
+- **Viewport** — the live 3D view. The default camera is **fly** (mouse-look + WASD);
+  right-drag pans, scroll zooms. Switch to orbit in **Viewer options**.
 
-### Icon rail
+Every control has a tooltip — hover to see what it does and which CLI flag it maps to.
 
-![Icon rail](screenshots/icon-rail.png)
+### Top menu
 
-Each button opens one panel (Files, Convert, Analyze, Edit, Collision, Viewer) and
-collapses the others. The top **▤** button hides the whole sidebar to give the 3D
-view the full window — click it again to bring the panels back. Every control in
-the app has a tooltip; hover to see what it does and which CLI flag it maps to.
+![Window menu](screenshots/window-menu.png)
+
+- **Window** — lists every panel with a checkmark for the ones that are open. Click to
+  **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Job** tabs
+  can't be closed.)
+- **Layout** — **Reset to default** restores the standard arrangement; **Save layout**
+  checkpoints the current one. The layout is **saved per workspace**, so each workspace
+  remembers its own arrangement.
+
+![Top bar](screenshots/editor-chrome.png)
+
+The top bar holds (1) the app title, (2) the menus, and (3) the project picker.
 
 ---
 
@@ -53,8 +66,8 @@ the app has a tooltip; hover to see what it does and which CLI flag it maps to.
 
 ![Files panel](screenshots/files-panel.png)
 
-A **project** is a folder in your workspace; the dropdown at the top of the sidebar
-switches between them, and **+ New** creates one. Everything below is scoped to the
+A **project** is a folder in your workspace; the dropdown in the top bar
+switches between them, and **+ New** creates one. Everything is scoped to the
 active project.
 
 To add splats:
@@ -241,29 +254,44 @@ Display controls for the 3D view:
 
 ![Scene hierarchy](screenshots/scene-hierarchy.png)
 
-The **Scene** panel (🗂️ in the icon rail) lists the objects currently in the
-viewport and lets you select one to move it with a gizmo — **selecting nothing shows
-no gizmo**.
+The **Scene** panel lists the objects currently in the viewport and lets you select
+one to move it with a gizmo — **selecting nothing shows no gizmo**.
 
 - **Splat / Collision mesh / Voxels** — appear once loaded; selecting them just
   clears any active gizmo.
-- **Carve capsule** (✥) — select it to show the seed marker + carve capsule and a
-  **translate gizmo**; drag the gizmo to position the collision seed (the Collision
-  panel's seed XYZ update live). It's hidden again when deselected.
-- **Render camera** (✥) — appears while a WebP render is set up; select it to move the
-  render camera with a gizmo. Use the **Move / Rotate** toggle to switch between a
+- **Carve capsule** (✥) — shows up only while you're actively setting up collision
+  carving (the **Collision** tab is active **and** *Carve* is on). Select it to show
+  the seed marker + carve capsule and a **translate gizmo**; drag to position the
+  collision seed (the Collision panel's seed XYZ update live). Leaving the Collision
+  tab or turning off carve removes it (and clears the selection).
+- **Render camera** (✥) — appears only while a WebP render is set up. Select it to move
+  the render camera with a gizmo; the **Move / Rotate** toggle switches between a
   translate and a rotate gizmo — dragging updates the WebP **Camera** / **Look-at**
-  fields, and the frustum preview follows.
+  fields, the frustum preview follows, and the [Camera view](#camera-view) updates live.
+
+---
+
+## Camera view
+
+![Camera view](screenshots/camera-view.png)
+
+Open **Camera view** from the **Window** menu to see a **live preview of exactly what
+the WebP render camera sees** — rendered from a second camera, so it shows the splat
+without the gizmos/frustum/markers. It's a normal dock tab: drag it anywhere, resize
+it, or float it. Move the render camera (via its gizmo or the WebP fields) and the
+preview follows. It's only active in **WebP image** output mode (otherwise it shows a
+hint); closing the tab frees its GPU memory.
 
 ---
 
 ## The 3D viewport
 
-- **Orbit** — left-drag · **Pan** — right-drag · **Zoom** — scroll · **Fly** — WASD.
+- **Fly** (default) — mouse-look + WASD · **Orbit** (Viewer options) — left-drag ·
+  **Pan** — right-drag · **Zoom** — scroll.
 - The **chips** at the top-left show what's currently displayed (splat / collision /
   voxels); each **✕** removes that layer.
-- Drag the **divider** between the sidebar and viewport to resize, or use the icon
-  rail's **▤** to hide the sidebar entirely.
+- Drag the **borders** between dock tabs to resize, or drag a **tab** to re-dock or
+  float it. Closed a tab by accident? Reopen it from the **Window** menu.
 
 ## Coordinate notes
 
