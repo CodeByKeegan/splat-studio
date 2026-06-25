@@ -15,6 +15,7 @@
             <button class="rail-btn" data-panel="panel-analyze" title="Analyze (summary stats)">📊</button>
             <button class="rail-btn" data-panel="panel-edit" title="Edit (measure / set origin)">✥</button>
             <button class="rail-btn" data-panel="panel-collision" title="Collision mesh">🧱</button>
+            <button class="rail-btn" data-panel="panel-scene" title="Scene hierarchy (select objects, move gizmos)">🗂️</button>
             <button class="rail-btn" data-panel="panel-viewer" title="Viewer options">👁</button>
         </nav>
         <aside id="sidebar">
@@ -361,7 +362,7 @@
                 <div class="field" title="A point inside the scene (--seed-pos) used by the cluster filter, hole sealing and carving. For a room: ~1 m above the floor">
                     <div class="label-row">
                         <span>Seed point <em>(a spot inside the scene)</em></span>
-                        <label class="check inline" title="Show the seed marker (yellow) and its drag gizmo in the viewport — drag the gizmo arrows to move the seed"><input type="checkbox" id="show-seed-marker" checked /> show</label>
+                        <span class="hint" title="Select 'Carve capsule' in the Scene panel to show the seed marker + capsule and drag them in the viewport">in Scene ▸ Carve capsule</span>
                     </div>
                     <div class="field-row">
                         <label class="axis"><span>x</span><input type="number" id="seed-x" value="0" step="0.1" required title="Seed X (CLI axes)" /></label>
@@ -388,9 +389,7 @@
                     </label>
                 </div>
 
-                <div class="group with-toggle">Carve
-                    <label class="check inline" title="Show the carve capsule (cyan) at the seed in the viewport, sized to the height/radius below — independent of whether carving runs"><input type="checkbox" id="show-capsule" checked /> show capsule</label>
-                </div>
+                <div class="group">Carve</div>
                 <label class="check" title="Flood-fill walkable space from the seed with a player-sized capsule, keeping it open through the sealing step (--voxel-carve). Essential after external fill, or the whole interior reads as solid"><input type="checkbox" id="carve" checked />
                     Carve walkable space from seed (capsule)</label>
                 <div class="field-row" id="carve-params">
@@ -416,7 +415,14 @@
             </section>
 
             <section class="panel" id="panel-viewer">
-                <h2 title="Display options for the 3D view. Camera: drag to orbit, right-drag to pan, WASD to fly">Viewer</h2>
+                <h2 title="Display options for the 3D view">Viewer</h2>
+                <label class="field" title="Fly: mouse-look + WASD to move (default — best for inspecting carved interiors from inside). Orbit: drag to rotate around the focus point. Right-drag pans and scroll zooms in both.">
+                    <span>Camera control</span>
+                    <select id="camera-mode">
+                        <option value="fly" selected>Fly (mouse-look + WASD)</option>
+                        <option value="orbit">Orbit (drag to rotate)</option>
+                    </select>
+                </label>
                 <div class="field-row">
                     <label class="check" title="Show or hide the loaded gaussian splat"><input type="checkbox" id="show-splat" checked /> Splat</label>
                     <label class="check" title="Show or hide the collision wireframe overlay"><input type="checkbox" id="show-collision" checked /> Collision</label>
@@ -459,6 +465,16 @@
                     <button id="frame-scene" title="Re-center and re-distance the camera to fit the loaded scene">Frame scene</button>
                     <button id="clear-viewport" title="Unload all layers (splat, collision, voxels) and empty the viewport, freeing their GPU memory">Clear viewport</button>
                 </div>
+            </section>
+
+            <section class="panel" id="panel-scene">
+                <h2 title="Objects in the viewport. Select one to move it with a gizmo; selecting nothing hides all gizmos. The carve capsule only appears while it's selected.">Scene</h2>
+                <ul id="scene-list" class="scene-list"></ul>
+                <div class="field-row hidden" id="cam-gizmo-mode" title="What the render-camera gizmo does">
+                    <button id="cam-move" class="active" title="Drag the gizmo to move the render camera (updates the WebP Camera position)">Move</button>
+                    <button id="cam-rotate" title="Drag the gizmo to rotate the render camera (updates the WebP Look-at)">Rotate</button>
+                </div>
+                <span class="hint" id="scene-hint">Select an object to move it. Click it again to deselect.</span>
             </section>
 
             <section class="panel" id="panel-job">

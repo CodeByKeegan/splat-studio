@@ -3,6 +3,9 @@ import { CameraControls } from 'playcanvas/scripts/esm/camera-controls.mjs';
 import { parseVoxelOctree } from './voxel-parser';
 import type { VoxelMeta } from './voxel-parser';
 
+/** Selectable scene-hierarchy objects. Only 'capsule' and 'render-camera' carry a gizmo. */
+export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'render-camera';
+
 /**
  * PlayCanvas viewer: renders a gaussian splat plus its generated collision mesh
  * as a wireframe overlay.
@@ -59,7 +62,7 @@ export class SplatViewer {
     private mB!: pc.Entity;
     private editMaterial!: pc.StandardMaterial;
     private editMode: 'none' | 'measure' | 'origin' = 'none';
-    private gizmoTarget: 'seed' | 'a' | 'b' = 'seed';
+    private gizmoTarget: 'seed' | 'a' | 'b' | 'camera' = 'seed';
     private activeMarker: 'a' | 'b' = 'a';
     private placed = { a: false, b: false };
     // splat gaussian centres (entity-local), for click-to-place ray picking and
@@ -75,6 +78,18 @@ export class SplatViewer {
     onEditPlaced?: () => void;
     // WebP render-camera frustum preview (drawn each frame when set)
     private renderFrustum: { camera: pc.Vec3; lookAt: pc.Vec3; fov: number; aspect: number } | null = null;
+    private renderCamNode!: pc.Entity; // backing entity the render-camera gizmo attaches to
+    private rotGizmo!: pc.RotateGizmo; // rotation gizmo (render camera)
+    // scene-hierarchy selection: drives which gizmo (if any) is shown. Nothing
+    // selected → no gizmo; the carve capsule only shows while 'capsule' is selected.
+    private selected: SelId = 'none';
+    private camGizmoMode: 'move' | 'rotate' = 'move';
+    private renderCamDist = 1; // camera→lookAt distance, preserved while gizmo-dragging
+    private gizmoDragging = false; // suppress external node repositioning mid-drag
+    /** fired when the viewport changes the selection (e.g. clears it on mode change) */
+    onSelectionChange?: (id: SelId) => void;
+    /** fired while the render-camera gizmo moves/rotates; both vectors in CLI render space */
+    onRenderCameraMove?: (camera: { x: number; y: number; z: number }, lookAt: { x: number; y: number; z: number }) => void;
     private splatSeq = 0;
     private collisionSeq = 0;
     private voxelSeq = 0;
@@ -159,7 +174,10 @@ export class SplatViewer {
         this.camera.addComponent('script');
         this.controls = (this.camera.script as pc.ScriptComponent).create(CameraControls, {
             properties: {
-                enableFly: true, // WASD — needed to inspect carved interiors from inside
+                // fly is the default: mouse-look + WASD, ideal for inspecting carved
+                // interiors from inside. Orbit is opt-in via setCameraMode('orbit').
+                enableFly: true,
+                enableOrbit: false,
                 enablePan: true,
                 focusPoint: new pc.Vec3(0, 0.8, 0),
                 zoomRange: new pc.Vec2(0.1, 100)
@@ -265,20 +283,28 @@ export class SplatViewer {
         // handle is grabbed, and report the new position back in CLI coords
         const gizmoLayer = pc.Gizmo.createLayer(app);
         this.gizmo = new pc.TranslateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
-        this.gizmo.attach(this.seedNode);
         this.gizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => {
-            if (mi) this.controls.enabled = false;
+            if (mi) { this.controls.enabled = false; this.gizmoDragging = true; }
         });
-        this.gizmo.on('pointer:up', () => { this.controls.enabled = true; });
+        this.gizmo.on('pointer:up', () => { this.controls.enabled = true; this.gizmoDragging = false; });
         this.gizmo.on('transform:move', () => {
             if (this.gizmoTarget === 'seed') {
                 const p = this.seedNode.getPosition();
                 this.onSeedMove?.({ x: round(-p.x), y: round(p.y), z: round(-p.z) });
-            } else {
-                this.onMeasureChange?.(this.measureDistance());
+            } else if (this.gizmoTarget === 'camera') {
+                this.emitRenderCameraFromNode();
             }
         });
         this.gizmo.on('transform:end', () => { if (this.gizmoTarget === 'seed') this.onSeedMoveEnd?.(); });
+
+        // render-camera backing node + its rotation gizmo (translation reuses this.gizmo)
+        this.renderCamNode = new pc.Entity('render-cam-node');
+        app.root.addChild(this.renderCamNode);
+        this.rotGizmo = new pc.RotateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
+        this.rotGizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => { if (mi) { this.controls.enabled = false; this.gizmoDragging = true; } });
+        this.rotGizmo.on('pointer:up', () => { this.controls.enabled = true; this.gizmoDragging = false; });
+        this.rotGizmo.on('transform:move', () => { if (this.selected === 'render-camera') this.emitRenderCameraFromNode(); });
+        this.rotGizmo.detach();
 
         // edit markers (measure / set-origin) live in world space so the distance
         // between them is the real splat distance (sceneRoot's flip is a rotation).
@@ -352,6 +378,8 @@ export class SplatViewer {
         });
         this.cropGizmo.on('transform:end', () => this.onCropMoveEnd?.());
         this.cropGizmo.detach();
+
+        this.applySelection(); // nothing selected → no gizmo, capsule/seed hidden
 
         app.start();
     }
@@ -698,14 +726,8 @@ export class SplatViewer {
         this.capsuleMesh = mesh;
     }
 
-    /** Show/hide the seed marker and its drag gizmo (yields to an active edit tool). */
-    setSeedMarkerVisible(visible: boolean): void {
-        this.seedMarker.enabled = visible;
-        if (this.editMode !== 'none' || this.cropMode !== 'none') return; // an edit or crop tool owns the gizmo
-        if (visible) this.attachGizmo('seed');
-        else this.gizmo.detach();
-    }
-    setCapsuleVisible(visible: boolean): void { this.capsuleEntity.enabled = visible; }
+    // seed marker + carve capsule visibility is driven by hierarchy selection
+    // ('capsule') via applySelection — not a standalone toggle.
 
     // ----- edit tools: measure → scale, and set-origin -----
     private attachGizmo(target: 'seed' | 'a' | 'b'): void {
@@ -848,7 +870,7 @@ export class SplatViewer {
         }
     }
 
-    /** 'measure' places two markers; 'origin' one; 'none' hands the gizmo back. */
+    /** 'measure' places two markers; 'origin' one; 'none' restores the selection gizmo. */
     setEditMode(mode: 'none' | 'measure' | 'origin'): void {
         this.editMode = mode;
         this.placed = { a: false, b: false };
@@ -856,8 +878,7 @@ export class SplatViewer {
         this.mA.enabled = false;
         this.mB.enabled = false;
         this.lastCamKey = '';
-        this.gizmo.detach();
-        if (mode === 'none' && this.seedMarker.enabled && this.cropMode === 'none') this.attachGizmo('seed');
+        this.applySelection(); // measure/origin suppress the gizmo; 'none' restores it
     }
 
     /** Choose which marker the next click sets (measure mode only). */
@@ -928,6 +949,72 @@ export class SplatViewer {
         this.renderFrustum = show && c && l
             ? { camera: c, lookAt: l, fov: Number.isFinite(fov) && fov > 0 ? fov : 60, aspect: aspect > 0 ? aspect : 16 / 9 }
             : null;
+        // keep the gizmo's backing node on the camera (unless a drag is in flight)
+        if (this.renderFrustum && !this.gizmoDragging) {
+            this.renderCamNode.setPosition(this.renderFrustum.camera);
+            this.renderCamNode.lookAt(this.renderFrustum.lookAt);
+            this.renderCamDist = Math.max(this.renderFrustum.lookAt.clone().sub(this.renderFrustum.camera).length(), 0.5);
+        }
+        // if the render camera went away (left WebP), drop a stale selection
+        if (!this.renderFrustum && this.selected === 'render-camera') this.selectObject('none');
+    }
+
+    /** Whether a WebP render camera currently exists (so the hierarchy can list it). */
+    get hasRenderCamera(): boolean { return this.renderFrustum !== null; }
+
+    private emitRenderCameraFromNode(): void {
+        const pos = this.renderCamNode.getPosition();
+        const look = pos.clone().add(this.renderCamNode.forward.clone().mulScalar(this.renderCamDist));
+        const toCli = (v: pc.Vec3) => ({ x: round(v.x), y: round(-v.y), z: round(-v.z) });
+        this.onRenderCameraMove?.(toCli(pos), toCli(look));
+    }
+
+    // ----- scene-hierarchy selection + camera control mode -----
+    /** Fly = mouse-look + WASD (default); orbit = drag around the focus point. */
+    setCameraMode(mode: 'fly' | 'orbit'): void {
+        this.controls.enableFly = mode === 'fly';
+        this.controls.enableOrbit = mode === 'orbit';
+    }
+
+    /** Select a scene object — shows its gizmo (capsule/render-camera) or nothing. */
+    selectObject(id: SelId): void {
+        this.selected = id;
+        this.applySelection();
+        this.onSelectionChange?.(id);
+    }
+
+    /** Render-camera gizmo sub-mode: translate ('move') or rotate. */
+    setCameraGizmoMode(mode: 'move' | 'rotate'): void {
+        this.camGizmoMode = mode;
+        if (this.selected === 'render-camera') this.applySelection();
+    }
+
+    get selection(): SelId { return this.selected; }
+
+    private applySelection(): void {
+        const sel = this.selected;
+        // the carve capsule + seed marker exist only while selected
+        const capsuleSel = sel === 'capsule';
+        this.seedMarker.enabled = capsuleSel;
+        this.capsuleEntity.enabled = capsuleSel;
+        // exactly one gizmo at a time — detach both, then attach for the selection
+        this.gizmo.detach();
+        this.rotGizmo.detach();
+        // measure/origin and crop tools own the viewport; no selection gizmo then
+        if (this.editMode !== 'none' || this.cropMode !== 'none') return;
+        if (capsuleSel) {
+            this.gizmoTarget = 'seed';
+            this.gizmo.attach(this.seedNode);
+        } else if (sel === 'render-camera' && this.renderFrustum) {
+            this.renderCamNode.setPosition(this.renderFrustum.camera);
+            this.renderCamNode.lookAt(this.renderFrustum.lookAt);
+            if (this.camGizmoMode === 'rotate') {
+                this.rotGizmo.attach(this.renderCamNode);
+            } else {
+                this.gizmoTarget = 'camera';
+                this.gizmo.attach(this.renderCamNode);
+            }
+        }
     }
 
     private drawRenderFrustum(): void {
@@ -1024,9 +1111,9 @@ export class SplatViewer {
 
     private refreshCropGizmo(): void {
         this.cropMode = this.cropBoxNode.enabled ? 'box' : this.cropSphereNode.enabled ? 'sphere' : 'none';
-        if (this.cropMode === 'box') { this.cropGizmo.attach(this.cropBoxNode); this.gizmo.detach(); }
-        else if (this.cropMode === 'sphere') { this.cropGizmo.attach(this.cropSphereNode); this.gizmo.detach(); }
-        else { this.cropGizmo.detach(); if (this.seedMarker.enabled && this.editMode === 'none') this.attachGizmo('seed'); }
+        if (this.cropMode === 'box') { this.cropGizmo.attach(this.cropBoxNode); this.gizmo.detach(); this.rotGizmo.detach(); }
+        else if (this.cropMode === 'sphere') { this.cropGizmo.attach(this.cropSphereNode); this.gizmo.detach(); this.rotGizmo.detach(); }
+        else { this.cropGizmo.detach(); this.applySelection(); } // crop cleared → restore selection gizmo
     }
 
     frame(): void {

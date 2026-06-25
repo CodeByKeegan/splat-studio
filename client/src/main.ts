@@ -1,5 +1,6 @@
 import * as api from './api';
 import { SplatViewer } from './viewer';
+import type { SelId } from './viewer';
 
 const $ = <T extends HTMLElement>(id: string): T => {
     const el = document.getElementById(id);
@@ -265,6 +266,7 @@ const viewFile = async (name: string, as: api.ViewKind) => {
                 showToast(`Voxel display capped at ${count.toLocaleString()} boxes — regenerate with a coarser voxel size for full coverage`, true);
             }
         }
+        rebuildSceneList();
     } catch (err) {
         showToast(`Failed to load ${name}: ${err}`, true);
     }
@@ -674,6 +676,9 @@ for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', '
     $(id).addEventListener('change', updateRenderFrustum);
 }
 convertFormat.addEventListener('change', updateRenderFrustum);
+// the render-camera scene item appears/disappears with the format/projection
+convertFormat.addEventListener('change', () => rebuildSceneList());
+$('webp-projection').addEventListener('change', () => rebuildSceneList());
 
 const doGenerateView = (): void => {
     const input = convertInput.value;
@@ -1093,10 +1098,6 @@ $<HTMLInputElement>('show-voxels').onchange = (e) =>
     viewer?.setVoxelsVisible((e.currentTarget as HTMLInputElement).checked);
 $<HTMLInputElement>('show-bounds').onchange = (e) =>
     viewer?.setBoundsVisible((e.currentTarget as HTMLInputElement).checked);
-$<HTMLInputElement>('show-seed-marker').onchange = (e) =>
-    viewer?.setSeedMarkerVisible((e.currentTarget as HTMLInputElement).checked);
-$<HTMLInputElement>('show-capsule').onchange = (e) =>
-    viewer?.setCapsuleVisible((e.currentTarget as HTMLInputElement).checked);
 $<HTMLInputElement>('voxel-color').oninput = (e) =>
     viewer?.setVoxelColor((e.currentTarget as HTMLInputElement).value);
 $<HTMLInputElement>('voxel-opacity').oninput = (e) =>
@@ -1112,9 +1113,9 @@ $<HTMLInputElement>('collision-flip').onchange = (e) =>
 $<HTMLButtonElement>('frame-scene').onclick = () => viewer?.frame();
 
 // remove (unload) layers — distinct from the show/hide checkboxes above
-const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); currentSplatName = null; syncPreview(); };
-const removeCollision = () => { viewer?.clearCollision(); hideChip(hudCollision); };
-const removeVoxels = () => { viewer?.clearVoxels(); hideChip(hudVoxel); };
+const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); currentSplatName = null; syncPreview(); rebuildSceneList(); };
+const removeCollision = () => { viewer?.clearCollision(); hideChip(hudCollision); rebuildSceneList(); };
+const removeVoxels = () => { viewer?.clearVoxels(); hideChip(hudVoxel); rebuildSceneList(); };
 hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
 hudCollision.querySelector('.chip-remove')?.addEventListener('click', removeCollision);
 hudVoxel.querySelector('.chip-remove')?.addEventListener('click', removeVoxels);
@@ -1125,7 +1126,54 @@ $<HTMLButtonElement>('clear-viewport').onclick = () => {
     hideChip(hudVoxel);
     currentSplatName = null;
     syncPreview();
+    rebuildSceneList();
 };
+
+// ---------- scene hierarchy panel ----------
+$<HTMLSelectElement>('camera-mode').onchange = (e) =>
+    viewer?.setCameraMode((e.currentTarget as HTMLSelectElement).value as 'fly' | 'orbit');
+
+const sceneList = $<HTMLUListElement>('scene-list');
+const camMoveBtn = $<HTMLButtonElement>('cam-move');
+const camRotateBtn = $<HTMLButtonElement>('cam-rotate');
+camMoveBtn.onclick = () => { viewer?.setCameraGizmoMode('move'); camMoveBtn.classList.add('active'); camRotateBtn.classList.remove('active'); };
+camRotateBtn.onclick = () => { viewer?.setCameraGizmoMode('rotate'); camRotateBtn.classList.add('active'); camMoveBtn.classList.remove('active'); };
+
+const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has: () => boolean }[] = [
+    { id: 'splat', label: 'Splat', icon: '✨', gizmo: false, has: () => !!viewer?.hasSplat },
+    { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
+    { id: 'voxels', label: 'Voxels', icon: '🧊', gizmo: false, has: () => !!viewer?.hasVoxels },
+    { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat },
+    { id: 'render-camera', label: 'Render camera', icon: '🎥', gizmo: true, has: () => !!viewer?.hasRenderCamera }
+];
+
+function rebuildSceneList(): void {
+    if (!viewer) return;
+    const sel = viewer.selection;
+    const items = SCENE_ITEMS.filter((it) => it.has());
+    sceneList.innerHTML = '';
+    if (!items.length) {
+        const li = document.createElement('li');
+        li.className = 'scene-empty';
+        li.textContent = 'Nothing loaded — view a splat to populate the scene.';
+        sceneList.appendChild(li);
+    }
+    for (const it of items) {
+        const li = document.createElement('li');
+        li.className = 'scene-item' + (it.id === sel ? ' selected' : '');
+        li.title = it.gizmo ? 'Select to move it with a gizmo' : 'Selecting hides any gizmo';
+        const gizmo = it.gizmo ? '<span class="scene-gizmo" title="movable">✥</span>' : '';
+        li.innerHTML = `<span class="scene-icon">${it.icon}</span><span class="scene-name">${it.label}</span>${gizmo}`;
+        li.onclick = () => { selectScene(it.id === viewer!.selection ? 'none' : it.id); };
+        sceneList.appendChild(li);
+    }
+    $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
+}
+
+function selectScene(id: SelId): void {
+    viewer?.selectObject(id);
+    rebuildSceneList();
+}
 
 // ---------- collapsible panels ----------
 const PANELS_KEY = 'splat-studio.panels';
@@ -1164,6 +1212,7 @@ for (const btn of railBtns) {
         localStorage.setItem(PANELS_KEY, JSON.stringify(panelState));
         document.getElementById(id)?.scrollIntoView({ block: 'start' });
         setRailActive(id);
+        if (id === 'panel-scene') rebuildSceneList(); // refresh on open
     };
 }
 // reflect the initially-expanded panel in the rail
@@ -1305,15 +1354,23 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncCropViz();
         };
-        v.setSeedMarkerVisible($<HTMLInputElement>('show-seed-marker').checked);
-        v.setCapsuleVisible($<HTMLInputElement>('show-capsule').checked);
         v.setBoundsVisible($<HTMLInputElement>('show-bounds').checked);
         // live measure readout + active-marker highlight as points are clicked in
         v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
         v.onActiveMarkerChange = (which) => reflectActiveMarker(which);
         v.onEditPlaced = () => updateMeasureReadout();
+        // scene hierarchy: reflect selection changes, and let the render-camera
+        // gizmo drive the WebP camera/look-at fields
+        v.onSelectionChange = () => rebuildSceneList();
+        v.onRenderCameraMove = (cam, look) => {
+            $<HTMLInputElement>('webp-camera').value = `${cam.x},${cam.y},${cam.z}`;
+            $<HTMLInputElement>('webp-lookat').value = `${look.x},${look.y},${look.z}`;
+            updateRenderFrustum();
+        };
+        v.setCameraMode($<HTMLSelectElement>('camera-mode').value as 'fly' | 'orbit');
         syncPreview(); // reflect restored Convert fields once the viewer is up
         updateRenderFrustum(); // show the WebP frustum if WebP is the restored format
+        rebuildSceneList();
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
     })
     .catch((err) => {

@@ -294,6 +294,26 @@ body.dropping #viewport::after {
     max-height: 240px;
     overflow-y: auto;
 }
+
+/* scene hierarchy */
+.scene-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.scene-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: var(--fs-md);
+    user-select: none;
+}
+.scene-item:hover { background: var(--bg-input); }
+.scene-item.selected { background: var(--bg-input); border-color: var(--accent); }
+.scene-item .scene-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-item .scene-gizmo { color: var(--accent); font-size: var(--fs-sm); }
+.scene-empty { color: var(--text-dim); font-size: var(--fs-sm); padding: 4px 2px; }
+#cam-gizmo-mode button.active { border-color: var(--accent); color: var(--accent); }
 .file-list:empty::after {
     content: 'Workspace is empty — drop a splat file above.';
     display: block;
