@@ -431,7 +431,7 @@ const panelValid = (panelId: string): boolean => {
 // jobs are serialized: one GPU, one Job panel — and concurrent GPU jobs
 // multiply the TDR risk
 let jobBusy = false;
-const runJob = async (start: () => Promise<string>, button: HTMLButtonElement): Promise<api.Job | undefined> => {
+const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
     const prevLabel = button.textContent;
     jobBusy = true;
     convertRun.disabled = true;
@@ -454,9 +454,11 @@ const runJob = async (start: () => Promise<string>, button: HTMLButtonElement): 
         });
         await refreshFiles(new Set(job.outputs));
         if (job.status === 'done') {
-            // auto-load results into the viewer, then toast so 'done' stays visible
-            for (const v of job.viewables) {
-                await viewFile(v.name, v.as);
+            // load results into the viewer (when requested), then toast so 'done' stays visible
+            if (autoLoad) {
+                for (const v of job.viewables) {
+                    await viewFile(v.name, v.as);
+                }
             }
             showToast(job.outputs.length ? `${job.title} — done: ${job.outputs.join(', ')}` : `${job.title} — done`);
         } else if (/DEVICE_HUNG|device lost/i.test(job.log)) {
@@ -830,7 +832,7 @@ convertRun.onclick = () => {
             params: currentGenParams(),
             image: convertFormat.value === 'webp' ? webpImageOptions() : undefined
         }
-    }), convertRun);
+    }), convertRun, $<HTMLInputElement>('convert-autoload').checked);
 };
 
 // ---------- analyze panel + persistent stats card ----------
@@ -1101,7 +1103,7 @@ collisionRun.onclick = () => {
             carveRadius: Number($<HTMLInputElement>('carve-radius').value),
             meshShape: $<HTMLSelectElement>('mesh-shape').value as 'smooth' | 'faces'
         }
-    }), collisionRun);
+    }), collisionRun, $<HTMLInputElement>('collision-autoload').checked);
 };
 
 // ---------- viewer panel ----------

@@ -280,6 +280,7 @@
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
                     <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --mem)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
+                <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
                 <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>
             </section>
 
@@ -410,7 +411,8 @@
                         <option value="faces" title="Exact axis-aligned voxel faces — watertight, blocky, faithful to the voxels">Faces (exact voxel faces)</option>
                     </select>
                 </label>
-                <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb, which auto-loads as a wireframe">Generate collision</button>
+                <label class="check" title="When generation finishes, load the collision mesh + voxels into the 3D viewport"><input type="checkbox" id="collision-autoload" checked /> Load result into viewport</label>
+                <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb">Generate collision</button>
             </section>
 
             <section class="panel" id="panel-viewer">
