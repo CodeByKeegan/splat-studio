@@ -551,5 +551,6 @@ body.dropping #viewport::after {
 .stats-table td.col { text-align: left; color: var(--text-dim); }
 .stats-table td.hist { font-family: "Cascadia Mono", Consolas, monospace; color: var(--accent); letter-spacing: -1px; }
 .stats-table tr.row-bad td { color: var(--error); }
+#measure-edit-row button.active { border-color: var(--accent); color: var(--accent); }
 
 .hidden { display: none !important; }

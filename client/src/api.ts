@@ -81,6 +81,8 @@ export interface ConvertRequest {
         params?: string;
         /** WebP render options */
         image?: ImageOptions;
+        /** viewport-driven edit: uniform scale (-s) and/or translate "x,y,z" (-t) */
+        transform?: { scale?: number; translate?: string };
     };
 }
 

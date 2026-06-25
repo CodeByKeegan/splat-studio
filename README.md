@@ -120,6 +120,22 @@ Then in the browser:
 - **HTML viewer** output gains **Unbundled** (`-U`, separate files) and a
   **Viewer settings** JSON (`-E`). An **.lcc** input gains **LOD levels** (`-O`).
 
+## Edit: measure-to-scale & set origin
+
+The **Edit** panel drives splat-transform from the viewport — splats have no
+inherent scale or origin, so these fix both visually:
+
+- **Measure → scale** — turn on *Measure mode* to drop two draggable markers
+  (A green, B orange); drag each onto the ends of a feature whose real size you
+  know (a doorway, a 1 m scale bar). The live readout shows the A–B distance;
+  type the real length and **Apply scale** writes a correctly-scaled splat
+  (`-s/--scale`) that auto-loads.
+- **Set origin** — turn on *Pick origin*, drag the marker to the point that
+  should be `(0,0,0)`, and **Set as origin** recenters the splat
+  (`-t/--translate`) — handy before placing it in a scene.
+
+Both write a new splat and load it straight into the viewer.
+
 ## Desktop app (standalone)
 
 Splat Studio also ships as a self-contained Windows desktop app (Electron) — no

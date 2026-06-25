@@ -166,6 +166,18 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         if (!/^\d+(,\d+)*$/.test(sel)) throw new Error(`Invalid LOD select: ${sel} (use comma-separated levels like 0,1,2)`);
         args.push('-O', sel);
     }
+    // viewport-driven edit transforms: uniform scale (-s) and translate (-t)
+    if (options.transform) {
+        const t = options.transform;
+        if (t.scale != null && t.scale !== '' && Number(t.scale) !== 1) {
+            args.push('-s', String(num(t.scale, 1, 1e-4, 1e5)));
+        }
+        if (t.translate != null && t.translate !== '') {
+            const v = String(t.translate).trim();
+            if (!/^-?\d*\.?\d+(,-?\d*\.?\d+){2}$/.test(v)) throw new Error(`Invalid translate: ${v} (use x,y,z)`);
+            args.push('-t', v);
+        }
+    }
     if (options.filterNaN) args.push('-N');
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
