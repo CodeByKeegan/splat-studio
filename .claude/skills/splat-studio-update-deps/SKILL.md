@@ -45,9 +45,10 @@ Both must pass. For UI/viewer changes, drive a browser preview against an
 isolated server (own port, temp workspace) and confirm the new control works.
 
 ## 5. Refresh docs + version line
-Update the README "Built with PlayCanvas `X` · @playcanvas/splat-transform `Y`" line
-to the new versions (the CI release notes pick them up automatically from
-node_modules). Then run **splat-studio-update-docs** so the user guide and screenshots
+Update the README "Built with [PlayCanvas](…) `X` · [@playcanvas/splat-transform](…) `Y`"
+line (just below the title, marked with a `<!-- versions: … -->` comment) to the new
+versions — change only the backticked version numbers, keep the hyperlinks. The CI
+release notes pick the versions up automatically from node_modules. Then run **splat-studio-update-docs** so the user guide and screenshots
 reflect any new flag or panel: `npm run docs:capture`, reconcile `docs/USER_GUIDE.md`
 (and `docs/AUTOMATION.md` if a loop changed). Fold the doc diff into this same PR.
 

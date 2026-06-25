@@ -5,6 +5,15 @@
   "type": "module",
   "description": "GUI for @playcanvas/splat-transform: SOG bundling, splat format conversion and collision generation, with a PlayCanvas viewer that overlays the collision mesh as a wireframe on the gaussian splat",
   "author": "CodeByKeegan",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/CodeByKeegan/splat-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeByKeegan/splat-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CodeByKeegan/splat-studio/issues"
+  },
   "main": "electron/main.mjs",
   "scripts": {
     "dev": "concurrently -k -n server,vite -c blue,magenta \"node server/index.mjs\" \"vite\"",

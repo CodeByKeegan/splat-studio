@@ -1,12 +1,17 @@
 # Splat Studio
 
-<!-- versions: kept in sync by the weekly dependency-update routine -->
-**Built with PlayCanvas `2.19.6` · @playcanvas/splat-transform `2.5.2`**
+A local desktop GUI for [`@playcanvas/splat-transform`](https://github.com/playcanvas/splat-transform):
+Gaussian-splat format conversion, SOG bundling, streamed-LOD baking and
+collision-mesh generation, with a [PlayCanvas](https://playcanvas.com) 3D viewer —
+all in a dockable, Unity/Unreal-style tab editor you can rearrange and save per
+workspace.
 
-A local GUI for [`@playcanvas/splat-transform`](https://github.com/playcanvas/splat-transform):
-splat format conversion, SOG bundling and collision-mesh generation, with a PlayCanvas
-3D viewer — all in a dockable, Unity/Unreal-style tab editor you can rearrange and
-save per workspace.
+<!-- versions: the "Built with" line below is kept in sync by the weekly dependency-update routine -->
+**Built with [PlayCanvas](https://github.com/playcanvas/engine) `2.19.6` · [@playcanvas/splat-transform](https://github.com/playcanvas/splat-transform) `2.5.2`**
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue.svg)
+![Built with Electron](https://img.shields.io/badge/Electron-2f3242.svg?logo=electron&logoColor=9feaf9)
 
 ![Splat Studio with the Acropolis scan](docs/screenshots/readme-acropolis.png)
 
@@ -17,25 +22,88 @@ save per workspace.
 ![Splat Studio with the HOTP scan](docs/screenshots/readme-hotp.png)
 
 📖 **[User Guide](docs/USER_GUIDE.md)** (illustrated, every feature) ·
-⚙️ **[Automation Architecture](docs/AUTOMATION.md)** (how the app keeps itself current)
+⚙️ **[Automation Architecture](docs/AUTOMATION.md)** (how the app keeps itself current) ·
+⬇️ **[Download the latest release](https://github.com/CodeByKeegan/splat-studio/releases/latest)**
 
-## Stack
+---
 
-- **Backend** — Express server (`server/`) that spawns the `splat-transform` CLI
-  (`--no-tty`) as job subprocesses and serves the `workspace/` directory.
-  The CLI brings its own native WebGPU (Dawn) device for GPU stages.
-- **Frontend** — Vite + TypeScript (`client/`), PlayCanvas engine 2.x for rendering.
-  The splat loads via the `gsplat` asset type (`.ply`, `.compressed.ply`, `.sog`,
-  unbundled `meta.json`); the collision `.collision.glb` loads via the `container`
-  asset type and is drawn with `RENDERSTYLE_WIREFRAME` on the Immediate layer.
+## Contents
 
-## Usage
+- [Features](#features)
+- [Download & install](#download--install)
+- [Run from source](#run-from-source)
+- [Usage](#usage)
+- [Analyze & procedural generators](#analyze--procedural-generators)
+- [Render to image (WebP) & output options](#render-to-image-webp--output-options)
+- [Edit: measure-to-scale & set origin](#edit-measure-to-scale--set-origin)
+- [How it works](#how-it-works)
+- [Notes & caveats](#notes--caveats)
+- [HTTP API](#http-api)
+- [Built with](#built-with)
+- [Contributing](#contributing)
+- [License](#license)
+- [Support](#support)
+
+## Features
+
+- **Convert** splats between formats — `.ply`, `.compressed.ply`, `.sog` (bundled
+  and unbundled), `.spz`, and **streamed LOD SOG** for large scenes — with
+  spherical-harmonic compression controls.
+- **Collision** — voxelize a splat and emit a watertight triangle mesh
+  (`.collision.glb`) with indoor / outdoor / object presets.
+- **3D viewer** — PlayCanvas renderer with fly/orbit cameras, a scene hierarchy,
+  movable gizmos, collision-overlay styles (X-ray / hidden-line / solid+edges),
+  voxel-octree display, bounds, and an applyable skybox.
+- **Edit from the viewport** — measure-to-scale and set-origin tools that drive
+  splat-transform visually; apply a scale directly to a selected splat.
+- **Analyze** — gaussian count, extent, NaN/Inf flags and per-column histograms
+  as a persistent card. Procedural `.mjs` generators are first-class inputs.
+- **Render to WebP** — rasterize a splat to a lossless image (pinhole or 360°
+  equirect) with depth-of-field and motion-blur controls.
+- **Dockable editor** — every panel and the viewport is a tab you can move,
+  float, close, and reopen; layouts are saved per workspace.
+- **Self-updating desktop app** — ships as a standalone Windows app (Electron)
+  that checks GitHub Releases on launch and points you to new versions.
+
+## Download & install
+
+Grab the latest Windows build from the
+**[Releases page](https://github.com/CodeByKeegan/splat-studio/releases/latest)** —
+no Node install, terminal, or `npm run dev` required. Each release lists the
+PlayCanvas and splat-transform versions it was built against, plus a changelog of
+what changed.
+
+- **`Splat-Studio-Setup-<version>.exe`** — NSIS installer (per-user, lets you
+  choose the install dir, creates Start-menu/desktop shortcuts).
+- **`SplatStudio-<version>-portable.exe`** — single self-contained exe; run it
+  from anywhere, nothing is installed.
+
+On first run the workspace defaults to `Documents\Splat Studio`; **File → Change
+Workspace Folder…** points it at any folder of project subfolders (the choice is
+remembered). **File → Open Workspace in Explorer** reveals it on disk. On launch
+the app checks GitHub Releases and, if a newer version exists, offers to open the
+downloads page (also available any time via **Help → Check for Updates**).
+
+## Run from source
 
 ```bash
 npm install
 npm run demo   # generates workspace/demo-room.ply (synthetic room scan)
 npm run dev    # server on :5174, UI on http://localhost:5173
 ```
+
+To build the desktop app yourself:
+
+```bash
+npm install
+npm run make-icon   # regenerate build/icon.ico (committed; only needed if changed)
+npm run dist:win    # build dist/ and package to release/
+```
+
+`npm run pack:dir` produces an unpacked `release/win-unpacked/Splat Studio.exe`
+for a quick smoke test without building the installers.
+
+## Usage
 
 The workspace defaults to `./workspace`, but each **top-level subfolder of the
 workspace is a project** (e.g. `HOTP/`, `Acropolis/`). Point the workspace at a
@@ -80,17 +148,21 @@ Then in the browser:
    with `x,y → -x,-y` while viewers rotate about X). The 📷 button takes the
    current camera position and converts it for you (for the demo room, 1 m
    above the floor is `0, 1, 0`).
-4. **Viewer** — toggle splat/collision/voxels, wire and voxel color/opacity,
-   and *Frame scene*. Camera: orbit/pan with the mouse, fly with WASD.
-   Generated collision results auto-load when the job finishes. Each loaded
-   layer shows a HUD chip; the chip's **✕ unloads** that layer (frees its GPU
-   memory — distinct from the show/hide checkboxes, which only toggle
-   visibility), and **Clear viewport** unloads all three at once. **Collision
-   style** offers X-ray wireframe (small meshes), hidden-line wireframe (a
-   depth-only prepass culls hidden edges — dense meshes auto-switch to this
-   above 100K triangles), and *Solid + edges* (lit translucent surface — the
-   mode for verifying placement against the splat and flying inside carved
-   interiors).
+4. **Viewer** — a top toolbar toggles the camera mode (fly default / orbit) and
+   collision style; each item in the **Scene** hierarchy has a visibility button
+   (splat / collision / voxels / bounds). Camera: orbit/pan with the mouse, fly
+   with WASD. Generated collision results auto-load when the job finishes (toggle
+   per panel). Each loaded layer shows a HUD chip; the chip's **✕ unloads** that
+   layer (frees its GPU memory — distinct from the visibility toggles), and
+   **Clear viewport** unloads all three at once. Selecting the render camera or a
+   capsule collider in the hierarchy raises a movable (and, for the camera,
+   rotatable) gizmo; deselecting hides it. **Collision style** offers X-ray
+   wireframe (small meshes), hidden-line wireframe (a depth-only prepass culls
+   hidden edges — dense meshes auto-switch to this above 100K triangles), and
+   *Solid + edges* (lit translucent surface — the mode for verifying placement
+   against the splat and flying inside carved interiors). Visual settings (wire
+   and voxel colours/opacity, plus dark-mode / font / language placeholders) live
+   in a separate **Settings** window (⚙ in the toolbar).
    Clicking **view** on a `.voxel.json` renders the sparse voxel octree as
    hardware-instanced translucent boxes (solid octree regions render as one
    merged box; display is capped at 1.5 M boxes — regenerate with a coarser
@@ -139,47 +211,39 @@ Then in the browser:
 The **Edit** panel drives splat-transform from the viewport — splats have no
 inherent scale or origin, so these fix both visually:
 
-- **Measure → scale** — turn on *Measure mode* to drop two draggable markers
-  (A green, B orange); drag each onto the ends of a feature whose real size you
-  know (a doorway, a 1 m scale bar). The live readout shows the A–B distance;
-  type the real length and **Apply scale** writes a correctly-scaled splat
-  (`-s/--scale`) that auto-loads.
-- **Set origin** — turn on *Pick origin*, drag the marker to the point that
+- **Measure → scale** — turn on *Measure mode* and **click on the splat surface**
+  to drop two markers (A green, B orange) at the ends of a feature whose real
+  size you know (a doorway, a 1 m scale bar); each marker can then be dragged to
+  fine-tune. The live readout shows the A–B distance; type the real length and
+  **Apply scale** writes a correctly-scaled splat (`-s/--scale`) that auto-loads.
+- **Apply scale directly** — with a splat selected, type a scale factor and apply
+  it without measuring.
+- **Set origin** — turn on *Pick origin*, place the marker at the point that
   should be `(0,0,0)`, and **Set as origin** recenters the splat
   (`-t/--translate`) — handy before placing it in a scene.
 
 Both write a new splat and load it straight into the viewer.
 
-## Desktop app (standalone)
+## How it works
 
-Splat Studio also ships as a self-contained Windows desktop app (Electron) — no
-Node install, terminal, or `npm run dev` required. The Electron main process
-([electron/main.mjs](electron/main.mjs)) picks a free port, launches the Express
-server (the Electron binary runs as Node via `ELECTRON_RUN_AS_NODE`, so it can
-still spawn the native-WebGPU `splat-transform` CLI), waits for it to come up,
-then opens the UI in a Chromium window.
+- **Backend** — Express server (`server/`) that spawns the `splat-transform` CLI
+  (`--no-tty`) as job subprocesses and serves the `workspace/` directory.
+  The CLI brings its own native WebGPU (Dawn) device for GPU stages.
+- **Frontend** — Vite + TypeScript (`client/`), PlayCanvas engine 2.x for rendering.
+  The splat loads via the `gsplat` asset type (`.ply`, `.compressed.ply`, `.sog`,
+  unbundled `meta.json`); the collision `.collision.glb` loads via the `container`
+  asset type and is drawn with `RENDERSTYLE_WIREFRAME` on the Immediate layer.
+- **Desktop app** — the Electron main process
+  ([electron/main.mjs](electron/main.mjs)) picks a free port, launches the Express
+  server (the Electron binary runs as Node via `ELECTRON_RUN_AS_NODE`, so it can
+  still spawn the native-WebGPU `splat-transform` CLI), waits for it to come up,
+  then opens the UI in a Chromium window.
+- **Automation** — every push to `main` builds and publishes a Windows release via
+  GitHub Actions, and a weekly routine tracks new splat-transform / PlayCanvas
+  releases and wires new CLI flags into the GUI. See
+  [docs/AUTOMATION.md](docs/AUTOMATION.md).
 
-```bash
-npm install
-npm run make-icon   # regenerate build/icon.ico (committed; only needed if changed)
-npm run dist:win    # build dist/ and package to release/
-```
-
-`release/` then contains:
-
-- **`Splat Studio Setup <version>.exe`** — NSIS installer (per-user, lets you
-  choose the install dir, creates Start-menu/desktop shortcuts).
-- **`SplatStudio-<version>-portable.exe`** — single self-contained exe; run it
-  from anywhere, nothing is installed.
-
-`npm run pack:dir` produces an unpacked `release/win-unpacked/Splat Studio.exe`
-for a quick smoke test without building the installers.
-
-On first run the workspace defaults to `Documents\Splat Studio`; **File → Change
-Workspace Folder…** points it at any folder of project subfolders (the choice is
-remembered). **File → Open Workspace in Explorer** reveals it on disk.
-
-## Notes
+## Notes & caveats
 
 - **GPU required** for voxelization/collision and `--filter-cluster` (the CLI uses
   native WebGPU). SOG compression can fall back to CPU ("CPU only" checkbox,
@@ -202,7 +266,7 @@ remembered). **File → Open Workspace in Explorer** reveals it on disk.
 - Workspace files live in `workspace/` (gitignored). The job log panel shows the
   exact CLI invocation for reproducing outside the GUI.
 
-## API
+## HTTP API
 
 | Route | Purpose |
 | --- | --- |
@@ -214,3 +278,44 @@ remembered). **File → Open Workspace in Explorer** reveals it on disk.
 | `GET /api/jobs/:id` | job status, log, outputs |
 | `POST /api/jobs/:id/cancel` | kill a running job |
 | `GET /files/*` | static workspace files |
+
+## Built with
+
+- **[PlayCanvas engine](https://github.com/playcanvas/engine)** ([playcanvas.com](https://playcanvas.com)) — WebGL/WebGPU rendering and Gaussian-splat support.
+- **[@playcanvas/splat-transform](https://github.com/playcanvas/splat-transform)** — the splat conversion / SOG / collision CLI this GUI drives.
+- **[Electron](https://www.electronjs.org/)** + **[electron-builder](https://www.electron.build/)** — the standalone desktop app and Windows installers.
+- **[Vite](https://vitejs.dev/)** + **[TypeScript](https://www.typescriptlang.org/)** — the frontend build.
+- **[Express](https://expressjs.com/)** — the local job server.
+- **[dockview](https://dockview.dev/)** — the dockable tab/window editor.
+
+## Contributing
+
+Contributions are welcome — issues and pull requests both.
+
+1. Fork and create a branch off `main`.
+2. `npm install`, then make your change. Keep it focused (one feature/fix per PR).
+3. Before opening a PR, run the checks:
+   ```bash
+   npm run typecheck
+   npm test            # tests/e2e.mjs regression suite
+   ```
+   Both must pass. UI/viewer changes should be verified against a running
+   `npm run dev`.
+4. Match the existing style: brief, what-not-why code comments; new CLI flags get
+   a control + tooltip in the GUI and a `check(...)` in the e2e suite (see the
+   `.claude/skills/` routines for how features and dependency bumps are wired).
+
+Open an [issue](https://github.com/CodeByKeegan/splat-studio/issues) first if you
+want to discuss a larger change.
+
+## License
+
+Released under the [Apache License 2.0](LICENSE) © 2026 CodeByKeegan — see also
+[NOTICE](NOTICE).
+
+## Support
+
+If Splat Studio is useful to you, you can support its development:
+
+<!-- TODO(CodeByKeegan): create a Ko-fi account, then replace YOUR_KOFI_HANDLE below with the real handle. -->
+☕ **[Buy me a coffee on Ko-fi](https://ko-fi.com/YOUR_KOFI_HANDLE)** — *placeholder link; the Ko-fi account isn't set up yet.*

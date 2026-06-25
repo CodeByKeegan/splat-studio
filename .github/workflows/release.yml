@@ -47,7 +47,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --win --publish always
 
-      - name: Annotate release with upstream versions
+      - name: Annotate release with versions + changelog
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,12 +55,32 @@ jobs:
           ver() { node -e "console.log(require('fs').readFileSync('node_modules/$1/package.json','utf8').match(/\"version\":\s*\"([^\"]+)\"/)[1])"; }
           PC=$(ver playcanvas)
           ST=$(ver @playcanvas/splat-transform)
-          NOTES="Splat Studio v$VERSION
 
-          Built with **PlayCanvas $PC** and **@playcanvas/splat-transform $ST**.
+          # most recent release that isn't the one we just published (for the changelog diff)
+          PREV=$(gh release list --limit 30 --json tagName \
+            -q "[.[] | select(.tagName != \"v$VERSION\")] | first | .tagName")
 
-          Windows: Splat-Studio-Setup-$VERSION.exe (installer) or SplatStudio-$VERSION-portable.exe (portable)."
-          gh release edit "v$VERSION" --notes "$NOTES"
+          # GitHub's auto-generated changelog (merged PRs / commits since PREV)
+          if [ -n "$PREV" ] && [ "$PREV" != "null" ]; then
+            CHANGELOG=$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="v$VERSION" -f previous_tag_name="$PREV" -q .body)
+          else
+            CHANGELOG=$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="v$VERSION" -q .body)
+          fi
+
+          {
+            echo "Built with **PlayCanvas $PC** and **@playcanvas/splat-transform $ST**."
+            echo
+            echo "### Downloads (Windows)"
+            # list the .exe assets electron-builder actually uploaded (drift-proof)
+            gh release view "v$VERSION" --json assets \
+              -q '.assets[] | select(.name | endswith(".exe")) | "- **" + .name + "**"'
+            echo
+            printf '%s\n' "$CHANGELOG"
+          } > release-notes.md
+
+          gh release edit "v$VERSION" --notes-file release-notes.md
 
       - name: Summary
         shell: bash
