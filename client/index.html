@@ -42,6 +42,10 @@
                     <span>Generator params <em>(.mjs input only)</em></span>
                     <input type="text" id="convert-params" placeholder="width=16,height=16,scale=4" />
                 </label>
+                <label class="field hidden" id="row-lod-select" title="LCC input: comma-separated LOD levels to read (-O/--lod-select), e.g. 0,1,2. Empty reads all">
+                    <span>LCC LOD levels <em>(.lcc input only)</em></span>
+                    <input type="text" id="convert-lod-select" placeholder="e.g. 0,1,2 — empty = all" />
+                </label>
                 <label class="field" title="Output format. SOG bundling is filename-driven: the single-file form writes name.sog, the folder forms write a directory">
                     <span>Output format</span>
                     <select id="convert-format">
@@ -54,6 +58,7 @@
                         <option value="glb" title="glTF binary with the KHR_gaussian_splatting extension">GLB (KHR_gaussian_splatting)</option>
                         <option value="csv" title="Raw gaussian data as CSV — for analysis, not rendering">CSV</option>
                         <option value="html" title="Self-contained HTML viewer page with the splat embedded">HTML viewer</option>
+                        <option value="webp" title="Render a lossless WebP image of the splat via the GPU rasterizer — set the camera below">WebP image (render)</option>
                     </select>
                 </label>
                 <label class="field" id="row-iterations" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
@@ -103,9 +108,52 @@
                     <span>Decimate to (count or %)</span>
                     <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
                 </label>
+
+                <div class="hidden" id="html-rows">
+                    <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (-U/--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
+                    <label class="field" title="HTML viewer settings JSON file in this project (-E/--viewer-settings). Upload it first, then type its name here. Optional">
+                        <span>Viewer settings (.json)</span>
+                        <input type="text" id="convert-viewer-settings" placeholder="e.g. settings.json — optional" />
+                    </label>
+                </div>
+
+                <div class="hidden" id="webp-rows">
+                    <div class="group">Render camera</div>
+                    <label class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera">
+                        <div class="label-row"><span>Camera (x,y,z)</span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
+                        <input type="text" id="webp-camera" value="2,1,-2" />
+                    </label>
+                    <label class="field" title="Camera target point (--look-at)"><span>Look at (x,y,z)</span><input type="text" id="webp-lookat" value="0,0,0" /></label>
+                    <div class="field-row">
+                        <label class="field half" title="Vertical field of view in degrees (--fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
+                        <label class="field half" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
+                    </div>
+                    <div class="field-row">
+                        <label class="field half" title="--projection. equirect renders a 360°×180° panorama (FOV ignored, resolution forced 2:1)"><span>Projection</span>
+                            <select id="webp-projection"><option value="pinhole" selected>Pinhole</option><option value="equirect">Equirect 360°</option></select>
+                        </label>
+                        <label class="field half" title="Background colour r,g,b in 0..1 (--background)"><span>Background</span><input type="text" id="webp-background" value="0,0,0" /></label>
+                    </div>
+                    <div class="group">Depth of field <em>— pinhole only</em></div>
+                    <div class="field-row">
+                        <label class="field half" title="Aperture f-stop (--f-stop). Smaller = more blur. Empty = no defocus"><span>f-stop</span><input type="number" id="webp-fstop" step="0.1" min="0.5" placeholder="off" /></label>
+                        <label class="field half" title="Focus plane distance in world units (--focus-distance). Empty = distance to look-at"><span>Focus dist</span><input type="number" id="webp-focus" step="0.1" min="0.001" placeholder="look-at" /></label>
+                    </div>
+                    <div class="group">Motion blur</div>
+                    <label class="field" title="End camera position (--camera-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
+                    <div class="field-row">
+                        <label class="field half" title="Shutter fraction 0..1 (--shutter). 1=full, 0.5=180°"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
+                        <label class="field half" title="Sub-frames accumulated (--motion-samples). Cost is N× a render"><span>Samples</span><input type="number" id="webp-motionsamples" value="16" min="1" max="256" /></label>
+                    </div>
+                </div>
+
+                <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by -L/--list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU">
+                    <span>Device</span>
+                    <select id="convert-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
+                </label>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
-                    <label class="check" title="Force CPU compression (-g cpu). 5–10× slower; only affects SOG SH compression. Voxel/collision and cluster filtering always need the GPU"><input type="checkbox" id="convert-cpu" /> CPU only</label>
+                    <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --mem)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>
             </section>

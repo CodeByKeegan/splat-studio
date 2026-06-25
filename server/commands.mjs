@@ -18,6 +18,16 @@ const num = (value, fallback, min, max) => {
     return Math.min(max, Math.max(min, n));
 };
 
+// "x,y,z" (or "r,g,b[,a]") validator — values pass straight to the CLI as args
+const csv = (value, label, count) => {
+    const s = String(value ?? '').trim();
+    const parts = s.split(',');
+    if (parts.length < count || parts.length > count + 1 || parts.some((p) => !/^-?\d*\.?\d+$/.test(p.trim()))) {
+        throw new Error(`Invalid ${label}: ${value} (expected ${count} comma-separated numbers)`);
+    }
+    return s;
+};
+
 // Output base name, always at the PROJECT ROOT (subfolders like "RAW SOG/" are
 // stripped so generated artifacts sit at the top of the project, not buried
 // beside their source). 'RAW SOG/room.compressed.ply' -> 'room';
@@ -40,7 +50,8 @@ const OUTPUT_NAMES = {
     'spz': (base) => `${base}.spz`,
     'glb': (base) => `${base}.glb`,
     'csv': (base) => `${base}.csv`,
-    'html': (base) => `${base}.html`
+    'html': (base) => `${base}.html`,
+    'webp': (base) => `${base}.webp`
 };
 
 export const convertFormats = Object.keys(OUTPUT_NAMES);
@@ -60,9 +71,24 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     if (collides(output)) output = makeName(`${base}-converted`);
 
     const args = [cliPath, '--no-tty', '-w'];
+    if (options.verbose) args.push('--verbose', '--mem'); // diagnostics
+    // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus)
     if (options.device === 'cpu') args.push('-g', 'cpu');
+    else if (options.device != null && options.device !== '' && options.device !== 'auto') {
+        args.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
+    }
     if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
         args.push('-i', String(Math.round(num(options.iterations, 10, 1, 100))));
+    }
+    if (format === 'html') {
+        if (options.unbundled) args.push('-U'); // separate files instead of one .html
+        if (options.viewerSettings) { // -E settings.json (project-relative)
+            const vs = String(options.viewerSettings).trim();
+            if (!/^[A-Za-z0-9()._ /-]+\.json$/i.test(vs) || vs.includes('..')) {
+                throw new Error(`Invalid viewer-settings path: ${vs}`);
+            }
+            args.push('-E', vs);
+        }
     }
     if (format === 'spz') {
         const v = Number(options.spzVersion ?? 4);
@@ -134,11 +160,46 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         }
         args.push('-p', p);
     }
+    // LCC input: which LOD levels to read (-O n,n,...), a per-input action
+    if (/\.lcc$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
+        const sel = String(options.lodSelect).trim();
+        if (!/^\d+(,\d+)*$/.test(sel)) throw new Error(`Invalid LOD select: ${sel} (use comma-separated levels like 0,1,2)`);
+        args.push('-O', sel);
+    }
     if (options.filterNaN) args.push('-N');
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
         args.push('-F', d);
+    }
+    // WebP image render: camera + projection + DoF + motion blur, before output
+    if (format === 'webp') {
+        const img = options.image ?? {};
+        const equirect = img.projection === 'equirect';
+        if (equirect) args.push('--projection', 'equirect');
+        args.push('--camera', csv(img.camera ?? '2,1,-2', 'camera', 3));
+        args.push('--look-at', csv(img.lookAt ?? '0,0,0', 'look-at', 3));
+        args.push('--up', csv(img.up ?? '0,1,0', 'up', 3));
+        if (!equirect && img.fov) args.push('--fov', String(num(img.fov, 60, 1, 179)));
+        if (img.resolution) {
+            const r = String(img.resolution).trim().toLowerCase();
+            if (!/^\d{2,5}x\d{2,5}$/.test(r)) throw new Error(`Invalid resolution: ${r} (use WxH like 1920x1080)`);
+            args.push('--resolution', r);
+        }
+        if (img.near) args.push('--near', String(num(img.near, 0.2, 0.0001, 1000)));
+        if (img.background) args.push('--background', csv(img.background, 'background', 3));
+        if (!equirect && img.fStop) { // depth of field (pinhole only)
+            args.push('--f-stop', String(num(img.fStop, 2.8, 0.5, 64)));
+            if (img.focusDistance) args.push('--focus-distance', String(num(img.focusDistance, 1, 0.001, 10000)));
+            if (img.sensorSize) args.push('--sensor-size', String(num(img.sensorSize, 0.024, 0.0001, 1000)));
+        }
+        if (img.cameraEnd) { // camera motion blur
+            args.push('--camera-end', csv(img.cameraEnd, 'camera-end', 3));
+            if (img.lookAtEnd) args.push('--look-at-end', csv(img.lookAtEnd, 'look-at-end', 3));
+            if (img.upEnd) args.push('--up-end', csv(img.upEnd, 'up-end', 3));
+            if (img.shutter != null && img.shutter !== '') args.push('--shutter', String(num(img.shutter, 1, 0, 1)));
+            if (img.motionSamples) args.push('--motion-samples', String(Math.round(num(img.motionSamples, 16, 1, 256))));
+        }
     }
     args.push(output);
 

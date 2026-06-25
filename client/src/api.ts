@@ -25,6 +25,26 @@ export interface Job {
     endedAt: number | null;
 }
 
+/** WebP render camera/projection/DoF/motion-blur (CLI image-output options). */
+export interface ImageOptions {
+    camera?: string;        // "x,y,z"
+    lookAt?: string;        // "x,y,z"
+    up?: string;            // "x,y,z"
+    fov?: number;
+    resolution?: string;    // "WxH"
+    near?: number;
+    background?: string;    // "r,g,b" in 0..1
+    projection?: 'pinhole' | 'equirect';
+    fStop?: number;         // DoF (pinhole only)
+    focusDistance?: number;
+    sensorSize?: number;
+    cameraEnd?: string;     // motion blur
+    lookAtEnd?: string;
+    upEnd?: string;
+    shutter?: number;
+    motionSamples?: number;
+}
+
 export interface ConvertRequest {
     input: string;
     format: string;
@@ -33,7 +53,14 @@ export interface ConvertRequest {
         spzVersion?: number;
         decimate?: string;
         filterNaN?: boolean;
-        device?: 'auto' | 'cpu';
+        /** 'auto' | 'cpu' | a GPU adapter index (string) */
+        device?: string;
+        verbose?: boolean;
+        /** HTML output: separate files (-U) + a viewer-settings.json (-E) */
+        unbundled?: boolean;
+        viewerSettings?: string;
+        /** LCC input: comma-separated LOD levels to read (-O) */
+        lodSelect?: string;
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;
@@ -42,8 +69,12 @@ export interface ConvertRequest {
         lodFiles?: string[];
         /** .mjs generator params, raw "key=val,key=val" forwarded to -p/--params */
         params?: string;
+        /** WebP render options */
+        image?: ImageOptions;
     };
 }
+
+export interface Gpu { index: number; name: string; }
 
 export interface CollisionRequest {
     input: string;
@@ -75,6 +106,10 @@ const pq = () => `project=${encodeURIComponent(project)}`;
 
 export const listProjects = async (): Promise<string[]> =>
     (await jsonOrThrow(await fetch('/api/projects'))).projects;
+
+/** GPU adapters (-L/--list-gpus) for the device dropdown. */
+export const listGpus = async (): Promise<Gpu[]> =>
+    (await jsonOrThrow(await fetch('/api/gpus'))).gpus;
 
 export const createProject = async (name: string): Promise<void> => {
     await jsonOrThrow(await fetch('/api/projects', {

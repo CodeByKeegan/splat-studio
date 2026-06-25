@@ -172,6 +172,45 @@ try {
         assert(status === 400, `expected 400, got ${status}`);
     });
 
+    // ----- output options & device -----
+    await check('--verbose/--mem diagnostics flag', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'ply', options: { verbose: true } });
+        assert(job.status === 'done' && /--verbose/.test(job.command) && /--mem/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('HTML unbundled (-U) + viewer-settings (-E)', async () => {
+        await fsp.writeFile(path.join(projectDir, 'settings.json'), '{}');
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'html', options: { unbundled: true, viewerSettings: 'settings.json' } });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/ -U\b/.test(job.command) && /-E settings\.json/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('lists GPU adapters (-L)', async () => {
+        const { json } = await api('GET', '/api/gpus');
+        assert(Array.isArray(json.gpus), `gpus: ${JSON.stringify(json)}`);
+    });
+
+    await check('rejects a bad WebP resolution', async () => {
+        const { status } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '99999999x1' } } });
+        assert(status === 400, `expected 400, got ${status}`);
+    });
+
+    // ----- WebP image rendering (GPU rasterizer) -----
+    if (!SKIP_GPU) {
+        await check('WebP render (--camera/--look-at/--fov)', async () => {
+            const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { camera: '2,1,-2', lookAt: '0,0,0', fov: 60, resolution: '320x180' } } });
+            assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+            assert(fs.existsSync(path.join(projectDir, 'demo-room.webp')), 'no webp output');
+        });
+        await check('WebP DoF + motion-blur flags assemble & render', async () => {
+            const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '160x90', fStop: 2.8, focusDistance: 3, cameraEnd: '3,1,-2', shutter: 0.5, motionSamples: 2 } } });
+            assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+            assert(/--f-stop 2.8/.test(job.command) && /--camera-end 3,1,-2/.test(job.command) && /--motion-samples 2/.test(job.command), `cmd: ${job.command}`);
+        });
+    } else {
+        console.log('  - WebP render skipped (SKIP_GPU)');
+    }
+
     if (!SKIP_GPU) {
         for (const preset of [
             { name: 'object', opts: { fillMode: 'none', carve: false, filterCluster: false } },

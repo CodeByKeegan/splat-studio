@@ -99,6 +99,19 @@ Then in the browser:
   `{ count, columnNames, getRow(index, row) }`; column values are raw (log-space
   scale, logit opacity, SH-DC colour). Local-only.
 
+## Render to image (WebP) & output options
+
+- **WebP render** — pick *WebP image (render)* as the Convert format to rasterize
+  the splat to a lossless `.webp` via the GPU (`--camera`/`--look-at`/`--fov`/
+  `--resolution`/`--background`). **📷 from viewer** seeds the camera from the 3D
+  view. **Projection** switches pinhole ↔ equirectangular 360° panorama. **Depth
+  of field** (`--f-stop`/`--focus-distance`, pinhole only) and **motion blur**
+  (`--camera-end`/`--shutter`/`--motion-samples`) are exposed too.
+- **Device** dropdown — choose the GPU adapter (listed via `-L/--list-gpus`) or
+  CPU (`-g`). **Verbose** adds `--verbose --mem` diagnostics to the Job log.
+- **HTML viewer** output gains **Unbundled** (`-U`, separate files) and a
+  **Viewer settings** JSON (`-E`). An **.lcc** input gains **LOD levels** (`-O`).
+
 ## Desktop app (standalone)
 
 Splat Studio also ships as a self-contained Windows desktop app (Electron) — no

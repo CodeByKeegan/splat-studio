@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import { createJob, getJob, cancelJob, listJobs } from './jobs.mjs';
 import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, recordOutputs, cliPath } from './commands.mjs';
 
@@ -247,6 +248,23 @@ const startJob = async (res, build, payload) => {
 app.post('/api/convert', json, (req, res) => startJob(res, buildConvertCommand, req.body ?? {}));
 app.post('/api/collision', json, (req, res) => startJob(res, buildCollisionCommand, req.body ?? {}));
 app.post('/api/summary', json, (req, res) => startJob(res, buildSummaryCommand, req.body ?? {}));
+
+// list GPU adapters (-L/--list-gpus) so the UI can offer a device dropdown
+const listGpus = () => new Promise((resolve) => {
+    const child = spawn(process.execPath, [cliPath, '--no-tty', '-L'], { windowsHide: true, timeout: 15000 });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.on('error', () => resolve([]));
+    child.on('close', () => {
+        const gpus = [];
+        for (const line of out.split('\n')) {
+            const m = line.match(/^\s*\[(\d+)\]\s+(.+?)\s*$/);
+            if (m) gpus.push({ index: Number(m[1]), name: m[2] });
+        }
+        resolve(gpus);
+    });
+});
+app.get('/api/gpus', async (req, res) => res.json({ gpus: await listGpus() }));
 
 app.get('/api/jobs', (req, res) => res.json({ jobs: listJobs() }));
 

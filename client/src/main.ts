@@ -111,7 +111,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
         const want = formState[id];
         if (!select.value && typeof want === 'string' && names.includes(want)) select.value = want;
     }
-    updateGenParamsRow();
+    updateInputRows();
 
     fileList.innerHTML = '';
     let firstNew: HTMLLIElement | null = null;
@@ -299,7 +299,7 @@ const uploadFiles = async (files: Iterable<File>) => {
             convertInput.value = lastSplat; // generators aren't collision sources
             analyzeInput.value = lastSplat;
         }
-        updateGenParamsRow();
+        updateInputRows();
     }
 };
 
@@ -502,36 +502,85 @@ const RUN_LABELS: Record<string, string> = {
     'spz': 'Convert → SPZ',
     'glb': 'Convert → GLB',
     'csv': 'Convert → CSV',
-    'html': 'Convert → HTML viewer'
+    'html': 'Convert → HTML viewer',
+    'webp': 'Render → WebP'
 };
 
 const updateConvertRows = () => {
     const f = convertFormat.value;
     const isLod = f === 'lod';
+    const isWebp = f === 'webp';
     const combine = lodMode.value === 'combine';
     $('row-iterations').classList.toggle('hidden', !(f === 'sog' || f === 'sog-unbundled' || f === 'html' || isLod));
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
-    $('row-decimate').classList.toggle('hidden', isLod); // lod has its own level controls
+    $('row-decimate').classList.toggle('hidden', isLod || isWebp); // no decimate when rendering
     $('row-lod-mode').classList.toggle('hidden', !isLod);
     $('row-lod-levels').classList.toggle('hidden', !isLod || combine);
     $('row-lod-files').classList.toggle('hidden', !isLod || !combine);
     $('row-lod-chunks').classList.toggle('hidden', !isLod);
+    $('html-rows').classList.toggle('hidden', f !== 'html');
+    $('webp-rows').classList.toggle('hidden', !isWebp);
     if (isLod && combine && lodFileRows.children.length === 0) addLodRow();
     if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Convert';
 };
 convertFormat.onchange = updateConvertRows;
 lodMode.onchange = updateConvertRows;
 
-// the generator-params row keys off the selected INPUT (a .mjs source), not the
-// output format, so it has its own toggle rather than living in updateConvertRows
-const updateGenParamsRow = () => {
-    $('row-gen-params').classList.toggle('hidden', !convertInput.value.endsWith('.mjs'));
+// input-driven rows: generator params for a .mjs source, LOD-select for an .lcc
+const updateInputRows = () => {
+    const v = convertInput.value.toLowerCase();
+    $('row-gen-params').classList.toggle('hidden', !v.endsWith('.mjs'));
+    $('row-lod-select').classList.toggle('hidden', !v.endsWith('.lcc'));
 };
-convertInput.onchange = updateGenParamsRow;
+convertInput.onchange = updateInputRows;
+
+// populate the device dropdown with GPU adapters (-L), then reapply any saved choice
+void api.listGpus().then((gpus) => {
+    const sel = $<HTMLSelectElement>('convert-device');
+    for (const g of gpus) {
+        const opt = document.createElement('option');
+        opt.value = String(g.index);
+        opt.textContent = `GPU ${g.index}: ${g.name}`;
+        sel.appendChild(opt);
+    }
+    const want = formState['convert-device'];
+    if (typeof want === 'string' && [...sel.options].some((o) => o.value === want)) sel.value = want;
+}).catch(() => { /* device list is best-effort */ });
+
+// WebP: grab the viewer camera, converted to CLI render space
+$<HTMLButtonElement>('webp-from-viewer').onclick = () => {
+    if (!viewer) return showToast('Viewer is still starting up', true);
+    const pose = viewer.cameraRenderPose();
+    $<HTMLInputElement>('webp-camera').value = pose.camera;
+    $<HTMLInputElement>('webp-lookat').value = pose.lookAt;
+    showToast('Camera set from viewer — adjust if needed');
+};
+
+const strOrUndef = (id: string): string | undefined => {
+    const v = $<HTMLInputElement>(id).value.trim();
+    return v === '' ? undefined : v;
+};
+const numOrUndef = (id: string): number | undefined => {
+    const v = $<HTMLInputElement>(id).value.trim();
+    return v === '' ? undefined : Number(v);
+};
+const webpImageOptions = (): api.ImageOptions => ({
+    camera: strOrUndef('webp-camera'),
+    lookAt: strOrUndef('webp-lookat'),
+    fov: numOrUndef('webp-fov'),
+    resolution: strOrUndef('webp-resolution'),
+    background: strOrUndef('webp-background'),
+    projection: $<HTMLSelectElement>('webp-projection').value as 'pinhole' | 'equirect',
+    fStop: numOrUndef('webp-fstop'),
+    focusDistance: numOrUndef('webp-focus'),
+    cameraEnd: strOrUndef('webp-cameraend'),
+    shutter: numOrUndef('webp-shutter'),
+    motionSamples: numOrUndef('webp-motionsamples')
+});
 
 restoreFormState();
 updateConvertRows();
-updateGenParamsRow();
+updateInputRows();
 
 convertRun.onclick = () => {
     const input = convertInput.value;
@@ -556,13 +605,18 @@ convertRun.onclick = () => {
             spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
             decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
             filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
-            device: $<HTMLInputElement>('convert-cpu').checked ? 'cpu' : 'auto',
+            device: $<HTMLSelectElement>('convert-device').value,
+            verbose: $<HTMLInputElement>('convert-verbose').checked,
+            unbundled: $<HTMLInputElement>('convert-unbundled').checked,
+            viewerSettings: $<HTMLInputElement>('convert-viewer-settings').value.trim(),
+            lodSelect: $<HTMLInputElement>('convert-lod-select').value.trim(),
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
             lodFiles,
-            params: $<HTMLInputElement>('convert-params').value.trim()
+            params: $<HTMLInputElement>('convert-params').value.trim(),
+            image: convertFormat.value === 'webp' ? webpImageOptions() : undefined
         }
     }), convertRun);
 };

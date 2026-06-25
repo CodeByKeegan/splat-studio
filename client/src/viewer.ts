@@ -535,6 +535,19 @@ export class SplatViewer {
         return { x: round(-p.x), y: round(p.y), z: round(-p.z) };
     }
 
+    /**
+     * Camera pose for the WebP renderer's --camera/--look-at, as "x,y,z" strings.
+     * The splat renders under sceneRoot's 180° X flip, so raw-splat space = viewer
+     * space mapped (x, -y, -z); look-at is a point one unit ahead of the camera.
+     * A starting point the user can fine-tune.
+     */
+    cameraRenderPose(): { camera: string; lookAt: string } {
+        const p = this.camera.getPosition();
+        const f = this.camera.forward;
+        const flip = (x: number, y: number, z: number) => `${round(x)},${round(-y)},${round(-z)}`;
+        return { camera: flip(p.x, p.y, p.z), lookAt: flip(p.x + f.x, p.y + f.y, p.z + f.z) };
+    }
+
     frame(): void {
         const bounds = this.sceneBounds();
         if (!bounds) return;
