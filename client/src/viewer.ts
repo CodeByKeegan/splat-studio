@@ -55,6 +55,22 @@ export class SplatViewer {
     private collisionSeq = 0;
     private voxelSeq = 0;
 
+    // crop-region preview (filter-box / filter-sphere) lives under sceneRoot, in
+    // the post-transform output frame the CLI filters operate in
+    private cropHolder!: pc.Entity;
+    private cropBoxNode!: pc.Entity;
+    private cropSphereNode!: pc.Entity;
+    private cropMaterial!: pc.StandardMaterial;
+    private cropGizmo!: pc.TranslateGizmo;
+    private cropMode: 'none' | 'box' | 'sphere' = 'none';
+    private cropBoxLast = new pc.Vec3();
+    /** live preview of the Convert transform (translate/rotate/scale) on the splat */
+    private previewXform: { t: pc.Vec3; r: pc.Vec3; s: number } | null = null;
+    /** box reports an incremental drag delta; sphere an absolute centre — both in CLI coords */
+    onCropBoxMove?: (delta: { x: number; y: number; z: number }) => void;
+    onCropSphereMove?: (centre: { x: number; y: number; z: number }) => void;
+    onCropMoveEnd?: () => void;
+
     static async create(canvas: HTMLCanvasElement): Promise<SplatViewer> {
         const viewer = new SplatViewer();
         await viewer.init(canvas);
@@ -227,6 +243,54 @@ export class SplatViewer {
         });
         this.gizmo.on('transform:end', () => this.onSeedMoveEnd?.());
 
+        // ----- crop-region preview (filter-box / filter-sphere) -----
+        this.cropHolder = new pc.Entity('crop-holder');
+        this.sceneRoot.addChild(this.cropHolder);
+
+        this.cropMaterial = new pc.StandardMaterial();
+        this.cropMaterial.useLighting = false;
+        this.cropMaterial.emissive = new pc.Color(0.3, 0.7, 1);
+        this.cropMaterial.blendType = pc.BLEND_NORMAL;
+        this.cropMaterial.opacity = 0.9;
+        this.cropMaterial.depthTest = false; // always findable through the splat
+        this.cropMaterial.depthWrite = false;
+        this.cropMaterial.update();
+
+        this.cropBoxNode = new pc.Entity('crop-box');
+        const boxMi = new pc.MeshInstance(pc.Mesh.fromGeometry(device, new pc.BoxGeometry()), this.cropMaterial);
+        this.cropBoxNode.addComponent('render', { meshInstances: [boxMi], layers: [pc.LAYERID_IMMEDIATE] });
+        boxMi.renderStyle = pc.RENDERSTYLE_WIREFRAME;
+        this.cropBoxNode.enabled = false;
+        this.cropHolder.addChild(this.cropBoxNode);
+
+        this.cropSphereNode = new pc.Entity('crop-sphere');
+        const sphMi = new pc.MeshInstance(pc.Mesh.fromGeometry(device, new pc.SphereGeometry({ radius: 1 })), this.cropMaterial);
+        this.cropSphereNode.addComponent('render', { meshInstances: [sphMi], layers: [pc.LAYERID_IMMEDIATE] });
+        sphMi.renderStyle = pc.RENDERSTYLE_WIREFRAME;
+        this.cropSphereNode.enabled = false;
+        this.cropHolder.addChild(this.cropSphereNode);
+
+        // one shared gizmo for whichever crop is active (box takes priority)
+        this.cropGizmo = new pc.TranslateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
+        this.cropGizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => {
+            if (!mi) return;
+            this.controls.enabled = false;
+            this.cropBoxLast.copy(this.cropBoxNode.getLocalPosition());
+        });
+        this.cropGizmo.on('pointer:up', () => { this.controls.enabled = true; });
+        this.cropGizmo.on('transform:move', () => {
+            if (this.cropMode === 'box') {
+                const p = this.cropBoxNode.getLocalPosition();
+                this.onCropBoxMove?.({ x: round(p.x - this.cropBoxLast.x), y: round(p.y - this.cropBoxLast.y), z: round(p.z - this.cropBoxLast.z) });
+                this.cropBoxLast.copy(p);
+            } else if (this.cropMode === 'sphere') {
+                const p = this.cropSphereNode.getLocalPosition();
+                this.onCropSphereMove?.({ x: round(p.x), y: round(p.y), z: round(p.z) });
+            }
+        });
+        this.cropGizmo.on('transform:end', () => this.onCropMoveEnd?.());
+        this.cropGizmo.detach();
+
         app.start();
     }
 
@@ -258,6 +322,7 @@ export class SplatViewer {
         this.sceneRoot.addChild(entity);
         this.splatEntity = entity;
         this.splatAsset = asset;
+        this.applyPreviewXform(); // a newly loaded splat inherits the active preview transform
 
         // customAabb appears once the engine has run a frame; don't block the
         // load on that (rAF stalls entirely in hidden tabs) — frame when ready.
@@ -521,8 +586,9 @@ export class SplatViewer {
     /** Show/hide the seed marker and its drag gizmo. */
     setSeedMarkerVisible(visible: boolean): void {
         this.seedMarker.enabled = visible;
-        if (visible) this.gizmo.attach(this.seedNode);
-        else this.gizmo.detach();
+        // don't steal the gizmo from an active crop edit
+        if (visible && this.cropMode === 'none') this.gizmo.attach(this.seedNode);
+        else if (!visible) this.gizmo.detach();
     }
     setCapsuleVisible(visible: boolean): void { this.capsuleEntity.enabled = visible; }
 
@@ -533,6 +599,81 @@ export class SplatViewer {
     cameraSeedPos(): { x: number; y: number; z: number } {
         const p = this.camera.getPosition();
         return { x: round(-p.x), y: round(p.y), z: round(-p.z) };
+    }
+
+    /**
+     * Live preview of the Convert transform on the displayed splat. translate/
+     * rotate/scale are in splat-transform (CLI) action space — which is exactly
+     * the splat entity's local space — so the preview matches the baked result.
+     * Composition follows the CLI order -t -r -s: localPosition = scale·R·translate.
+     * Pass translate=null to clear the preview.
+     */
+    setSplatPreviewTransform(translate: [number, number, number] | null, rotate: [number, number, number], scale: number): void {
+        this.previewXform = translate
+            ? { t: new pc.Vec3(translate[0], translate[1], translate[2]), r: new pc.Vec3(rotate[0], rotate[1], rotate[2]), s: scale }
+            : null;
+        this.applyPreviewXform();
+    }
+
+    private applyPreviewXform(): void {
+        const e = this.splatEntity;
+        if (!e) return;
+        const x = this.previewXform;
+        if (!x) {
+            e.setLocalPosition(0, 0, 0);
+            e.setLocalEulerAngles(0, 0, 0);
+            e.setLocalScale(1, 1, 1);
+            return;
+        }
+        const s = Number.isFinite(x.s) && x.s > 0 ? x.s : 1;
+        const q = new pc.Quat().setFromEulerAngles(x.r.x, x.r.y, x.r.z);
+        const pos = q.transformVector(x.t).mulScalar(s);
+        e.setLocalPosition(pos);
+        e.setLocalEulerAngles(x.r.x, x.r.y, x.r.z);
+        e.setLocalScale(s, s, s);
+    }
+
+    /** Splat AABB in sceneRoot/cropHolder-local space with the preview transform baked in (or null). */
+    private splatOutputBounds(): pc.BoundingBox | null {
+        const e = this.splatEntity;
+        const aabb = e?.gsplat?.customAabb;
+        if (!e || !aabb) return null;
+        const out = new pc.BoundingBox();
+        out.setFromTransformedAabb(aabb, e.getLocalTransform());
+        return out;
+    }
+
+    /** Box wireframe from min/max corners (CLI coords); null entries fall back to the splat bounds. */
+    setCropBox(min: (number | null)[], max: (number | null)[], show: boolean): void {
+        this.cropBoxNode.enabled = show;
+        if (show) {
+            const b = this.splatOutputBounds();
+            const lo = b ? b.getMin() : new pc.Vec3(-10, -10, -10);
+            const hi = b ? b.getMax() : new pc.Vec3(10, 10, 10);
+            const x0 = min[0] ?? lo.x, y0 = min[1] ?? lo.y, z0 = min[2] ?? lo.z;
+            const x1 = max[0] ?? hi.x, y1 = max[1] ?? hi.y, z1 = max[2] ?? hi.z;
+            this.cropBoxNode.setLocalPosition((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+            this.cropBoxNode.setLocalScale(Math.max(Math.abs(x1 - x0), 1e-3), Math.max(Math.abs(y1 - y0), 1e-3), Math.max(Math.abs(z1 - z0), 1e-3));
+        }
+        this.refreshCropGizmo();
+    }
+
+    /** Sphere wireframe at centre + radius (CLI coords). */
+    setCropSphere(centre: [number, number, number], radius: number, show: boolean): void {
+        this.cropSphereNode.enabled = show;
+        if (show) {
+            this.cropSphereNode.setLocalPosition(centre[0], centre[1], centre[2]);
+            const r = Math.max(radius, 1e-3);
+            this.cropSphereNode.setLocalScale(r, r, r);
+        }
+        this.refreshCropGizmo();
+    }
+
+    private refreshCropGizmo(): void {
+        this.cropMode = this.cropBoxNode.enabled ? 'box' : this.cropSphereNode.enabled ? 'sphere' : 'none';
+        if (this.cropMode === 'box') { this.cropGizmo.attach(this.cropBoxNode); this.gizmo.detach(); }
+        else if (this.cropMode === 'sphere') { this.cropGizmo.attach(this.cropSphereNode); this.gizmo.detach(); }
+        else { this.cropGizmo.detach(); if (this.seedMarker.enabled) this.gizmo.attach(this.seedNode); }
     }
 
     frame(): void {

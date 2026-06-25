@@ -64,6 +64,9 @@ const restoreFormState = () => {
 
 // ---------- file list ----------
 let splatFileNames: string[] = [];
+// the splat currently shown in the viewport — the live Convert preview only
+// applies while this is the Convert input, so baked outputs aren't double-transformed
+let currentSplatName: string | null = null;
 
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
@@ -224,6 +227,8 @@ const viewFile = async (name: string, as: api.ViewKind) => {
             setChip(hudSplat, `splat: ${name}`);
             $<HTMLInputElement>('show-splat').checked = true;
             v.setSplatVisible(true);
+            currentSplatName = name;
+            syncPreview(); // apply the live Convert preview if this is the input
         } else if (as === 'collision') {
             if (!(await v.loadCollision(url, filename))) return;
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
@@ -463,6 +468,51 @@ const syncActionRows = () => {
 for (const [cb] of ACTION_TOGGLES) $(cb).addEventListener('change', syncActionRows);
 syncActionRows();
 
+// ---------- live viewport preview (Convert transforms + crop gizmos) ----------
+const tfX = $<HTMLInputElement>('tf-translate-x'), tfY = $<HTMLInputElement>('tf-translate-y'), tfZ = $<HTMLInputElement>('tf-translate-z');
+const rfX = $<HTMLInputElement>('tf-rotate-x'), rfY = $<HTMLInputElement>('tf-rotate-y'), rfZ = $<HTMLInputElement>('tf-rotate-z');
+const tfScaleEl = $<HTMLInputElement>('tf-scale');
+const boxMinX = $<HTMLInputElement>('box-min-x'), boxMinY = $<HTMLInputElement>('box-min-y'), boxMinZ = $<HTMLInputElement>('box-min-z');
+const boxMaxX = $<HTMLInputElement>('box-max-x'), boxMaxY = $<HTMLInputElement>('box-max-y'), boxMaxZ = $<HTMLInputElement>('box-max-z');
+const sphX = $<HTMLInputElement>('sphere-x'), sphY = $<HTMLInputElement>('sphere-y'), sphZ = $<HTMLInputElement>('sphere-z'), sphR = $<HTMLInputElement>('sphere-r');
+
+// preview only while the displayed splat is the Convert input, and not for LOD output
+const previewingInput = () => convertFormat.value !== 'lod' && currentSplatName !== null && currentSplatName === convertInput.value;
+const numOrNull = (el: HTMLInputElement) => el.value.trim() === '' ? null : Number(el.value);
+
+const syncSplatXform = () => {
+    if (!viewer) return;
+    if (!previewingInput()) { viewer.setSplatPreviewTransform(null, [0, 0, 0], 1); return; }
+    viewer.setSplatPreviewTransform(
+        [Number(tfX.value), Number(tfY.value), Number(tfZ.value)],
+        [Number(rfX.value), Number(rfY.value), Number(rfZ.value)],
+        Number(tfScaleEl.value)
+    );
+};
+
+const syncCropViz = () => {
+    if (!viewer) return;
+    const on = previewingInput();
+    viewer.setCropBox(
+        [numOrNull(boxMinX), numOrNull(boxMinY), numOrNull(boxMinZ)],
+        [numOrNull(boxMaxX), numOrNull(boxMaxY), numOrNull(boxMaxZ)],
+        on && $<HTMLInputElement>('filter-box-on').checked
+    );
+    viewer.setCropSphere(
+        [Number(sphX.value), Number(sphY.value), Number(sphZ.value)],
+        Number(sphR.value),
+        on && $<HTMLInputElement>('filter-sphere-on').checked
+    );
+};
+
+const syncPreview = () => { syncSplatXform(); syncCropViz(); };
+
+for (const el of [tfX, tfY, tfZ, rfX, rfY, rfZ, tfScaleEl]) el.addEventListener('input', syncSplatXform);
+for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.addEventListener('input', syncCropViz);
+for (const id of ['filter-box-on', 'filter-sphere-on']) $(id).addEventListener('change', syncCropViz);
+convertInput.addEventListener('change', syncPreview);
+convertFormat.addEventListener('change', syncPreview);
+
 convertRun.onclick = () => {
     const input = convertInput.value;
     if (!input) return showToast('Pick an input file first', true);
@@ -652,7 +702,7 @@ $<HTMLInputElement>('collision-flip').onchange = (e) =>
 $<HTMLButtonElement>('frame-scene').onclick = () => viewer?.frame();
 
 // remove (unload) layers — distinct from the show/hide checkboxes above
-const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); };
+const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); currentSplatName = null; syncPreview(); };
 const removeCollision = () => { viewer?.clearCollision(); hideChip(hudCollision); };
 const removeVoxels = () => { viewer?.clearVoxels(); hideChip(hudVoxel); };
 hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
@@ -663,6 +713,8 @@ $<HTMLButtonElement>('clear-viewport').onclick = () => {
     hideChip(hudSplat);
     hideChip(hudCollision);
     hideChip(hudVoxel);
+    currentSplatName = null;
+    syncPreview();
 };
 
 // ---------- collapsible panels ----------
@@ -742,6 +794,8 @@ const switchProject = async (name: string) => {
     hideChip(hudSplat);
     hideChip(hudCollision);
     hideChip(hudVoxel);
+    currentSplatName = null;
+    syncPreview();
     await refreshFiles();
 };
 
@@ -802,8 +856,21 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             syncSeedViz(); // snap the node to the rounded field values
         };
         syncSeedViz();
+        // crop gizmo -> reflect into the box/sphere fields (live), persist on release
+        v.onCropSphereMove = (c) => { sphX.value = String(c.x); sphY.value = String(c.y); sphZ.value = String(c.z); };
+        v.onCropBoxMove = (d) => {
+            const shift = (el: HTMLInputElement, dv: number) => { if (el.value.trim() !== '') el.value = String(Math.round((Number(el.value) + dv) * 100) / 100); };
+            shift(boxMinX, d.x); shift(boxMaxX, d.x);
+            shift(boxMinY, d.y); shift(boxMaxY, d.y);
+            shift(boxMinZ, d.z); shift(boxMaxZ, d.z);
+        };
+        v.onCropMoveEnd = () => {
+            for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.dispatchEvent(new Event('change', { bubbles: true }));
+            syncCropViz();
+        };
         v.setSeedMarkerVisible($<HTMLInputElement>('show-seed-marker').checked);
         v.setCapsuleVisible($<HTMLInputElement>('show-capsule').checked);
+        syncPreview(); // reflect restored Convert fields once the viewer is up
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
     })
     .catch((err) => {
