@@ -1,0 +1,52 @@
+name: Release
+
+# Every push/merge to main builds the Windows app and publishes a GitHub Release.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# never let two releases race for the same tag
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set release version (0.1.<run number>)
+        shell: bash
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building Splat Studio v$VERSION"
+
+      - name: Stage bundled Node runtime
+        run: npm run fetch-node
+
+      - name: Build client
+        run: npm run build
+
+      - name: Package and publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
+
+      - name: Summary
+        shell: bash
+        run: echo "Published release v$VERSION (NSIS installer + portable exe)." >> "$GITHUB_STEP_SUMMARY"

@@ -54,6 +54,14 @@
     "extraResources": [
       { "from": "vendor/node/node.exe", "to": "node.exe" }
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "CodeByKeegan",
+        "repo": "splat-studio",
+        "releaseType": "release"
+      }
+    ],
     "afterPack": "electron/afterPack.cjs",
     "win": {
       "icon": "build/icon.ico",

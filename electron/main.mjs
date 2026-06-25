@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, dialog, shell } from 'electron';
+import { checkForUpdates } from './updates.mjs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import http from 'node:http';
@@ -131,7 +132,11 @@ const createWindow = () => {
         show: false,
         webPreferences: { contextIsolation: true, nodeIntegration: false }
     });
-    win.once('ready-to-show', () => win.show());
+    win.once('ready-to-show', () => {
+        win.show();
+        // a few seconds after the UI is up, quietly check for a newer release
+        setTimeout(() => checkForUpdates(win, { silent: true }), 4000);
+    });
     win.loadURL(appUrl());
     win.on('closed', () => { win = null; });
 };
@@ -183,6 +188,7 @@ const buildMenu = () => {
         {
             label: 'Help',
             submenu: [
+                { label: 'Check for Updates…', click: () => checkForUpdates(win, { silent: false }) },
                 { label: 'Project on GitHub', click: () => shell.openExternal('https://github.com/CodeByKeegan/splat-studio') },
                 {
                     label: 'About Splat Studio',
