@@ -42,6 +42,8 @@ export interface ConvertRequest {
         lodFiles?: string[];
         /** .mjs generator params, raw "key=val,key=val" forwarded to -p/--params */
         params?: string;
+        /** viewport-driven edit: uniform scale (-s) and/or translate "x,y,z" (-t) */
+        transform?: { scale?: number; translate?: string };
     };
 }
 

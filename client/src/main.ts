@@ -11,6 +11,7 @@ const fileList = $<HTMLUListElement>('file-list');
 const convertInput = $<HTMLSelectElement>('convert-input');
 const collisionInput = $<HTMLSelectElement>('collision-input');
 const analyzeInput = $<HTMLSelectElement>('analyze-input');
+const editInput = $<HTMLSelectElement>('edit-input');
 const toastStack = $<HTMLDivElement>('toast-stack');
 const hudSplat = $<HTMLSpanElement>('hud-splat');
 const hudCollision = $<HTMLSpanElement>('hud-collision');
@@ -41,7 +42,7 @@ const fmtSize = (bytes: number): string => {
 // ---------- persisted form state ----------
 const FORM_KEY = 'splat-studio.form';
 // selects whose options come from the workspace — restored after the file list loads
-const FILE_SELECT_IDS = new Set(['convert-input', 'collision-input', 'analyze-input']);
+const FILE_SELECT_IDS = new Set(['convert-input', 'collision-input', 'analyze-input', 'edit-input']);
 const formState: Record<string, string | boolean> = (() => {
     try { return JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'); } catch { return {}; }
 })();
@@ -99,14 +100,15 @@ const refreshFiles = async (highlight?: Set<string>) => {
     const convertNames = [...splatFileNames, ...generatorNames];
     fillSelect(convertInput, convertNames);
     fillSelect(analyzeInput, convertNames);
-    for (const select of [collisionInput, ...lodRowSelects()]) {
+    for (const select of [collisionInput, editInput, ...lodRowSelects()]) {
         fillSelect(select, splatFileNames);
     }
     // re-apply the persisted choice once its file exists again
     for (const [select, id, names] of [
         [convertInput, 'convert-input', convertNames],
         [analyzeInput, 'analyze-input', convertNames],
-        [collisionInput, 'collision-input', splatFileNames]
+        [collisionInput, 'collision-input', splatFileNames],
+        [editInput, 'edit-input', splatFileNames]
     ] as const) {
         const want = formState[id];
         if (!select.value && typeof want === 'string' && names.includes(want)) select.value = want;
@@ -576,6 +578,61 @@ analyzeRun.onclick = () => {
     void runJob(() => api.startAnalyze(input), analyzeRun);
 };
 
+// ---------- edit panel: measure → scale, set origin ----------
+const measureToggle = $<HTMLInputElement>('measure-toggle');
+const originToggle = $<HTMLInputElement>('origin-toggle');
+const measureReadout = $<HTMLSpanElement>('measure-readout');
+const editAbtn = $<HTMLButtonElement>('measure-edit-a');
+const editBbtn = $<HTMLButtonElement>('measure-edit-b');
+
+const updateMeasureReadout = (d?: number): void => {
+    const dist = d ?? viewer?.measureDistance() ?? 0;
+    const len = Number($<HTMLInputElement>('measure-length').value);
+    measureReadout.textContent = len > 0 && dist > 0
+        ? `A–B = ${dist.toFixed(3)} m → scale ×${(len / dist).toFixed(4)}`
+        : `A–B = ${dist.toFixed(3)} m`;
+};
+
+const setEditTool = (mode: 'none' | 'measure' | 'origin'): void => {
+    measureToggle.checked = mode === 'measure';
+    originToggle.checked = mode === 'origin';
+    $('measure-edit-row').classList.toggle('hidden', mode !== 'measure');
+    viewer?.setEditMode(mode);
+    if (mode === 'measure') updateMeasureReadout();
+    else if (mode === 'origin') measureReadout.textContent = 'Drag the marker to the new origin point.';
+    else measureReadout.textContent = 'Enable, then drag the markers onto a known feature.';
+};
+measureToggle.onchange = () => setEditTool(measureToggle.checked ? 'measure' : 'none');
+originToggle.onchange = () => setEditTool(originToggle.checked ? 'origin' : 'none');
+$<HTMLInputElement>('measure-length').oninput = () => updateMeasureReadout();
+
+const setActiveMarker = (which: 'a' | 'b'): void => {
+    viewer?.setActiveMarker(which);
+    editAbtn.classList.toggle('active', which === 'a');
+    editBbtn.classList.toggle('active', which === 'b');
+};
+editAbtn.onclick = () => setActiveMarker('a');
+editBbtn.onclick = () => setActiveMarker('b');
+
+$<HTMLButtonElement>('apply-scale').onclick = () => {
+    const input = editInput.value;
+    if (!input) return showToast('Pick a splat to edit', true);
+    if (!viewer || !measureToggle.checked) return showToast('Enable Measure mode and place the markers first', true);
+    const dist = viewer.measureDistance();
+    const len = Number($<HTMLInputElement>('measure-length').value);
+    if (!(dist > 0)) return showToast('Markers are at the same spot', true);
+    if (!(len > 0)) return showToast('Enter the real A–B length', true);
+    void runJob(() => api.startConvert({ input, format: 'ply', options: { transform: { scale: len / dist } } }), $<HTMLButtonElement>('apply-scale'));
+};
+
+$<HTMLButtonElement>('apply-origin').onclick = () => {
+    const input = editInput.value;
+    if (!input) return showToast('Pick a splat to edit', true);
+    if (!viewer || !originToggle.checked) return showToast('Enable "Pick origin" and place the marker first', true);
+    const t = viewer.originTranslateCli();
+    void runJob(() => api.startConvert({ input, format: 'ply', options: { transform: { translate: `${t.x},${t.y},${t.z}` } } }), $<HTMLButtonElement>('apply-origin'));
+};
+
 // ---------- collision panel ----------
 const preset = $<HTMLSelectElement>('collision-preset');
 const carveBox = $<HTMLInputElement>('carve');
@@ -851,6 +908,8 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         syncSeedViz();
         v.setSeedMarkerVisible($<HTMLInputElement>('show-seed-marker').checked);
         v.setCapsuleVisible($<HTMLInputElement>('show-capsule').checked);
+        // live measure readout while a marker is dragged
+        v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
     })
     .catch((err) => {

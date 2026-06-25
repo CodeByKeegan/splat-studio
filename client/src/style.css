@@ -525,4 +525,6 @@ body.dropping #viewport::after {
 }
 .toast.error { border-color: var(--error); color: var(--error); }
 
+#measure-edit-row button.active { border-color: var(--accent); color: var(--accent); }
+
 .hidden { display: none !important; }

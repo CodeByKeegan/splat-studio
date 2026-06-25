@@ -51,6 +51,14 @@ export class SplatViewer {
     onSeedMove?: (cli: { x: number; y: number; z: number }) => void;
     /** fired when a gizmo drag finishes */
     onSeedMoveEnd?: () => void;
+    // edit tools (measure / set-origin): two draggable markers in world space
+    private mA!: pc.Entity;
+    private mB!: pc.Entity;
+    private editMaterial!: pc.StandardMaterial;
+    private editMode: 'none' | 'measure' | 'origin' = 'none';
+    private gizmoTarget: 'seed' | 'a' | 'b' = 'seed';
+    /** fired while a measure/origin marker moves; arg is the A–B distance (world units) */
+    onMeasureChange?: (distance: number) => void;
     private splatSeq = 0;
     private collisionSeq = 0;
     private voxelSeq = 0;
@@ -222,10 +230,41 @@ export class SplatViewer {
         });
         this.gizmo.on('pointer:up', () => { this.controls.enabled = true; });
         this.gizmo.on('transform:move', () => {
-            const p = this.seedNode.getPosition();
-            this.onSeedMove?.({ x: round(-p.x), y: round(p.y), z: round(-p.z) });
+            if (this.gizmoTarget === 'seed') {
+                const p = this.seedNode.getPosition();
+                this.onSeedMove?.({ x: round(-p.x), y: round(p.y), z: round(-p.z) });
+            } else {
+                this.onMeasureChange?.(this.measureDistance());
+            }
         });
-        this.gizmo.on('transform:end', () => this.onSeedMoveEnd?.());
+        this.gizmo.on('transform:end', () => { if (this.gizmoTarget === 'seed') this.onSeedMoveEnd?.(); });
+
+        // edit markers (measure / set-origin) live in world space so the distance
+        // between them is the real splat distance (sceneRoot's flip is a rotation)
+        this.editMaterial = new pc.StandardMaterial();
+        this.editMaterial.useLighting = false;
+        this.editMaterial.depthTest = false; // always findable through the splat
+        this.editMaterial.update();
+        const marker = (name: string, color: pc.Color): pc.Entity => {
+            const mat = this.editMaterial.clone(); mat.emissive = color; mat.update();
+            const mesh = pc.Mesh.fromGeometry(device, new pc.SphereGeometry({ radius: 0.07 }));
+            const e = new pc.Entity(name);
+            e.addComponent('render', { meshInstances: [new pc.MeshInstance(mesh, mat)], layers: [pc.LAYERID_IMMEDIATE] });
+            e.enabled = false;
+            app.root.addChild(e);
+            return e;
+        };
+        this.mA = marker('measure-a', new pc.Color(0.2, 1, 0.45));
+        this.mB = marker('measure-b', new pc.Color(1, 0.5, 0.2));
+        this.mA.setPosition(0.4, 0, 0);
+        this.mB.setPosition(-0.4, 0, 0);
+        // draw the A–B segment each frame while measuring (depthTest off → through the splat)
+        app.on('update', () => {
+            if (this.editMode === 'measure') {
+                (this.app as unknown as { drawLine: (a: pc.Vec3, b: pc.Vec3, c: pc.Color, d?: boolean) => void })
+                    .drawLine(this.mA.getPosition(), this.mB.getPosition(), new pc.Color(1, 1, 0.35), false);
+            }
+        });
 
         app.start();
     }
@@ -518,13 +557,65 @@ export class SplatViewer {
         this.capsuleMesh = mesh;
     }
 
-    /** Show/hide the seed marker and its drag gizmo. */
+    /** Show/hide the seed marker and its drag gizmo (yields to an active edit tool). */
     setSeedMarkerVisible(visible: boolean): void {
         this.seedMarker.enabled = visible;
-        if (visible) this.gizmo.attach(this.seedNode);
+        if (this.editMode !== 'none') return; // an edit tool owns the gizmo
+        if (visible) this.attachGizmo('seed');
         else this.gizmo.detach();
     }
     setCapsuleVisible(visible: boolean): void { this.capsuleEntity.enabled = visible; }
+
+    // ----- edit tools: measure → scale, and set-origin -----
+    private attachGizmo(target: 'seed' | 'a' | 'b'): void {
+        this.gizmoTarget = target;
+        this.gizmo.attach(target === 'seed' ? this.seedNode : target === 'a' ? this.mA : this.mB);
+    }
+
+    /** 'measure' shows two markers; 'origin' shows one; 'none' hands the gizmo back. */
+    setEditMode(mode: 'none' | 'measure' | 'origin'): void {
+        this.editMode = mode;
+        this.mA.enabled = mode === 'measure' || mode === 'origin';
+        this.mB.enabled = mode === 'measure';
+        if (mode !== 'none') {
+            this.placeMarkersOnSplat(mode === 'measure');
+            this.attachGizmo('a');
+        } else if (this.seedMarker.enabled) {
+            this.attachGizmo('seed');
+        } else {
+            this.gizmo.detach();
+        }
+    }
+
+    /** Move the gizmo to marker A or B (measure mode only). */
+    setActiveMarker(which: 'a' | 'b'): void {
+        if (this.editMode === 'measure') this.attachGizmo(which);
+    }
+
+    /** Distance between the two markers, in world units (= real splat units). */
+    measureDistance(): number {
+        return this.mA.getPosition().distance(this.mB.getPosition());
+    }
+
+    /**
+     * The --translate vector that makes marker A the splat's origin. The splat
+     * renders under sceneRoot's R_x(180), so raw = (x, -y, -z) of the world point,
+     * and the translate is its negation.
+     */
+    originTranslateCli(): { x: number; y: number; z: number } {
+        const m = this.mA.getPosition();
+        return { x: round(-m.x), y: round(m.y), z: round(m.z) };
+    }
+
+    // start the markers somewhere visible — inside the loaded splat's bounds
+    private placeMarkersOnSplat(both: boolean): void {
+        const aabb = this.splatEntity?.gsplat?.customAabb;
+        if (!aabb || !this.splatEntity) return;
+        const c = this.splatEntity.getWorldTransform().transformPoint(aabb.center);
+        const dx = Math.max(aabb.halfExtents.x * 0.5, 0.2);
+        this.mA.setPosition(c.x + (both ? dx : 0), c.y, c.z);
+        if (both) this.mB.setPosition(c.x - dx, c.y, c.z);
+    }
 
     /**
      * Current camera position converted to splat-transform's voxel space for
