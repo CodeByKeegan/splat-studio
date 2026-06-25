@@ -474,10 +474,12 @@ body.dropping #viewport::after {
 
 #hud {
     position: absolute;
-    top: 44px; /* below the viewport toolbar */
+    bottom: 12px; /* bottom-left, clear of the top toolbar (which can wrap) */
     left: 12px;
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
+    max-width: 60%;
     pointer-events: none;
 }
 .chip {

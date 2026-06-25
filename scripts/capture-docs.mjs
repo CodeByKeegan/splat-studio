@@ -116,7 +116,7 @@ window.__doc = {
     const dock = window.__dock;
     if (!dock) return;
     if (!dock.getPanel(panel)) {
-      const w = { 'panel-files':'Files','panel-convert':'Convert','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','panel-viewer':'Viewer options','camera-view':'Camera view' }[panel];
+      const w = { 'panel-files':'Files','panel-convert':'Convert','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','panel-settings':'Settings','camera-view':'Camera view' }[panel];
       try { dock.addPanel({ id: panel, component: panel, title: w || panel }); } catch (e) {}
     }
     const p = dock.getPanel(panel);
@@ -194,7 +194,8 @@ async function run() {
     add('convert-webp', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true})); setTimeout(()=>window.__doc.hl('#convert-format'),50);`); await sleep(300); });
     add('analyze-panel', async () => { await js(`var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.rail('panel-analyze'); window.__doc.hl('#panel-analyze');`); });
     add('collision-panel', async () => { await js(`window.__doc.rail('panel-collision'); window.__doc.hl('#panel-collision');`); });
-    add('viewer-panel', async () => { await js(`window.__doc.rail('panel-viewer'); window.__doc.hl(['#camera-mode','#collision-style'],{numbered:true});`); });
+    add('viewport-toolbar', async () => { await js(`window.__doc.clear(); window.__doc.rail('panel-files'); window.__doc.hl('#viewport-toolbar',{pad:3});`); });
+    add('settings-panel', async () => { await js(`window.__doc.rail('panel-settings'); window.__doc.hl('#panel-settings');`); });
 
     // scene hierarchy: keep the Collision tab active + carve on (so the capsule
     // qualifies), webp on (so the render camera lists), then select the capsule

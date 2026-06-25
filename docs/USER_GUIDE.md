@@ -18,7 +18,7 @@ meshes, and edit splats — all with a live PlayCanvas 3D viewport.
 - [Analyze: summary statistics](#analyze-summary-statistics)
 - [Edit: measure-to-scale & set origin](#edit-measure-to-scale--set-origin)
 - [Collision: voxels & mesh](#collision-voxels--mesh)
-- [Viewer options](#viewer-options)
+- [Viewport toolbar & Settings](#viewport-toolbar--settings)
 - [Scene hierarchy](#scene-hierarchy)
 - [Camera view](#camera-view)
 - [The 3D viewport](#the-3d-viewport)
@@ -38,10 +38,11 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
   project picker.
 - **Dock** — the default layout puts the panel tabs (Files, Convert, Analyze, Edit,
   Collision) on the left, the **3D viewport** in the center, the **Job** panel
-  (live `splat-transform` output) below it, and **Scene** / **Viewer options** on the
+  (live `splat-transform` output) below it, and **Scene** / **Settings** on the
   right. Drag any tab to rearrange; drag a tab out to float it in its own window.
-- **Viewport** — the live 3D view. The default camera is **fly** (mouse-look + WASD);
-  right-drag pans, scroll zooms. Switch to orbit in **Viewer options**.
+- **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
+  its top. The default camera is **fly** (mouse-look + WASD); right-drag pans, scroll
+  zooms. Switch to orbit from the toolbar.
 
 Every control has a tooltip — hover to see what it does and which CLI flag it maps to.
 
@@ -106,7 +107,8 @@ The Convert panel runs one `splat-transform` conversion as a background job.
 
 3. Set format-specific options as they appear (SH compression iterations for SOG,
    SPZ version, LOD levels, etc.), then click **Convert**. The exact CLI command
-   and live output appear in the **Job** panel, and any viewable result auto-loads.
+   and live output appear in the **Job** panel. With **Load result into viewport**
+   checked (default), any viewable result loads automatically when the job finishes.
 
 > **Generators:** when the input is a `.mjs` file, a **Generator params** field (and,
 > if the generator advertises a schema, live sliders) appear. **✨ Generate & view**
@@ -177,6 +179,10 @@ The Edit panel turns the viewport into a measuring/aligning tool — like SuperS
 but local and driven by `splat-transform`. **You place points by clicking the splat;**
 points snap to the surface and hide behind it as you orbit (no collision mesh needed).
 
+**Scale directly:** enter a **Scale factor** (e.g. `2` for twice as large, `0.5` for
+half) and click **Apply scale** — it runs `-s` on the splat and loads the result. No
+measuring required.
+
 **Measure → real-world scale:**
 
 1. Pick the splat in **Input** (and **view** it so you can see it).
@@ -220,7 +226,8 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
    (height/radius). Select **Carve capsule** in the Scene panel to preview it in cyan
    and size it against the splat. Essential after external fill.
 7. **Mesh style** — smooth (marching cubes) or exact voxel faces — then **Generate
-   collision**. Outputs auto-load as a wireframe overlay.
+   collision**. With **Load result into viewport** checked (default), the outputs load
+   as a wireframe + voxel overlay when the job finishes.
 
 > The **cluster filter** (keep only the splats connected to the seed) is GPU-only and
 > can trip the Windows GPU watchdog on multi-million-gaussian scenes — uncheck it for
@@ -228,25 +235,31 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
 
 ---
 
-## Viewer options
+## Viewport toolbar & Settings
 
-![Viewer panel](screenshots/viewer-panel.png)
+![Viewport toolbar + Settings](screenshots/viewport-toolbar.png)
 
-Display controls for the 3D view:
+Display controls live in a **toolbar along the top of the Viewer 3D window**:
 
 - **Camera control** — **Fly** (default): mouse-look + **WASD** to move, ideal for
-  inspecting carved interiors from inside. **Orbit**: drag to rotate around the focus
-  point. Right-drag pans and scroll zooms in both.
-- **Splat / Collision / Voxels / Bounds** — toggle each layer. **Bounds** draws the
-  splat's axis-aligned bounding box (floaters stretch it — a quick outlier check).
+  inspecting carved interiors. **Orbit**: drag to rotate around the focus point.
+  Right-drag pans and scroll zooms in both.
 - **Collision style** — *X-ray* (all edges through everything, for small meshes),
   *Hidden-line* (front edges only, for dense meshes), or *Solid + edges* (lit
   translucent surface — best for checking placement and inspecting carved interiors).
-- **Wire / Voxel color & opacity** — recolor the overlays.
-- **Flip collision** — check this for collision meshes from other tools that are
-  already in viewer/engine space (splat-transform output is aligned automatically).
-- **Frame scene** — re-fit the camera. **Clear viewport** — unload everything and
-  free GPU memory.
+- **Bounds** — draws the splat's axis-aligned bounding box (floaters stretch it — a
+  quick outlier check). **Flip** — for collision meshes from other tools already in
+  viewer/engine space (splat-transform output is aligned automatically).
+- **Frame** — re-fit the camera. **Clear** — unload everything and free GPU memory.
+- **⚙** — opens the **Settings** tab.
+
+Layer visibility (splat / collision / voxels) is toggled per-object with the **👁 eye
+buttons in the [Scene panel](#scene-hierarchy)**.
+
+![Settings panel](screenshots/settings-panel.png)
+
+The **Settings** window holds the **wire / voxel colors & opacity** for the overlays.
+Appearance options (theme, font size, language) are placeholders for a future update.
 
 ---
 
@@ -255,10 +268,11 @@ Display controls for the 3D view:
 ![Scene hierarchy](screenshots/scene-hierarchy.png)
 
 The **Scene** panel lists the objects currently in the viewport and lets you select
-one to move it with a gizmo — **selecting nothing shows no gizmo**.
+one to move it with a gizmo — **selecting nothing shows no gizmo**. Each layer has a
+**👁 eye button** to show/hide it.
 
-- **Splat / Collision mesh / Voxels** — appear once loaded; selecting them just
-  clears any active gizmo.
+- **Splat / Collision mesh / Voxels** — appear once loaded; the 👁 toggles visibility,
+  and selecting them just clears any active gizmo.
 - **Carve capsule** (✥) — shows up only while you're actively setting up collision
   carving (the **Collision** tab is active **and** *Carve* is on). Select it to show
   the seed marker + carve capsule and a **translate gizmo**; drag to position the
@@ -268,6 +282,10 @@ one to move it with a gizmo — **selecting nothing shows no gizmo**.
   the render camera with a gizmo; the **Move / Rotate** toggle switches between a
   translate and a rotate gizmo — dragging updates the WebP **Camera** / **Look-at**
   fields, the frustum preview follows, and the [Camera view](#camera-view) updates live.
+
+**Environment / skybox:** at the bottom of the panel, pick an equirectangular panorama
+image (`.webp/.jpg/.png/.hdr`) from the project and click **Apply** to use it as the
+scene skybox; **Clear** removes it.
 
 ---
 
@@ -286,7 +304,7 @@ hint); closing the tab frees its GPU memory.
 
 ## The 3D viewport
 
-- **Fly** (default) — mouse-look + WASD · **Orbit** (Viewer options) — left-drag ·
+- **Fly** (default) — mouse-look + WASD · **Orbit** (toolbar) — left-drag ·
   **Pan** — right-drag · **Zoom** — scroll.
 - The **chips** at the top-left show what's currently displayed (splat / collision /
   voxels); each **✕** removes that layer.
