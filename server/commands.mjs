@@ -56,6 +56,113 @@ const OUTPUT_NAMES = {
 
 export const convertFormats = Object.keys(OUTPUT_NAMES);
 
+const vec3Arg = (v, name) => {
+    if (!Array.isArray(v) || v.length !== 3) throw new Error(`${name} needs 3 numbers`);
+    return v.map((x) => {
+        const n = Number(x);
+        if (!Number.isFinite(n)) throw new Error(`${name}: invalid number "${x}"`);
+        return n;
+    });
+};
+
+// Transform/filter actions applied to the working set before the output is
+// written (CLI grammar: input [ACTIONS] output). Fixed pipeline order; only
+// non-default values emit a flag. Not used by the LOD path, which bakes levels
+// of its own.
+const pushConvertActions = (args, options) => {
+    if (options.filterNaN) args.push('-N');
+
+    const tr = options.translate;
+    if (Array.isArray(tr) && tr.some((v) => Number(v) !== 0)) {
+        args.push('-t', vec3Arg(tr, 'translate').join(','));
+    }
+
+    const rot = options.rotate;
+    if (Array.isArray(rot) && rot.some((v) => Number(v) !== 0)) {
+        args.push('-r', vec3Arg(rot, 'rotate').join(','));
+    }
+
+    if (options.scale != null && options.scale !== '' && Number(options.scale) !== 1) {
+        const s = Number(options.scale);
+        if (!Number.isFinite(s) || s <= 0) throw new Error(`Invalid scale value: ${options.scale} (must be greater than 0)`);
+        args.push('-s', String(s));
+    }
+
+    if (options.filterHarmonics != null && options.filterHarmonics !== '') {
+        const h = Number(options.filterHarmonics);
+        if (![0, 1, 2, 3].includes(h)) throw new Error(`Invalid filter-harmonics value: ${options.filterHarmonics} (must be 0-3)`);
+        args.push('-H', String(h));
+    }
+
+    if (Array.isArray(options.filterBox)) {
+        if (options.filterBox.length !== 6) throw new Error('filter-box needs 6 values (min x,y,z, max x,y,z)');
+        // blank or "-" leaves that side unbounded (the CLI maps it to ±Infinity)
+        const parts = options.filterBox.map((s) => {
+            const t = String(s ?? '').trim();
+            if (t === '' || t === '-') return '';
+            const n = Number(t);
+            if (!Number.isFinite(n)) throw new Error(`filter-box: invalid number "${t}"`);
+            return String(n);
+        });
+        if (parts.every((p) => p === '')) throw new Error('filter-box: set at least one bound');
+        args.push('-B', parts.join(','));
+    }
+
+    const sph = options.filterSphere;
+    if (Array.isArray(sph)) {
+        if (sph.length !== 4) throw new Error('filter-sphere needs 4 values (x, y, z, radius)');
+        const v = sph.map((x) => {
+            const n = Number(x);
+            if (!Number.isFinite(n)) throw new Error(`filter-sphere: invalid number "${x}"`);
+            return n;
+        });
+        if (v[3] < 0) throw new Error('filter-sphere: radius must be >= 0');
+        args.push('-S', v.join(','));
+    }
+
+    const fv = options.filterValue;
+    if (fv && typeof fv === 'object') {
+        const col = String(fv.column ?? '').trim();
+        if (!/^[A-Za-z0-9_]+$/.test(col)) throw new Error(`filter-value: invalid column name "${fv.column}"`);
+        if (!['lt', 'lte', 'gt', 'gte', 'eq', 'neq'].includes(fv.comparator)) {
+            throw new Error(`filter-value: invalid comparator "${fv.comparator}"`);
+        }
+        const val = Number(fv.value);
+        if (!Number.isFinite(val)) throw new Error(`filter-value: invalid value "${fv.value}"`);
+        // the CLI inverse-transforms the linear opacity and rejects values outside (0,1)
+        if (col === 'opacity' && (val <= 0 || val >= 1)) {
+            throw new Error('filter-value: transformed opacity must be between 0 and 1 (use opacity_raw for stored values)');
+        }
+        args.push('-V', `${col},${fv.comparator},${val}`);
+    }
+
+    const ff = options.filterFloaters;
+    if (ff && typeof ff === 'object') {
+        // GPU-only pass — fail fast rather than let the CLI throw mid-run
+        if (options.device === 'cpu') throw new Error('Remove floaters needs the GPU — uncheck "CPU only"');
+        const has = (x) => x != null && String(x).trim() !== '';
+        if (!has(ff.size) && !has(ff.opacity) && !has(ff.min)) {
+            args.push('-G'); // bare flag → CLI defaults (0.05, 0.1, 0.004)
+        } else {
+            const size = has(ff.size) ? Number(ff.size) : 0.05;
+            const op = has(ff.opacity) ? Number(ff.opacity) : 0.1;
+            const min = has(ff.min) ? Number(ff.min) : 0.004;
+            if (!(size > 0)) throw new Error('filter-floaters: voxel size must be greater than 0');
+            if (!Number.isFinite(op) || op < 0 || op > 1) throw new Error('filter-floaters: opacity must be in [0, 1]');
+            if (!Number.isFinite(min) || min < 0) throw new Error('filter-floaters: min contribution must be >= 0');
+            args.push('-G', `${size},${op},${min}`);
+        }
+    }
+
+    if (options.decimate != null && options.decimate !== '') {
+        const d = String(options.decimate).trim();
+        if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
+        args.push('-F', d);
+    }
+
+    if (options.mortonOrder) args.push('-M'); // reorder last, after geometry is final
+};
+
 // CLI grammar: splat-transform [GLOBAL] input [ACTIONS] output [ACTIONS]
 export const buildConvertCommand = ({ input, format, options = {}, workspaceDir }) => {
     const makeName = Object.hasOwn(OUTPUT_NAMES, format) ? OUTPUT_NAMES[format] : null;
@@ -152,7 +259,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
 
     args.push(input);
     // .mjs generator parameters (-p key=val,...); a per-input action, so it must
-    // sit right after the input token. Only meaningful for generator inputs.
+    // sit right after the input token, before the transform/filter actions.
     if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
         const p = String(options.params).trim();
         if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
@@ -166,7 +273,9 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         if (!/^\d+(,\d+)*$/.test(sel)) throw new Error(`Invalid LOD select: ${sel} (use comma-separated levels like 0,1,2)`);
         args.push('-O', sel);
     }
-    // viewport-driven edit transforms: uniform scale (-s) and translate (-t)
+    // Edit panel (viewport-driven): uniform scale (-s) and translate (-t). Distinct
+    // from the Convert-panel transforms handled by pushConvertActions below; a given
+    // request sets one path or the other.
     if (options.transform) {
         const t = options.transform;
         if (t.scale != null && t.scale !== '' && Number(t.scale) !== 1) {
@@ -178,12 +287,8 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             args.push('-t', v);
         }
     }
-    if (options.filterNaN) args.push('-N');
-    if (options.decimate != null && options.decimate !== '') {
-        const d = String(options.decimate).trim();
-        if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
-        args.push('-F', d);
-    }
+    // Convert-panel transforms/filters + filterNaN + decimate + morton-order
+    pushConvertActions(args, options);
     // WebP image render: camera + projection + DoF + motion blur, before output
     if (format === 'webp') {
         const img = options.image ?? {};

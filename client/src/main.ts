@@ -66,6 +66,9 @@ const restoreFormState = () => {
 
 // ---------- file list ----------
 let splatFileNames: string[] = [];
+// the splat currently shown in the viewport — the live Convert preview only
+// applies while this is the Convert input, so baked outputs aren't double-transformed
+let currentSplatName: string | null = null;
 
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
@@ -238,6 +241,8 @@ const viewFile = async (name: string, as: api.ViewKind) => {
             setChip(hudSplat, `splat: ${name}`);
             $<HTMLInputElement>('show-splat').checked = true;
             v.setSplatVisible(true);
+            currentSplatName = name;
+            syncPreview(); // apply the live Convert preview if this is the input
         } else if (as === 'collision') {
             if (!(await v.loadCollision(url, filename))) return;
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
@@ -527,7 +532,8 @@ const updateConvertRows = () => {
     const combine = lodMode.value === 'combine';
     $('row-iterations').classList.toggle('hidden', !(f === 'sog' || f === 'sog-unbundled' || f === 'html' || isLod));
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
-    $('row-decimate').classList.toggle('hidden', isLod || isWebp); // no decimate when rendering
+    $('row-decimate').classList.toggle('hidden', isLod || isWebp); // no decimate for LOD/render
+    $('convert-actions').classList.toggle('hidden', isLod); // transforms/filters don't apply to LOD bakes
     $('row-lod-mode').classList.toggle('hidden', !isLod);
     $('row-lod-levels').classList.toggle('hidden', !isLod || combine);
     $('row-lod-files').classList.toggle('hidden', !isLod || !combine);
@@ -665,6 +671,64 @@ restoreFormState();
 updateConvertRows();
 void updateInputRows();
 
+// reveal each optional filter's inputs only when its checkbox is on
+const ACTION_TOGGLES: [string, string][] = [
+    ['filter-box-on', 'filter-box-rows'],
+    ['filter-sphere-on', 'filter-sphere-rows'],
+    ['filter-value-on', 'filter-value-rows'],
+    ['filter-floaters-on', 'filter-floaters-rows']
+];
+const syncActionRows = () => {
+    for (const [cb, rows] of ACTION_TOGGLES) $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked);
+};
+for (const [cb] of ACTION_TOGGLES) $(cb).addEventListener('change', syncActionRows);
+syncActionRows();
+
+// ---------- live viewport preview (Convert transforms + crop gizmos) ----------
+const tfX = $<HTMLInputElement>('tf-translate-x'), tfY = $<HTMLInputElement>('tf-translate-y'), tfZ = $<HTMLInputElement>('tf-translate-z');
+const rfX = $<HTMLInputElement>('tf-rotate-x'), rfY = $<HTMLInputElement>('tf-rotate-y'), rfZ = $<HTMLInputElement>('tf-rotate-z');
+const tfScaleEl = $<HTMLInputElement>('tf-scale');
+const boxMinX = $<HTMLInputElement>('box-min-x'), boxMinY = $<HTMLInputElement>('box-min-y'), boxMinZ = $<HTMLInputElement>('box-min-z');
+const boxMaxX = $<HTMLInputElement>('box-max-x'), boxMaxY = $<HTMLInputElement>('box-max-y'), boxMaxZ = $<HTMLInputElement>('box-max-z');
+const sphX = $<HTMLInputElement>('sphere-x'), sphY = $<HTMLInputElement>('sphere-y'), sphZ = $<HTMLInputElement>('sphere-z'), sphR = $<HTMLInputElement>('sphere-r');
+
+// preview only while the displayed splat is the Convert input, and not for LOD output
+const previewingInput = () => convertFormat.value !== 'lod' && currentSplatName !== null && currentSplatName === convertInput.value;
+const numOrNull = (el: HTMLInputElement) => el.value.trim() === '' ? null : Number(el.value);
+
+const syncSplatXform = () => {
+    if (!viewer) return;
+    if (!previewingInput()) { viewer.setSplatPreviewTransform(null, [0, 0, 0], 1); return; }
+    viewer.setSplatPreviewTransform(
+        [Number(tfX.value), Number(tfY.value), Number(tfZ.value)],
+        [Number(rfX.value), Number(rfY.value), Number(rfZ.value)],
+        Number(tfScaleEl.value)
+    );
+};
+
+const syncCropViz = () => {
+    if (!viewer) return;
+    const on = previewingInput();
+    viewer.setCropBox(
+        [numOrNull(boxMinX), numOrNull(boxMinY), numOrNull(boxMinZ)],
+        [numOrNull(boxMaxX), numOrNull(boxMaxY), numOrNull(boxMaxZ)],
+        on && $<HTMLInputElement>('filter-box-on').checked
+    );
+    viewer.setCropSphere(
+        [Number(sphX.value), Number(sphY.value), Number(sphZ.value)],
+        Number(sphR.value),
+        on && $<HTMLInputElement>('filter-sphere-on').checked
+    );
+};
+
+const syncPreview = () => { syncSplatXform(); syncCropViz(); };
+
+for (const el of [tfX, tfY, tfZ, rfX, rfY, rfZ, tfScaleEl]) el.addEventListener('input', syncSplatXform);
+for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.addEventListener('input', syncCropViz);
+for (const id of ['filter-box-on', 'filter-sphere-on']) $(id).addEventListener('change', syncCropViz);
+convertInput.addEventListener('change', syncPreview);
+convertFormat.addEventListener('change', syncPreview);
+
 convertRun.onclick = () => {
     const input = convertInput.value;
     if (!input) return showToast('Pick an input file first', true);
@@ -693,6 +757,39 @@ convertRun.onclick = () => {
             unbundled: $<HTMLInputElement>('convert-unbundled').checked,
             viewerSettings: $<HTMLInputElement>('convert-viewer-settings').value.trim(),
             lodSelect: $<HTMLInputElement>('convert-lod-select').value.trim(),
+            translate: [
+                Number($<HTMLInputElement>('tf-translate-x').value),
+                Number($<HTMLInputElement>('tf-translate-y').value),
+                Number($<HTMLInputElement>('tf-translate-z').value)
+            ],
+            rotate: [
+                Number($<HTMLInputElement>('tf-rotate-x').value),
+                Number($<HTMLInputElement>('tf-rotate-y').value),
+                Number($<HTMLInputElement>('tf-rotate-z').value)
+            ],
+            scale: Number($<HTMLInputElement>('tf-scale').value),
+            filterHarmonics: $<HTMLSelectElement>('convert-harmonics').value,
+            filterBox: $<HTMLInputElement>('filter-box-on').checked ? [
+                $<HTMLInputElement>('box-min-x').value, $<HTMLInputElement>('box-min-y').value, $<HTMLInputElement>('box-min-z').value,
+                $<HTMLInputElement>('box-max-x').value, $<HTMLInputElement>('box-max-y').value, $<HTMLInputElement>('box-max-z').value
+            ] : undefined,
+            filterSphere: $<HTMLInputElement>('filter-sphere-on').checked ? [
+                Number($<HTMLInputElement>('sphere-x').value),
+                Number($<HTMLInputElement>('sphere-y').value),
+                Number($<HTMLInputElement>('sphere-z').value),
+                Number($<HTMLInputElement>('sphere-r').value)
+            ] : undefined,
+            filterValue: $<HTMLInputElement>('filter-value-on').checked ? {
+                column: $<HTMLSelectElement>('fv-column').value,
+                comparator: $<HTMLSelectElement>('fv-cmp').value,
+                value: Number($<HTMLInputElement>('fv-value').value)
+            } : undefined,
+            filterFloaters: $<HTMLInputElement>('filter-floaters-on').checked ? {
+                size: $<HTMLInputElement>('ff-size').value,
+                opacity: $<HTMLInputElement>('ff-op').value,
+                min: $<HTMLInputElement>('ff-min').value
+            } : undefined,
+            mortonOrder: $<HTMLInputElement>('convert-morton').checked,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
@@ -975,7 +1072,7 @@ $<HTMLInputElement>('collision-flip').onchange = (e) =>
 $<HTMLButtonElement>('frame-scene').onclick = () => viewer?.frame();
 
 // remove (unload) layers — distinct from the show/hide checkboxes above
-const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); };
+const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); currentSplatName = null; syncPreview(); };
 const removeCollision = () => { viewer?.clearCollision(); hideChip(hudCollision); };
 const removeVoxels = () => { viewer?.clearVoxels(); hideChip(hudVoxel); };
 hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
@@ -986,6 +1083,8 @@ $<HTMLButtonElement>('clear-viewport').onclick = () => {
     hideChip(hudSplat);
     hideChip(hudCollision);
     hideChip(hudVoxel);
+    currentSplatName = null;
+    syncPreview();
 };
 
 // ---------- collapsible panels ----------
@@ -1065,6 +1164,8 @@ const switchProject = async (name: string) => {
     hideChip(hudSplat);
     hideChip(hudCollision);
     hideChip(hudVoxel);
+    currentSplatName = null;
+    syncPreview();
     await refreshFiles();
 };
 
@@ -1125,11 +1226,24 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             syncSeedViz(); // snap the node to the rounded field values
         };
         syncSeedViz();
+        // crop gizmo -> reflect into the box/sphere fields (live), persist on release
+        v.onCropSphereMove = (c) => { sphX.value = String(c.x); sphY.value = String(c.y); sphZ.value = String(c.z); };
+        v.onCropBoxMove = (d) => {
+            const shift = (el: HTMLInputElement, dv: number) => { if (el.value.trim() !== '') el.value = String(Math.round((Number(el.value) + dv) * 100) / 100); };
+            shift(boxMinX, d.x); shift(boxMaxX, d.x);
+            shift(boxMinY, d.y); shift(boxMaxY, d.y);
+            shift(boxMinZ, d.z); shift(boxMaxZ, d.z);
+        };
+        v.onCropMoveEnd = () => {
+            for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.dispatchEvent(new Event('change', { bubbles: true }));
+            syncCropViz();
+        };
         v.setSeedMarkerVisible($<HTMLInputElement>('show-seed-marker').checked);
         v.setCapsuleVisible($<HTMLInputElement>('show-capsule').checked);
         v.setBoundsVisible($<HTMLInputElement>('show-bounds').checked);
         // live measure readout while a marker is dragged
         v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
+        syncPreview(); // reflect restored Convert fields once the viewer is up
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
     })
     .catch((err) => {

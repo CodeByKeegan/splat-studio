@@ -71,6 +71,17 @@ export interface ConvertRequest {
         viewerSettings?: string;
         /** LCC input: comma-separated LOD levels to read (-O) */
         lodSelect?: string;
+        // Convert-panel transform/filter actions applied to the working set before
+        // writing (not applied to LOD bakes). translate/rotate are [x,y,z].
+        translate?: [number, number, number];
+        rotate?: [number, number, number];
+        scale?: number;
+        filterHarmonics?: string; // '' | '0' | '1' | '2' | '3'
+        filterBox?: string[]; // 6 raw values [minX,minY,minZ,maxX,maxY,maxZ]; blank = unbounded
+        filterSphere?: [number, number, number, number]; // [x,y,z,radius]
+        filterValue?: { column: string; comparator: string; value: number };
+        filterFloaters?: { size: string; opacity: string; min: string }; // GPU; blank = defaults
+        mortonOrder?: boolean;
         lodLevels?: number;
         lodKeepPercent?: number;
         lodChunkCount?: number;
