@@ -1,6 +1,10 @@
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
+import { createDockview, markDockviewPackageLoaded } from 'dockview-core';
+import type { DockviewApi, IContentRenderer } from 'dockview-core';
+import 'dockview-core/dist/styles/dockview.css';
+markDockviewPackageLoaded(); // silence the "internal package" dev notice — we use the core directly on purpose
 
 const $ = <T extends HTMLElement>(id: string): T => {
     const el = document.getElementById(id);
@@ -21,7 +25,6 @@ const jobTitle = $<HTMLSpanElement>('job-title');
 const jobStatus = $<HTMLSpanElement>('job-status');
 const jobCommand = $<HTMLElement>('job-command');
 const jobLog = $<HTMLPreElement>('job-log');
-const sidebar = $<HTMLElement>('sidebar');
 
 let viewer: SplatViewer | undefined;
 
@@ -48,7 +51,9 @@ const formState: Record<string, string | boolean> = (() => {
     try { return JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'); } catch { return {}; }
 })();
 
-sidebar.addEventListener('change', (e) => {
+// bound to document: panels live in separate dock groups now, so a single
+// delegated listener survives any re-docking (change bubbles to document)
+document.addEventListener('change', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || !t.id) return;
     formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
@@ -1175,97 +1180,59 @@ function selectScene(id: SelId): void {
     rebuildSceneList();
 }
 
-// ---------- collapsible panels ----------
-const PANELS_KEY = 'splat-studio.panels';
-const panelState: Record<string, boolean> = (() => {
-    try { return JSON.parse(localStorage.getItem(PANELS_KEY) ?? '{}'); } catch { return {}; }
-})();
-for (const panel of document.querySelectorAll<HTMLElement>('.panel')) {
-    if (panel.id === 'panel-job') continue; // the live panel never collapses
-    panel.classList.toggle('collapsed', panelState[panel.id] ?? panel.id === 'panel-viewer');
-    panel.querySelector('h2')?.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('button')) return;
-        const collapsed = panel.classList.toggle('collapsed');
-        panelState[panel.id] = collapsed;
-        localStorage.setItem(PANELS_KEY, JSON.stringify(panelState));
-        setRailActive(collapsed ? null : panel.id);
-    });
+// ---------- dockable layout (dockview) ----------
+// Each panel + the viewport is an existing DOM node adopted by a dock component;
+// dockview reparents the node (never recreates it), so the PlayCanvas canvas
+// survives every dock/redock and tab switch. Built BEFORE the viewer boots so the
+// canvas is already mounted in the visible dock.
+export const DOCK_PANELS: { id: string; title: string; closable: boolean }[] = [
+    { id: 'panel-files', title: 'Files', closable: true },
+    { id: 'panel-convert', title: 'Convert', closable: true },
+    { id: 'panel-analyze', title: 'Analyze', closable: true },
+    { id: 'panel-edit', title: 'Edit', closable: true },
+    { id: 'panel-collision', title: 'Collision', closable: true },
+    { id: 'panel-scene', title: 'Scene', closable: true },
+    { id: 'panel-viewer', title: 'Viewer', closable: true },
+    { id: 'panel-job', title: 'Job', closable: false }
+];
+
+class AdoptPanel implements IContentRenderer {
+    readonly element: HTMLElement;
+    constructor(node: HTMLElement) { this.element = node; }
+    init(): void {}
 }
 
-// ---------- icon-rail navigation ----------
-const railBtns = [...document.querySelectorAll<HTMLButtonElement>('#icon-rail .rail-btn[data-panel]')];
-function setRailActive(id: string | null): void {
-    for (const b of railBtns) b.classList.toggle('active', b.dataset.panel === id);
-}
-$<HTMLButtonElement>('rail-toggle').onclick = () => document.body.classList.toggle('sidebar-hidden');
-for (const btn of railBtns) {
-    btn.onclick = () => {
-        const id = btn.dataset.panel!;
-        document.body.classList.remove('sidebar-hidden'); // ensure the sidebar is visible
-        // accordion: focus the chosen panel, collapse the others (Job panel is pinned)
-        for (const panel of document.querySelectorAll<HTMLElement>('.panel')) {
-            if (panel.id === 'panel-job') continue;
-            const open = panel.id === id;
-            panel.classList.toggle('collapsed', !open);
-            panelState[panel.id] = !open;
-        }
-        localStorage.setItem(PANELS_KEY, JSON.stringify(panelState));
-        document.getElementById(id)?.scrollIntoView({ block: 'start' });
-        setRailActive(id);
-        if (id === 'panel-scene') rebuildSceneList(); // refresh on open
-    };
-}
-// reflect the initially-expanded panel in the rail
-setRailActive([...document.querySelectorAll<HTMLElement>('.panel')]
-    .find((p) => p.id !== 'panel-job' && !p.classList.contains('collapsed'))?.id ?? null);
+const dock: DockviewApi = createDockview($('dock'), {
+    // 'always' keeps every panel's adopted DOM node mounted (hidden, not detached)
+    // when its tab is inactive — so getElementById + bound handlers stay live and
+    // the PlayCanvas canvas is never torn down.
+    defaultRenderer: 'always',
+    // o.name is the component string from addPanel: 'viewer' → #viewport, else a panel id
+    createComponent: (o) => new AdoptPanel(o.name === 'viewer' ? $('viewport') : $(o.name))
+});
 
-// ---------- sidebar resizer ----------
-const appEl = $<HTMLDivElement>('app');
-const resizer = $<HTMLDivElement>('resizer');
-const SIDEBAR_KEY = 'splat-studio.sidebar-width';
+const titleOf = (id: string): string => DOCK_PANELS.find((p) => p.id === id)?.title ?? id;
 
-const applySidebarWidth = (width: number) => {
-    const clamped = Math.round(Math.min(Math.max(width, 280), Math.max(320, window.innerWidth * 0.7)));
-    appEl.style.setProperty('--sidebar-w', `${clamped}px`);
-    return clamped;
-};
-
-const currentSidebarWidth = () =>
-    parseInt(getComputedStyle(appEl).getPropertyValue('--sidebar-w')) || 360;
-
-const savedWidth = Number(localStorage.getItem(SIDEBAR_KEY));
-if (Number.isFinite(savedWidth) && savedWidth > 0) applySidebarWidth(savedWidth);
-
-resizer.onpointerdown = (e) => {
-    e.preventDefault();
-    resizer.setPointerCapture(e.pointerId);
-    resizer.classList.add('dragging');
-    document.body.style.userSelect = 'none';
-    let width = 0;
-    const onMove = (ev: PointerEvent) => { width = applySidebarWidth(ev.clientX - 2); };
-    const onUp = () => {
-        resizer.removeEventListener('pointermove', onMove);
-        resizer.removeEventListener('pointerup', onUp);
-        resizer.removeEventListener('pointercancel', onUp);
-        resizer.classList.remove('dragging');
-        document.body.style.userSelect = '';
-        if (width) localStorage.setItem(SIDEBAR_KEY, String(width));
-    };
-    resizer.addEventListener('pointermove', onMove);
-    resizer.addEventListener('pointerup', onUp);
-    resizer.addEventListener('pointercancel', onUp);
-};
-resizer.onkeydown = (e) => {
-    const step = e.shiftKey ? 64 : 16;
-    let width: number | null = null;
-    if (e.key === 'ArrowLeft') width = currentSidebarWidth() - step;
-    else if (e.key === 'ArrowRight') width = currentSidebarWidth() + step;
-    else if (e.key === 'Home') width = 280;
-    if (width !== null) {
-        e.preventDefault();
-        localStorage.setItem(SIDEBAR_KEY, String(applySidebarWidth(width)));
+function applyDefaultLayout(): void {
+    dock.clear();
+    dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
+    dock.addPanel({ id: 'panel-files', component: 'panel-files', title: 'Files', position: { referencePanel: 'viewer', direction: 'left' } });
+    for (const id of ['panel-convert', 'panel-analyze', 'panel-edit', 'panel-collision']) {
+        dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
-};
+    dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
+    dock.addPanel({ id: 'panel-viewer', component: 'panel-viewer', title: 'Viewer', position: { referencePanel: 'panel-scene', direction: 'within' } });
+    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Job', position: { referencePanel: 'viewer', direction: 'below' } });
+    // size the side/bottom groups so the 3D viewport keeps the bulk of the window
+    dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
+    dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });
+    dock.getPanel('panel-job')?.group.api.setSize({ height: 180 });
+    dock.getPanel('panel-files')?.api.setActive();
+}
+applyDefaultLayout();
+// keep the scene list fresh when the Scene tab is shown
+dock.getPanel('panel-scene')?.api.onDidVisibilityChange((e) => { if (e.isVisible) rebuildSceneList(); });
+(window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
 
 // ---------- projects ----------
 const projectSelect = $<HTMLSelectElement>('project-select');

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@playcanvas/splat-transform": "^2.5.2",
+    "dockview-core": "^7.0.2",
     "express": "^4.21.2"
   },
   "devDependencies": {
@@ -52,7 +53,10 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "vendor/node/node.exe", "to": "node.exe" }
+      {
+        "from": "vendor/node/node.exe",
+        "to": "node.exe"
+      }
     ],
     "publish": [
       {
@@ -67,8 +71,18 @@
       "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {

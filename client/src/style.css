@@ -32,71 +32,61 @@ body {
 button.primary:focus-visible { outline-color: var(--text); }
 
 #app {
-    --sidebar-w: 360px;
     display: flex;
+    flex-direction: column;
     height: 100vh;
 }
 
-#sidebar {
-    flex: 0 0 var(--sidebar-w);
-    width: var(--sidebar-w);
-    overflow-y: auto;
-    overflow-x: hidden;
-    border-right: 1px solid var(--border);
+/* top bar: brand · menus · project picker */
+#topbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
-    padding: 0 14px 0;
-    display: flex;
-    flex-direction: column;
-}
-
-#resizer {
-    flex: 0 0 5px;
-    cursor: ew-resize;
-    background: var(--border);
-    opacity: 0.45;
-    transition: opacity 0.15s, background 0.15s;
-    touch-action: none;
-    position: relative;
-}
-/* widen the grab target without changing layout */
-#resizer::after {
-    content: '';
-    position: absolute;
-    inset: 0 -4px;
-    cursor: ew-resize;
-}
-#resizer:hover, #resizer.dragging {
-    opacity: 1;
-    background: var(--accent);
-}
-
-#app-header {
-    padding: 14px 2px 6px;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
     flex-shrink: 0;
 }
-#app-header h1 { font-size: 18px; margin: 0; }
+#app-brand { display: flex; align-items: baseline; gap: 7px; white-space: nowrap; }
+#app-brand strong { font-size: 15px; font-weight: 600; }
 .subtitle { color: var(--text-dim); font-size: var(--fs-sm); }
+#menubar { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
 
 #project-bar {
     display: flex;
     gap: 6px;
     align-items: center;
-    padding: 0 2px 4px;
     flex-shrink: 0;
 }
-#project-bar select { flex: 1; min-width: 0; font-weight: 600; }
+#project-bar select { min-width: 150px; font-weight: 600; }
 #project-bar button { padding: 5px 10px; flex-shrink: 0; }
 
-.panel {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px 12px;
-    margin-top: 12px;
-    flex-shrink: 0;
+/* dock host fills the rest of the window */
+#dock { flex: 1; min-height: 0; position: relative; }
+#panel-pool { display: none; }
+
+/* dockview theme tuned to the app palette */
+.dockview-theme-abyss {
+    --dv-group-view-background-color: var(--bg-panel);
+    --dv-tabs-and-actions-container-background-color: var(--bg);
+    --dv-activegroup-visiblepanel-tab-background-color: var(--bg-panel);
+    --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-input);
+    --dv-tab-divider-color: var(--border);
+    --dv-separator-border: var(--border);
 }
+/* PR2: no menu to reopen tabs yet — hide the close button so nothing dead-ends.
+   (PR3 restores per-panel closability + a Window menu to reopen.) */
+#dock .dv-default-tab-action { display: none !important; }
+
+.panel {
+    padding: 12px 14px 16px;
+    height: 100%;
+    overflow-y: auto;
+    background: var(--bg-panel);
+}
+/* the dock tab carries the title — hide the in-panel heading (except Job, whose
+   heading holds the live status + cancel button) */
+.panel:not(#panel-job) h2 { display: none; }
 .panel h2 {
     display: flex;
     align-items: center;
@@ -106,13 +96,8 @@ button.primary:focus-visible { outline-color: var(--text); }
     letter-spacing: 0.08em;
     color: var(--text-dim);
     margin: 0 0 10px;
-    cursor: pointer;
     user-select: none;
-    position: sticky;
-    top: 0;
-    background: var(--bg-panel);
-    z-index: 2;
-    padding: 4px 0;
+    padding: 0 0 4px;
 }
 .panel h2::before {
     content: '';
@@ -127,31 +112,6 @@ button.primary:focus-visible { outline-color: var(--text); }
 #panel-collision h2 { --panel-hue: var(--accent-2); }
 #panel-viewer h2 { --panel-hue: #c792ea; }
 #panel-job h2 { --panel-hue: #ff9e40; cursor: default; }
-
-.panel:not(#panel-job) h2::after {
-    content: '▾';
-    margin-left: auto;
-    color: var(--text-dim);
-    font-size: var(--fs-xs);
-}
-.panel.collapsed h2::after { content: '▸'; }
-.panel.collapsed > :not(h2) { display: none; }
-.panel.collapsed h2 { margin-bottom: 0; }
-
-/* the Job panel stays pinned: live feedback is visible the moment a job starts */
-#panel-job {
-    position: sticky;
-    bottom: 0;
-    z-index: 3;
-    margin-top: auto;
-    padding-top: 8px;
-    background: var(--bg-panel);
-    box-shadow: 0 -10px 18px rgba(0, 0, 0, 0.45);
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    border-bottom: none;
-}
-#panel-job h2 { position: static; }
 .job-title {
     text-transform: none;
     letter-spacing: normal;
@@ -474,7 +434,7 @@ body.dropping #viewport::after {
     font-style: italic;
 }
 
-#viewport { flex: 1; position: relative; }
+#viewport { width: 100%; height: 100%; position: relative; }
 #gs-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 
 #hud {
@@ -578,35 +538,4 @@ body.dropping #viewport::after {
 
 /* ----- icon-rail navigation (SuperSplat-style: jump to a panel, or hide the
    whole sidebar to maximize the 3D viewport) ----- */
-#icon-rail {
-    flex: 0 0 46px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px 5px;
-    background: var(--bg);
-    border-right: 1px solid var(--border);
-    align-items: center;
-    z-index: 4;
-}
-.rail-btn {
-    width: 36px;
-    height: 36px;
-    display: grid;
-    place-items: center;
-    font-size: 17px;
-    line-height: 1;
-    background: none;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    cursor: pointer;
-    padding: 0;
-    color: var(--text);
-}
-.rail-btn:hover { background: var(--bg-input); border-color: var(--border); }
-.rail-btn.active { background: var(--bg-input); border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
-.rail-logo { font-size: 19px; color: var(--accent); margin-bottom: 6px; }
-body.sidebar-hidden #sidebar,
-body.sidebar-hidden #resizer { display: none; }
-
 .hidden { display: none !important; }

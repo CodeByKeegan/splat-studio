@@ -8,25 +8,20 @@
 </head>
 <body>
     <div id="app">
-        <nav id="icon-rail" aria-label="Panels">
-            <button class="rail-btn rail-logo" id="rail-toggle" title="Show/hide the panels — maximize the 3D viewport">▤</button>
-            <button class="rail-btn" data-panel="panel-files" title="Files">📁</button>
-            <button class="rail-btn" data-panel="panel-convert" title="Convert formats / render">🔀</button>
-            <button class="rail-btn" data-panel="panel-analyze" title="Analyze (summary stats)">📊</button>
-            <button class="rail-btn" data-panel="panel-edit" title="Edit (measure / set origin)">✥</button>
-            <button class="rail-btn" data-panel="panel-collision" title="Collision mesh">🧱</button>
-            <button class="rail-btn" data-panel="panel-scene" title="Scene hierarchy (select objects, move gizmos)">🗂️</button>
-            <button class="rail-btn" data-panel="panel-viewer" title="Viewer options">👁</button>
-        </nav>
-        <aside id="sidebar">
-            <header id="app-header" title="A local GUI for @playcanvas/splat-transform: convert splat formats, bundle SOG, generate collision meshes, and preview everything in 3D">
-                <h1>Splat Studio</h1>
-                <span class="subtitle">splat-transform GUI</span>
-            </header>
+        <header id="topbar">
+            <div id="app-brand" title="A local GUI for @playcanvas/splat-transform: convert splat formats, bundle SOG, generate collision meshes, and preview everything in 3D">
+                <strong>Splat Studio</strong><span class="subtitle">splat-transform GUI</span>
+            </div>
+            <nav id="menubar" aria-label="Menus"></nav>
             <div id="project-bar" title="Each project is its own folder of splats and outputs. Switching projects filters everything below and clears the viewport.">
                 <select id="project-select" title="Active project"></select>
                 <button id="project-new" title="Create a new project (a new folder in the workspace)">+ New</button>
             </div>
+        </header>
+        <div id="dock" class="dockview-theme-abyss"></div>
+    </div>
+    <!-- panels + viewport live here at boot (queryable by id); the dock adopts each node -->
+    <div id="panel-pool" hidden>
 
             <section class="panel" id="panel-files">
                 <h2 title="Files live in the local workspace/ folder. Click 'view' to display one in the 3D viewer.">Files</h2>
@@ -485,19 +480,15 @@
                 <code id="job-command" title="The exact CLI command this job ran — copy it to reproduce outside the GUI"></code>
                 <pre id="job-log" class="log" title="Live output from the splat-transform process"></pre>
             </section>
-        </aside>
-
-        <div id="resizer" title="Drag to resize panel — arrow keys also work when focused" tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
-
-        <main id="viewport">
-            <canvas id="gs-canvas"></canvas>
-            <div id="hud">
-                <span id="hud-splat" class="chip hidden" title="Currently displayed splat"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the splat from the viewport (frees its GPU memory)">✕</button></span>
-                <span id="hud-collision" class="chip hidden" title="Currently displayed collision mesh"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the collision mesh from the viewport">✕</button></span>
-                <span id="hud-voxel" class="chip hidden" title="Currently displayed voxel octree"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the voxels from the viewport">✕</button></span>
-            </div>
-            <div id="toast-stack"></div>
-        </main>
+            <main id="viewport">
+                <canvas id="gs-canvas"></canvas>
+                <div id="hud">
+                    <span id="hud-splat" class="chip hidden" title="Currently displayed splat"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the splat from the viewport (frees its GPU memory)">✕</button></span>
+                    <span id="hud-collision" class="chip hidden" title="Currently displayed collision mesh"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the collision mesh from the viewport">✕</button></span>
+                    <span id="hud-voxel" class="chip hidden" title="Currently displayed voxel octree"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the voxels from the viewport">✕</button></span>
+                </div>
+                <div id="toast-stack"></div>
+            </main>
     </div>
     <script type="module" src="/src/main.ts"></script>
 </body>
