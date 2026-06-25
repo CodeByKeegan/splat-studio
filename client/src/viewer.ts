@@ -86,6 +86,17 @@ export class SplatViewer {
     private camGizmoMode: 'move' | 'rotate' = 'move';
     private renderCamDist = 1; // camera→lookAt distance, preserved while gizmo-dragging
     private gizmoDragging = false; // suppress external node repositioning mid-drag
+    // live "Camera view" panel: a second camera renders the WebP pose to a texture
+    private previewRT: pc.RenderTarget | null = null;
+    private previewTex: pc.Texture | null = null;
+    private previewCam: pc.Entity | null = null;
+    private previewCtx: CanvasRenderingContext2D | null = null;
+    private previewImg: ImageData | null = null; // reused readback buffer
+    private previewW = 0;
+    private previewH = 0;
+    private previewReading = false;
+    private previewFrame = 0;
+    private previewUpdate: (() => void) | null = null;
     /** fired when the viewport changes the selection (e.g. clears it on mode change) */
     onSelectionChange?: (id: SelId) => void;
     /** fired while the render-camera gizmo moves/rotates; both vectors in CLI render space */
@@ -961,6 +972,71 @@ export class SplatViewer {
 
     /** Whether a WebP render camera currently exists (so the hierarchy can list it). */
     get hasRenderCamera(): boolean { return this.renderFrustum !== null; }
+
+    /**
+     * Drive a live preview of the WebP render camera into a 2D canvas. A second
+     * camera renders only the WORLD layer (splat) — no gizmos/markers/frustum,
+     * which all live on the immediate layer — to a small RenderTarget; its pixels
+     * are read back (throttled, one read in flight) and drawn into `canvas`.
+     */
+    setupCameraView(canvas: HTMLCanvasElement, w = 320, h = 180): void {
+        this.teardownCameraView();
+        const device = this.app.graphicsDevice;
+        this.previewTex = new pc.Texture(device, {
+            name: 'webp-preview', width: w, height: h, format: pc.PIXELFORMAT_RGBA8, mipmaps: false,
+            minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
+            addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE
+        });
+        this.previewRT = new pc.RenderTarget({ colorBuffer: this.previewTex, depth: true, samples: 1 });
+        const cam = new pc.Entity('webp-preview-cam');
+        cam.addComponent('camera', {
+            clearColor: new pc.Color(0.055, 0.06, 0.07),
+            fov: 60,
+            layers: [pc.LAYERID_WORLD], // splat only — excludes immediate-layer gizmos/markers/frustum
+            renderTarget: this.previewRT
+        });
+        cam.enabled = false;
+        this.app.root.addChild(cam);
+        this.previewCam = cam;
+        canvas.width = w; canvas.height = h;
+        this.previewCtx = canvas.getContext('2d');
+        this.previewImg = this.previewCtx ? this.previewCtx.createImageData(w, h) : null;
+        this.previewW = w; this.previewH = h;
+        this.previewUpdate = () => this.updateCameraView();
+        this.app.on('update', this.previewUpdate);
+    }
+
+    teardownCameraView(): void {
+        if (this.previewUpdate) { this.app.off('update', this.previewUpdate); this.previewUpdate = null; }
+        this.previewCam?.destroy();
+        this.previewRT?.destroy();
+        this.previewTex?.destroy();
+        this.previewCam = null; this.previewRT = null; this.previewTex = null;
+        this.previewCtx = null; this.previewImg = null; this.previewReading = false;
+    }
+
+    private updateCameraView(): void {
+        const rf = this.renderFrustum, cam = this.previewCam, rt = this.previewRT, tex = this.previewTex;
+        const w = this.previewW, h = this.previewH;
+        if (!rf || !cam || !rt || !tex || !this.previewCtx || !this.previewImg) { if (cam) cam.enabled = false; return; }
+        cam.enabled = true;
+        cam.setPosition(rf.camera);
+        cam.lookAt(rf.lookAt);
+        const cc = cam.camera as pc.CameraComponent;
+        cc.fov = rf.fov;
+        cc.aspectRatio = w / h;
+        // throttle the readback: ~15-20fps, never two reads in flight, one reused buffer
+        if (this.previewReading || (this.previewFrame++ % 3) !== 0) return;
+        this.previewReading = true;
+        tex.read(0, 0, w, h, { renderTarget: rt }).then((data) => {
+            this.previewReading = false;
+            const ctx = this.previewCtx, img = this.previewImg;
+            if (!ctx || !img || !data) return;
+            const out = img.data, row = w * 4;
+            for (let y = 0; y < h; y++) out.set(data.subarray((h - 1 - y) * row, (h - y) * row), y * row); // RT is bottom-up
+            ctx.putImageData(img, 0, 0);
+        }).catch(() => { this.previewReading = false; });
+    }
 
     private emitRenderCameraFromNode(): void {
         const pos = this.renderCamNode.getPosition();

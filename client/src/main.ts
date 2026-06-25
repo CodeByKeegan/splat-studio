@@ -675,6 +675,7 @@ const updateRenderFrustum = (): void => {
         aspect,
         convertFormat.value === 'webp' && !equirect
     );
+    refreshCameraViewHint(); // show/hide the Camera-view placeholder with WebP mode
 };
 for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', 'webp-projection']) {
     $(id).addEventListener('input', updateRenderFrustum);
@@ -1196,11 +1197,41 @@ const WINDOWS: Win[] = [
     { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
     { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
     { id: 'panel-viewer', component: 'panel-viewer', title: 'Viewer options', closable: true },
+    { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
     { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
     { id: 'panel-job', component: 'panel-job', title: 'Job', closable: false }
 ];
 const winById = (id: string): Win | undefined => WINDOWS.find((w) => w.id === id);
 const nodeOf = (component: string): HTMLElement => $(component === 'viewer' ? 'viewport' : component);
+
+// Live "Camera view" dock panel: its own <canvas> driven by viewer.setupCameraView
+// (a render-to-texture of the WebP render camera). Wired when the viewer is ready.
+let cameraViewCanvas: HTMLCanvasElement | null = null;
+let cameraViewHint: HTMLElement | null = null;
+function refreshCameraViewHint(): void {
+    if (cameraViewHint) cameraViewHint.style.display = viewer?.hasRenderCamera ? 'none' : '';
+}
+class CameraViewPanel implements IContentRenderer {
+    readonly element = document.createElement('div');
+    private canvas = document.createElement('canvas');
+    private hint = document.createElement('div');
+    constructor() {
+        this.element.className = 'camera-view-panel';
+        this.canvas.className = 'camera-view-canvas';
+        this.hint.className = 'camera-view-hint';
+        this.hint.textContent = 'Set the Convert output to “WebP image (render)” to preview the render camera here.';
+        this.element.append(this.canvas, this.hint);
+    }
+    init(): void {
+        cameraViewCanvas = this.canvas;
+        cameraViewHint = this.hint;
+        viewer?.setupCameraView(this.canvas); // if viewer isn't up yet, the init block wires it
+        refreshCameraViewHint();
+    }
+    dispose(): void {
+        if (cameraViewCanvas === this.canvas) { cameraViewCanvas = null; cameraViewHint = null; viewer?.teardownCameraView(); }
+    }
+}
 
 // Adopts an existing DOM node as panel content. On dispose (tab closed) the node
 // is returned to the hidden pool so getElementById still finds it for a reopen —
@@ -1238,7 +1269,7 @@ const dock: DockviewApi = createDockview($('dock'), {
     // when its tab is inactive — so getElementById + bound handlers stay live and
     // the PlayCanvas canvas is never torn down.
     defaultRenderer: 'always',
-    createComponent: (o) => new AdoptPanel(nodeOf(o.name)),
+    createComponent: (o) => (o.name === 'camera-view' ? new CameraViewPanel() : new AdoptPanel(nodeOf(o.name))),
     defaultTabComponent: 'app-tab',
     createTabComponent: (o) => (o.name === 'app-tab' ? new AppTab() : undefined)
 });
@@ -1443,6 +1474,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             updateRenderFrustum();
         };
         v.setCameraMode($<HTMLSelectElement>('camera-mode').value as 'fly' | 'orbit');
+        if (cameraViewCanvas) v.setupCameraView(cameraViewCanvas); // a Camera-view panel opened before the viewer booted
         syncPreview(); // reflect restored Convert fields once the viewer is up
         updateRenderFrustum(); // show the WebP frustum if WebP is the restored format
         rebuildSceneList();
