@@ -3,8 +3,8 @@ import { CameraControls } from 'playcanvas/scripts/esm/camera-controls.mjs';
 import { parseVoxelOctree } from './voxel-parser';
 import type { VoxelMeta } from './voxel-parser';
 
-/** Selectable scene-hierarchy objects. Only 'capsule' and 'render-camera' carry a gizmo. */
-export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'render-camera';
+/** Selectable scene-hierarchy objects. 'capsule', 'render-camera' and 'collision-region' carry a gizmo. */
+export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'render-camera' | 'collision-region';
 
 /**
  * PlayCanvas viewer: renders a gaussian splat plus its generated collision mesh
@@ -123,6 +123,18 @@ export class SplatViewer {
     onCropBoxMove?: (delta: { x: number; y: number; z: number }) => void;
     onCropSphereMove?: (centre: { x: number; y: number; z: number }) => void;
     onCropMoveEnd?: () => void;
+
+    // collision region: its own node + gizmo so it never contends with the Convert crop preview
+    private regionBoxNode!: pc.Entity;
+    private regionMaterial!: pc.StandardMaterial;
+    private regionGizmo!: pc.TranslateGizmo;
+    /** region drag reports absolute min/max corners in CLI coords */
+    onRegionBoxChange?: (min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }) => void;
+    onRegionBoxEnd?: () => void;
+    private regionGizmoMode: 'move' | 'resize' = 'move';
+    private regionHandles: { entity: pc.Entity; axis: 0 | 1 | 2; sign: 1 | -1 }[] = [];
+    private regionHandleMat!: pc.StandardMaterial;
+    private regionDrag: { axis: 0 | 1 | 2; sign: 1 | -1 } | null = null;
 
     static async create(canvas: HTMLCanvasElement): Promise<SplatViewer> {
         const viewer = new SplatViewer();
@@ -343,6 +355,7 @@ export class SplatViewer {
         app.on('update', () => {
             if (this.editMode !== 'none') this.updateEditMarkers();
             if (this.renderFrustum) this.drawRenderFrustum();
+            this.updateRegionHandles();
         });
 
         // ----- crop-region preview (filter-box / filter-sphere) -----
@@ -392,6 +405,49 @@ export class SplatViewer {
         });
         this.cropGizmo.on('transform:end', () => this.onCropMoveEnd?.());
         this.cropGizmo.detach();
+
+        // ----- collision region box (dedicated node under cropHolder = CLI space) -----
+        this.regionMaterial = new pc.StandardMaterial();
+        this.regionMaterial.useLighting = false;
+        this.regionMaterial.emissive = new pc.Color(0.95, 0.6, 0.15); // amber, distinct from the cyan crop/bounds
+        this.regionMaterial.blendType = pc.BLEND_NORMAL;
+        this.regionMaterial.opacity = 0.95;
+        this.regionMaterial.depthTest = false;
+        this.regionMaterial.depthWrite = false;
+        this.regionMaterial.update();
+
+        this.regionBoxNode = new pc.Entity('region-box');
+        const regMi = new pc.MeshInstance(pc.Mesh.fromGeometry(device, new pc.BoxGeometry()), this.regionMaterial);
+        this.regionBoxNode.addComponent('render', { meshInstances: [regMi], layers: [pc.LAYERID_IMMEDIATE] });
+        regMi.renderStyle = pc.RENDERSTYLE_WIREFRAME;
+        this.regionBoxNode.enabled = false;
+        this.cropHolder.addChild(this.regionBoxNode);
+
+        this.regionGizmo = new pc.TranslateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
+        this.regionGizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => { if (mi) this.controls.enabled = false; });
+        this.regionGizmo.on('pointer:up', () => { this.controls.enabled = true; });
+        this.regionGizmo.on('transform:move', () => this.emitRegionBox());
+        this.regionGizmo.on('transform:end', () => { this.emitRegionBox(); this.onRegionBoxEnd?.(); });
+        this.regionGizmo.detach();
+
+        // six face handles (Resize mode): drag one face, the opposite stays pinned
+        this.regionHandleMat = new pc.StandardMaterial();
+        this.regionHandleMat.useLighting = false;
+        this.regionHandleMat.emissive = new pc.Color(1, 0.85, 0.3);
+        this.regionHandleMat.depthTest = false;
+        this.regionHandleMat.depthWrite = false;
+        this.regionHandleMat.update();
+        for (const axis of [0, 1, 2] as (0 | 1 | 2)[]) {
+            for (const sign of [1, -1] as (1 | -1)[]) {
+                const h = new pc.Entity(`region-handle-${axis}-${sign}`);
+                const mi = new pc.MeshInstance(pc.Mesh.fromGeometry(device, new pc.BoxGeometry()), this.regionHandleMat);
+                h.addComponent('render', { meshInstances: [mi], layers: [pc.LAYERID_IMMEDIATE] });
+                h.enabled = false;
+                this.cropHolder.addChild(h);
+                this.regionHandles.push({ entity: h, axis, sign });
+            }
+        }
+        this.installRegionHandleDrag(canvas);
 
         this.applySelection(); // nothing selected → no gizmo, capsule/seed hidden
 
@@ -1103,12 +1159,16 @@ export class SplatViewer {
         const capsuleSel = sel === 'capsule';
         this.seedMarker.enabled = capsuleSel;
         this.capsuleEntity.enabled = capsuleSel;
-        // exactly one gizmo at a time — detach both, then attach for the selection
+        // exactly one gizmo at a time — detach all, then attach for the selection
         this.gizmo.detach();
         this.rotGizmo.detach();
+        this.regionGizmo.detach();
         // measure/origin and crop tools own the viewport; no selection gizmo then
         if (this.editMode !== 'none' || this.cropMode !== 'none') return;
-        if (capsuleSel) {
+        if (sel === 'collision-region') {
+            // Move mode → translate gizmo; Resize mode → per-face handles (updateRegionHandles)
+            if (this.regionBoxNode.enabled && this.regionGizmoMode === 'move') this.regionGizmo.attach(this.regionBoxNode);
+        } else if (capsuleSel) {
             this.gizmoTarget = 'seed';
             this.gizmo.attach(this.seedNode);
         } else if (sel === 'render-camera' && this.renderFrustum) {
@@ -1220,6 +1280,162 @@ export class SplatViewer {
         if (this.cropMode === 'box') { this.cropGizmo.attach(this.cropBoxNode); this.gizmo.detach(); this.rotGizmo.detach(); }
         else if (this.cropMode === 'sphere') { this.cropGizmo.attach(this.cropSphereNode); this.gizmo.detach(); this.rotGizmo.detach(); }
         else { this.cropGizmo.detach(); this.applySelection(); } // crop cleared → restore selection gizmo
+    }
+
+    /** Region box wireframe from min/max corners (CLI coords); null entries fall back to the splat bounds. */
+    setCollisionRegion(min: (number | null)[], max: (number | null)[], show: boolean): void {
+        this.regionBoxNode.enabled = show;
+        if (show) {
+            const b = this.splatOutputBounds();
+            const lo = b ? b.getMin() : new pc.Vec3(-10, -10, -10);
+            const hi = b ? b.getMax() : new pc.Vec3(10, 10, 10);
+            const x0 = min[0] ?? lo.x, y0 = min[1] ?? lo.y, z0 = min[2] ?? lo.z;
+            const x1 = max[0] ?? hi.x, y1 = max[1] ?? hi.y, z1 = max[2] ?? hi.z;
+            this.regionBoxNode.setLocalPosition((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+            this.regionBoxNode.setLocalScale(Math.max(Math.abs(x1 - x0), 1e-3), Math.max(Math.abs(y1 - y0), 1e-3), Math.max(Math.abs(z1 - z0), 1e-3));
+        }
+        this.applySelection(); // attach/detach the region gizmo to match enabled + selection
+    }
+
+    /** Total gaussians in the loaded splat (0 if none). */
+    get splatGaussianCount(): number { return this.pickCenters ? this.pickCenters.length / 3 : 0; }
+
+    /** Count splat centres inside the current region box (cheap O(n); 0 if no box). */
+    regionGaussianCount(): number {
+        const centers = this.pickCenters, e = this.splatEntity;
+        if (!centers || !e || !this.regionBoxNode.enabled) return 0;
+        const d = this.cropHolder.getWorldTransform().clone().invert().mul(e.getWorldTransform()).data;
+        const c = this.regionBoxNode.getLocalPosition(), s = this.regionBoxNode.getLocalScale();
+        const minx = c.x - s.x / 2, maxx = c.x + s.x / 2, miny = c.y - s.y / 2, maxy = c.y + s.y / 2, minz = c.z - s.z / 2, maxz = c.z + s.z / 2;
+        const n = centers.length / 3;
+        let cnt = 0;
+        for (let i = 0; i < n; i++) {
+            const j = i * 3, X = centers[j], Y = centers[j + 1], Z = centers[j + 2];
+            const px = d[0] * X + d[4] * Y + d[8] * Z + d[12];
+            const py = d[1] * X + d[5] * Y + d[9] * Z + d[13];
+            const pz = d[2] * X + d[6] * Y + d[10] * Z + d[14];
+            if (px >= minx && px <= maxx && py >= miny && py <= maxy && pz >= minz && pz <= maxz) cnt++;
+        }
+        return cnt;
+    }
+
+    /** Splat AABB as [min,max] corners in CLI coords, for seeding a default region (or null). */
+    regionDefaultBounds(): { min: [number, number, number]; max: [number, number, number] } | null {
+        const b = this.splatOutputBounds();
+        if (!b) return null;
+        const lo = b.getMin(), hi = b.getMax();
+        return { min: [round(lo.x), round(lo.y), round(lo.z)], max: [round(hi.x), round(hi.y), round(hi.z)] };
+    }
+
+    /** Read the region box back as absolute min/max corners (CLI coords) during a gizmo drag. */
+    private emitRegionBox(): void {
+        const p = this.regionBoxNode.getLocalPosition();
+        const s = this.regionBoxNode.getLocalScale();
+        const hx = Math.abs(s.x) / 2, hy = Math.abs(s.y) / 2, hz = Math.abs(s.z) / 2;
+        this.onRegionBoxChange?.(
+            { x: round(p.x - hx), y: round(p.y - hy), z: round(p.z - hz) },
+            { x: round(p.x + hx), y: round(p.y + hy), z: round(p.z + hz) }
+        );
+    }
+
+    /** Move (translate gizmo) vs Resize (per-face handles). */
+    setRegionGizmoMode(mode: 'move' | 'resize'): void {
+        this.regionGizmoMode = mode;
+        if (this.selected === 'collision-region') this.applySelection();
+    }
+
+    /** Position/size the six face handles each frame; shown only while resizing the selected region. */
+    private updateRegionHandles(): void {
+        const active = this.selected === 'collision-region' && this.regionGizmoMode === 'resize' && this.regionBoxNode.enabled;
+        const c = this.regionBoxNode.getLocalPosition();
+        const s = this.regionBoxNode.getLocalScale();
+        const half = [s.x / 2, s.y / 2, s.z / 2];
+        const camPos = this.camera.getPosition();
+        const wt = this.cropHolder.getWorldTransform();
+        for (const h of this.regionHandles) {
+            h.entity.enabled = active;
+            if (!active) continue;
+            const lp = new pc.Vec3(c.x, c.y, c.z);
+            if (h.axis === 0) lp.x = c.x + h.sign * half[0];
+            else if (h.axis === 1) lp.y = c.y + h.sign * half[1];
+            else lp.z = c.z + h.sign * half[2];
+            h.entity.setLocalPosition(lp);
+            const dist = wt.transformPoint(lp.clone()).distance(camPos);
+            h.entity.setLocalScale(Math.max(dist * 0.025, 1e-3), Math.max(dist * 0.025, 1e-3), Math.max(dist * 0.025, 1e-3));
+        }
+    }
+
+    private installRegionHandleDrag(canvas: HTMLCanvasElement): void {
+        const camC = () => this.camera.camera as pc.CameraComponent;
+        const canDrag = () => this.selected === 'collision-region' && this.regionGizmoMode === 'resize' && this.regionBoxNode.enabled;
+        const pick = (px: number, py: number): { axis: 0 | 1 | 2; sign: 1 | -1 } | null => {
+            let best: { axis: 0 | 1 | 2; sign: 1 | -1 } | null = null, bestD = 18; // px
+            for (const h of this.regionHandles) {
+                const wp = this.cropHolder.getWorldTransform().transformPoint(h.entity.getLocalPosition().clone());
+                const sp = camC().worldToScreen(wp);
+                if (!Number.isFinite(sp.x)) continue;
+                const d = Math.hypot(sp.x - px, sp.y - py);
+                if (d < bestD) { bestD = d; best = { axis: h.axis, sign: h.sign }; }
+            }
+            return best;
+        };
+        canvas.addEventListener('pointerdown', (e) => {
+            if (!canDrag() || e.button !== 0) return;
+            const rect = canvas.getBoundingClientRect();
+            const hit = pick(e.clientX - rect.left, e.clientY - rect.top);
+            if (!hit) return;
+            this.regionDrag = hit;
+            this.controls.enabled = false;
+            e.stopPropagation();
+        }, true);
+        canvas.addEventListener('pointermove', (e) => {
+            if (!this.regionDrag) return;
+            const rect = canvas.getBoundingClientRect();
+            this.dragRegionFace(e.clientX - rect.left, e.clientY - rect.top);
+        });
+        const end = () => {
+            if (!this.regionDrag) return;
+            this.regionDrag = null;
+            this.controls.enabled = true;
+            this.onRegionBoxEnd?.();
+        };
+        canvas.addEventListener('pointerup', end);
+        canvas.addEventListener('pointercancel', end);
+    }
+
+    /** Project the pointer onto the dragged face's axis and move that face, opposite pinned. */
+    private dragRegionFace(px: number, py: number): void {
+        const drag = this.regionDrag;
+        if (!drag) return;
+        const camC = this.camera.camera as pc.CameraComponent;
+        const near = camC.screenToWorld(px, py, camC.nearClip);
+        const far = camC.screenToWorld(px, py, camC.farClip);
+        if (!Number.isFinite(near.x) || !Number.isFinite(far.x)) return;
+        const R0 = near, D = far.clone().sub(near).normalize();
+        const wt = this.cropHolder.getWorldTransform();
+        const center = this.regionBoxNode.getLocalPosition().clone();
+        const scale = this.regionBoxNode.getLocalScale().clone();
+        const centerWorld = wt.transformPoint(center.clone());
+        const unit = new pc.Vec3(drag.axis === 0 ? 1 : 0, drag.axis === 1 ? 1 : 0, drag.axis === 2 ? 1 : 0);
+        const A = wt.transformVector(unit).normalize();
+        // closest approach between the axis line (centerWorld, A) and the camera ray (R0, D)
+        const w0 = centerWorld.clone().sub(R0);
+        const b = A.dot(D), denom = 1 - b * b;
+        if (Math.abs(denom) < 1e-3) return; // face edge-on to the view — skip this frame
+        const sc = (b * D.dot(w0) - A.dot(w0)) / denom; // signed world units along A from centre
+        const k = drag.axis;
+        const cArr = [center.x, center.y, center.z], sArr = [scale.x, scale.y, scale.z];
+        let lo = cArr[k] - sArr[k] / 2, hi = cArr[k] + sArr[k] / 2;
+        const face = cArr[k] + sc;
+        if (drag.sign > 0) hi = Math.max(face, lo + 1e-3);
+        else lo = Math.min(face, hi - 1e-3);
+        const nc = (lo + hi) / 2, ns = Math.max(hi - lo, 1e-3);
+        if (k === 0) { center.x = nc; scale.x = ns; }
+        else if (k === 1) { center.y = nc; scale.y = ns; }
+        else { center.z = nc; scale.z = ns; }
+        this.regionBoxNode.setLocalPosition(center);
+        this.regionBoxNode.setLocalScale(scale);
+        this.emitRegionBox();
     }
 
     frame(): void {

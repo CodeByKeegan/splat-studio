@@ -188,6 +188,8 @@ button.primary:focus-visible { outline-color: var(--text); }
     color: var(--text-dim);
     margin-top: 2px;
 }
+.hint.warn { color: #e0a838; }
+.hint.danger { color: #e8654f; }
 
 .group {
     font-size: var(--fs-xs);

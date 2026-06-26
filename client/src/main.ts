@@ -269,6 +269,7 @@ const viewFile = async (name: string, as: api.ViewKind) => {
             v.setSplatVisible(true);
             currentSplatName = name;
             syncPreview(); // apply the live Convert preview if this is the input
+            syncRegionViz(); updateRegionEstimate(); // re-fit/recompute the region box for the new splat
         } else if (as === 'collision') {
             if (!(await v.loadCollision(url, filename))) return;
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
@@ -730,7 +731,9 @@ const ACTION_TOGGLES: [string, string][] = [
     ['filter-box-on', 'filter-box-rows'],
     ['filter-sphere-on', 'filter-sphere-rows'],
     ['filter-value-on', 'filter-value-rows'],
-    ['filter-floaters-on', 'filter-floaters-rows']
+    ['filter-floaters-on', 'filter-floaters-rows'],
+    ['region-box-on', 'region-box-rows'],
+    ['region-sphere-on', 'region-sphere-rows']
 ];
 const syncActionRows = () => {
     for (const [cb, rows] of ACTION_TOGGLES) $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked);
@@ -782,6 +785,92 @@ for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sp
 for (const id of ['filter-box-on', 'filter-sphere-on']) $(id).addEventListener('change', syncCropViz);
 convertInput.addEventListener('change', syncPreview);
 convertFormat.addEventListener('change', syncPreview);
+
+// ---------- collision region box (viewport <-> Collision-panel fields) ----------
+const regMinX = $<HTMLInputElement>('region-min-x'), regMinY = $<HTMLInputElement>('region-min-y'), regMinZ = $<HTMLInputElement>('region-min-z');
+const regMaxX = $<HTMLInputElement>('region-max-x'), regMaxY = $<HTMLInputElement>('region-max-y'), regMaxZ = $<HTMLInputElement>('region-max-z');
+const regionBoxOn = () => $<HTMLInputElement>('region-box-on').checked;
+
+const syncRegionViz = () => {
+    if (!viewer) return;
+    viewer.setCollisionRegion(
+        [numOrNull(regMinX), numOrNull(regMinY), numOrNull(regMinZ)],
+        [numOrNull(regMaxX), numOrNull(regMaxY), numOrNull(regMaxZ)],
+        regionBoxOn()
+    );
+    rebuildSceneList(); // the 'Collision region' item appears/disappears with the toggle
+};
+
+// first time it's switched on, fill the box with the whole-scene bounds so the user shrinks inward
+const seedRegionDefaults = () => {
+    const empty = [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ].every((el) => el.value.trim() === '');
+    if (!empty) return;
+    const b = viewer?.regionDefaultBounds();
+    if (!b) return;
+    regMinX.value = String(b.min[0]); regMinY.value = String(b.min[1]); regMinZ.value = String(b.min[2]);
+    regMaxX.value = String(b.max[0]); regMaxY.value = String(b.max[1]); regMaxZ.value = String(b.max[2]);
+};
+
+for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.addEventListener('input', syncRegionViz);
+$('region-box-on').addEventListener('change', () => {
+    if (regionBoxOn()) seedRegionDefaults();
+    syncRegionViz();
+    if (regionBoxOn()) viewer?.selectObject('collision-region'); // raise the gizmo immediately
+    updateRegionEstimate();
+});
+
+// ---------- overflow estimate (advisory) ----------
+// splat-transform's marching-cubes vertex dedup Map overflows V8's hard cap.
+const MC_VERTEX_CAP = 16_777_216;
+// risk proxy: in-box gaussians scaled by (0.05/voxelSize)^2 (finer voxels => more MC vertices).
+// calibrated against the known failure — the whole 12.2M-gaussian Acropolis at 0.05 m overflowed.
+let regionRiskLevel: 'ok' | 'warn' | 'danger' = 'ok';
+const fmtCount = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
+const regionVoxelSize = () => Math.max(Number($<HTMLInputElement>('voxel-size').value) || 0.05, 0.001);
+const updateRegionEstimate = () => {
+    const chip = $('region-estimate'), actions = $('region-estimate-actions');
+    if (!viewer || !viewer.hasSplat || !regionBoxOn()) { regionRiskLevel = 'ok'; chip.classList.add('hidden'); actions.classList.add('hidden'); return; }
+    const inBox = viewer.regionGaussianCount();
+    const vs = regionVoxelSize();
+    const load = inBox * Math.pow(0.05 / vs, 2);
+    regionRiskLevel = load >= 11_000_000 ? 'danger' : load >= 6_000_000 ? 'warn' : 'ok';
+    chip.classList.remove('hidden', 'warn', 'danger');
+    if (regionRiskLevel === 'ok') {
+        chip.textContent = `Region: ~${fmtCount(inBox)} gaussians at ${vs} m — overflow risk low.`;
+        actions.classList.add('hidden');
+    } else {
+        chip.classList.add(regionRiskLevel);
+        chip.textContent = `Region: ~${fmtCount(inBox)} gaussians at ${vs} m — ${regionRiskLevel === 'danger' ? 'high' : 'elevated'} risk of the marching-cubes vertex limit (cap ${fmtCount(MC_VERTEX_CAP)}). Shrink the region or raise the voxel size.`;
+        actions.classList.remove('hidden');
+    }
+};
+let regionEstTimer = 0;
+const updateRegionEstimateDebounced = () => { clearTimeout(regionEstTimer); regionEstTimer = window.setTimeout(updateRegionEstimate, 200); };
+for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.addEventListener('input', updateRegionEstimateDebounced);
+$('voxel-size').addEventListener('input', updateRegionEstimateDebounced);
+
+$('region-coarsen').onclick = () => {
+    if (!viewer) return;
+    const inBox = viewer.regionGaussianCount();
+    const needed = 0.05 * Math.sqrt(Math.max(inBox, 1) / 5_000_000); // aim ~5M load
+    const vsEl = $<HTMLInputElement>('voxel-size');
+    const next = Math.max(Math.ceil(needed / 0.005) * 0.005, regionVoxelSize() + 0.005);
+    vsEl.value = String(Math.round(next * 1000) / 1000);
+    vsEl.dispatchEvent(new Event('input', { bubbles: true }));
+    vsEl.dispatchEvent(new Event('change', { bubbles: true }));
+    updateRegionEstimate();
+    showToast(`Voxel size raised to ${vsEl.value} m`);
+};
+$('region-shrink-seed').onclick = () => {
+    const sx = Number($<HTMLInputElement>('seed-x').value) || 0, sy = Number($<HTMLInputElement>('seed-y').value) || 0, sz = Number($<HTMLInputElement>('seed-z').value) || 0;
+    const r = 6; // 12 m cube around the seed
+    regMinX.value = String(sx - r); regMinY.value = String(sy - r); regMinZ.value = String(sz - r);
+    regMaxX.value = String(sx + r); regMaxY.value = String(sy + r); regMaxZ.value = String(sz + r);
+    for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.dispatchEvent(new Event('change', { bubbles: true }));
+    syncRegionViz();
+    updateRegionEstimate();
+    showToast('Region shrunk to a 12 m box around the seed');
+};
 
 convertRun.onclick = () => {
     const input = convertInput.value;
@@ -1105,6 +1194,8 @@ collisionRun.onclick = () => {
     const input = collisionInput.value;
     if (!input) return showToast('Pick an input file first', true);
     if (!panelValid('panel-collision')) return;
+    if (regionBoxOn() && regionRiskLevel === 'danger' &&
+        !confirm('This region may exceed splat-transform\'s marching-cubes vertex limit (RangeError: Map maximum size exceeded). Shrink the region or raise the voxel size to be safe. Generate anyway?')) return;
     void runJob(() => api.startCollision({
         input,
         options: {
@@ -1121,7 +1212,17 @@ collisionRun.onclick = () => {
             carve: carveBox.checked,
             carveHeight: Number($<HTMLInputElement>('carve-height').value),
             carveRadius: Number($<HTMLInputElement>('carve-radius').value),
-            meshShape: $<HTMLSelectElement>('mesh-shape').value as 'smooth' | 'faces'
+            meshShape: $<HTMLSelectElement>('mesh-shape').value as 'smooth' | 'faces',
+            filterBox: $<HTMLInputElement>('region-box-on').checked ? [
+                $<HTMLInputElement>('region-min-x').value, $<HTMLInputElement>('region-min-y').value, $<HTMLInputElement>('region-min-z').value,
+                $<HTMLInputElement>('region-max-x').value, $<HTMLInputElement>('region-max-y').value, $<HTMLInputElement>('region-max-z').value
+            ] : undefined,
+            filterSphere: $<HTMLInputElement>('region-sphere-on').checked ? [
+                Number($<HTMLInputElement>('region-sphere-x').value),
+                Number($<HTMLInputElement>('region-sphere-y').value),
+                Number($<HTMLInputElement>('region-sphere-z').value),
+                Number($<HTMLInputElement>('region-sphere-r').value)
+            ] : undefined
         }
     }), collisionRun, $<HTMLInputElement>('collision-autoload').checked);
 };
@@ -1181,6 +1282,11 @@ const camRotateBtn = $<HTMLButtonElement>('cam-rotate');
 camMoveBtn.onclick = () => { viewer?.setCameraGizmoMode('move'); camMoveBtn.classList.add('active'); camRotateBtn.classList.remove('active'); };
 camRotateBtn.onclick = () => { viewer?.setCameraGizmoMode('rotate'); camRotateBtn.classList.add('active'); camMoveBtn.classList.remove('active'); };
 
+const regionMoveBtn = $<HTMLButtonElement>('region-move');
+const regionResizeBtn = $<HTMLButtonElement>('region-resize');
+regionMoveBtn.onclick = () => { viewer?.setRegionGizmoMode('move'); regionMoveBtn.classList.add('active'); regionResizeBtn.classList.remove('active'); };
+regionResizeBtn.onclick = () => { viewer?.setRegionGizmoMode('resize'); regionResizeBtn.classList.add('active'); regionMoveBtn.classList.remove('active'); };
+
 // the Collision panel is "selected" when its tab is the shown one in its group
 // (isVisible is always true under 'always', and isActive is the single globally
 // focused panel — so compare the group's active tab)
@@ -1193,6 +1299,8 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
     { id: 'splat', label: 'Splat', icon: '✨', gizmo: false, has: () => !!viewer?.hasSplat },
     { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
     { id: 'voxels', label: 'Voxels', icon: '🧊', gizmo: false, has: () => !!viewer?.hasVoxels },
+    // collision region box only while setting up collision (Collision tab + region on)
+    { id: 'collision-region', label: 'Collision region', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && $<HTMLInputElement>('region-box-on').checked },
     // capsule only while actively setting up collision carving (Collision tab + carve on)
     { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && carveBox.checked },
     // render camera only when a WebP render is actually being set up
@@ -1231,6 +1339,7 @@ function rebuildSceneList(): void {
         sceneList.appendChild(li);
     }
     $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
+    $('region-gizmo-mode').classList.toggle('hidden', sel !== 'collision-region');
 }
 
 function selectScene(id: SelId): void {
@@ -1536,6 +1645,16 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncCropViz();
         };
+        // region box gizmo -> reflect absolute corners into the fields (live), persist on release
+        v.onRegionBoxChange = (min, max) => {
+            regMinX.value = String(min.x); regMinY.value = String(min.y); regMinZ.value = String(min.z);
+            regMaxX.value = String(max.x); regMaxY.value = String(max.y); regMaxZ.value = String(max.z);
+        };
+        v.onRegionBoxEnd = () => {
+            for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.dispatchEvent(new Event('change', { bubbles: true }));
+            syncRegionViz();
+            updateRegionEstimate();
+        };
         v.setBoundsVisible($<HTMLInputElement>('show-bounds').checked);
         // live measure readout + active-marker highlight as points are clicked in
         v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
@@ -1552,6 +1671,8 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         v.setCameraMode($<HTMLSelectElement>('camera-mode').value as 'fly' | 'orbit');
         if (cameraViewCanvas) v.setupCameraView(cameraViewCanvas); // a Camera-view panel opened before the viewer booted
         syncPreview(); // reflect restored Convert fields once the viewer is up
+        syncRegionViz(); // reflect a restored collision region box
+        updateRegionEstimate(); // and its overflow risk
         updateRenderFrustum(); // show the WebP frustum if WebP is the restored format
         rebuildSceneList();
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle

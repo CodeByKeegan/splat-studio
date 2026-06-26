@@ -220,12 +220,24 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
    (recommended — typed axes are CLI-space, rotated 180° from the viewer). To see and
    drag the seed in the viewport, select **Carve capsule** in the
    [Scene panel](#scene-hierarchy).
-5. **Seal** — choose hole sealing (external fill for interiors, floor fill for
+5. **Collision region** *(optional)* — limit generation to part of a large scene.
+   Tick **Limit to box** to crop the splat to an axis-aligned box (everything outside
+   is ignored before voxelizing). Select **Collision region** in the
+   [Scene panel](#scene-hierarchy) to get a draggable amber box in the viewport, with a
+   **Move / Resize** toggle: *Move* drags the whole box, *Resize* shows a handle on each
+   face — drag one and the opposite face stays put. The corner fields and the box stay
+   in sync, so you can also type exact extents. **Limit to sphere** crops to a sphere
+   instead. This is the fix when a big scene at a fine voxel size hits the
+   **marching-cubes vertex limit** (`RangeError: Map maximum size exceeded`): cropping
+   shrinks the mesh surface. A risk chip estimates the overflow risk and offers one-click
+   **Coarsen voxel** / **Shrink to seed**; **Generate** asks for confirmation when the
+   risk is high.
+6. **Seal** — choose hole sealing (external fill for interiors, floor fill for
    terrain, or none) and the distance to seal over.
-6. **Carve** — flood-fill walkable space from the seed with a player-sized capsule
+7. **Carve** — flood-fill walkable space from the seed with a player-sized capsule
    (height/radius). Select **Carve capsule** in the Scene panel to preview it in cyan
    and size it against the splat. Essential after external fill.
-7. **Mesh style** — smooth (marching cubes) or exact voxel faces — then **Generate
+8. **Mesh style** — smooth (marching cubes) or exact voxel faces — then **Generate
    collision**. With **Load result into viewport** checked (default), the outputs load
    as a wireframe + voxel overlay when the job finishes.
 

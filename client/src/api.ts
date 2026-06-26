@@ -112,6 +112,9 @@ export interface CollisionRequest {
         carveHeight: number;
         carveRadius: number;
         meshShape: 'smooth' | 'faces';
+        // collision region: crop the splat before voxelization (same axes/space as seedPos)
+        filterBox?: string[]; // 6 raw values [minX,minY,minZ,maxX,maxY,maxZ]; blank = unbounded
+        filterSphere?: [number, number, number, number]; // [x,y,z,radius]
     };
 }
 

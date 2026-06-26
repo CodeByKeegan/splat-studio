@@ -65,6 +65,36 @@ const vec3Arg = (v, name) => {
     });
 };
 
+// -B/-S spatial crop, shared by convert and collision. They are per-input filter
+// actions, so callers push them between the input token and the output token.
+const pushCropFilters = (args, options) => {
+    if (Array.isArray(options.filterBox)) {
+        if (options.filterBox.length !== 6) throw new Error('filter-box needs 6 values (min x,y,z, max x,y,z)');
+        // blank or "-" leaves that side unbounded (the CLI maps it to ±Infinity)
+        const parts = options.filterBox.map((s) => {
+            const t = String(s ?? '').trim();
+            if (t === '' || t === '-') return '';
+            const n = Number(t);
+            if (!Number.isFinite(n)) throw new Error(`filter-box: invalid number "${t}"`);
+            return String(n);
+        });
+        if (parts.every((p) => p === '')) throw new Error('filter-box: set at least one bound');
+        args.push('-B', parts.join(','));
+    }
+
+    const sph = options.filterSphere;
+    if (Array.isArray(sph)) {
+        if (sph.length !== 4) throw new Error('filter-sphere needs 4 values (x, y, z, radius)');
+        const v = sph.map((x) => {
+            const n = Number(x);
+            if (!Number.isFinite(n)) throw new Error(`filter-sphere: invalid number "${x}"`);
+            return n;
+        });
+        if (v[3] < 0) throw new Error('filter-sphere: radius must be >= 0');
+        args.push('-S', v.join(','));
+    }
+};
+
 // Transform/filter actions applied to the working set before the output is
 // written (CLI grammar: input [ACTIONS] output). Fixed pipeline order; only
 // non-default values emit a flag. Not used by the LOD path, which bakes levels
@@ -94,31 +124,7 @@ const pushConvertActions = (args, options) => {
         args.push('-H', String(h));
     }
 
-    if (Array.isArray(options.filterBox)) {
-        if (options.filterBox.length !== 6) throw new Error('filter-box needs 6 values (min x,y,z, max x,y,z)');
-        // blank or "-" leaves that side unbounded (the CLI maps it to ±Infinity)
-        const parts = options.filterBox.map((s) => {
-            const t = String(s ?? '').trim();
-            if (t === '' || t === '-') return '';
-            const n = Number(t);
-            if (!Number.isFinite(n)) throw new Error(`filter-box: invalid number "${t}"`);
-            return String(n);
-        });
-        if (parts.every((p) => p === '')) throw new Error('filter-box: set at least one bound');
-        args.push('-B', parts.join(','));
-    }
-
-    const sph = options.filterSphere;
-    if (Array.isArray(sph)) {
-        if (sph.length !== 4) throw new Error('filter-sphere needs 4 values (x, y, z, radius)');
-        const v = sph.map((x) => {
-            const n = Number(x);
-            if (!Number.isFinite(n)) throw new Error(`filter-sphere: invalid number "${x}"`);
-            return n;
-        });
-        if (v[3] < 0) throw new Error('filter-sphere: radius must be >= 0');
-        args.push('-S', v.join(','));
-    }
+    pushCropFilters(args, options);
 
     const fv = options.filterValue;
     if (fv && typeof fv === 'object') {
@@ -344,6 +350,9 @@ export const buildCollisionCommand = ({ input, options = {} }) => {
     if (Array.isArray(options.seedPos) && options.seedPos.length === 3) {
         args.push('--seed-pos', options.seedPos.map((v) => num(v, 0, -1e6, 1e6)).join(','));
     }
+    // crop the working set to the collision region before voxelization (-B/-S are
+    // per-input actions, so they sit before the output token)
+    pushCropFilters(args, options);
 
     args.push(voxelOut);
     args.push('--voxel-params', `${num(options.voxelSize, 0.05, 0.001, 10)},${num(options.opacity, 0.1, 0, 1)}`);

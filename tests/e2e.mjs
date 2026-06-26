@@ -239,6 +239,22 @@ try {
                 assert(fs.existsSync(path.join(projectDir, 'collision.voxel.json')), 'no voxel json');
             });
         }
+
+        await check('collision region: filter-box (-B) actually crops the voxel grid', async () => {
+            // keep only x >= 0; demo-room spans x ~ [-5.5, 4.5], so the voxel grid must shrink
+            const job = await runJob('/api/collision', {
+                input: 'demo-room.ply',
+                options: {
+                    voxelSize: 0.1, opacity: 0.1, seedPos: [0, 1, 0], meshShape: 'smooth',
+                    fillMode: 'none', carve: false, filterCluster: false,
+                    filterBox: ['0', '', '', '', '', '']
+                }
+            });
+            assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+            assert(job.command.includes('-B 0,,,,,'), `no -B on collision cmd: ${job.command}`);
+            const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'collision.voxel.json'), 'utf8'));
+            assert(meta.gridBounds.min[0] > -2, `box not honored: grid min.x ${meta.gridBounds.min[0]} (expected > -2 after x>=0 crop)`);
+        });
     } else {
         console.log('  - collision presets skipped (SKIP_GPU)');
     }

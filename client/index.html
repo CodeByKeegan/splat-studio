@@ -373,6 +373,40 @@
                     <span class="hint">Typed XYZ use CLI axes (rotated 180° from the viewer) — prefer 📷.</span>
                 </div>
 
+                <div class="group">Collision region</div>
+                <label class="check" title="Limit collision to an axis-aligned box (-B/--filter-box): only gaussians inside are voxelized. Shrinks the marching-cubes surface, which avoids the vertex-limit error on large scenes. Leave a side blank for no limit."><input type="checkbox" id="region-box-on" /> Limit to box</label>
+                <div class="field hidden" id="region-box-rows" title="Box corners in splat-transform world units (same axes as the seed). Blank = unbounded on that side.">
+                    <div class="label-row"><span>Box min <em>(x, y, z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="region-min-x" step="0.1" placeholder="−∞" title="Box min X (blank = unbounded)" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="region-min-y" step="0.1" placeholder="−∞" title="Box min Y (blank = unbounded)" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="region-min-z" step="0.1" placeholder="−∞" title="Box min Z (blank = unbounded)" /></label>
+                    </div>
+                    <div class="label-row"><span>Box max <em>(x, y, z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="region-max-x" step="0.1" placeholder="+∞" title="Box max X (blank = unbounded)" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="region-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="region-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
+                    </div>
+                </div>
+                <label class="check" title="Limit collision to a sphere (-S/--filter-sphere)."><input type="checkbox" id="region-sphere-on" /> Limit to sphere</label>
+                <div class="field hidden" id="region-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the seed).">
+                    <div class="label-row"><span>Sphere centre <em>(x, y, z)</em> + radius</span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="region-sphere-x" value="0" step="0.1" title="Sphere centre X" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="region-sphere-y" value="0" step="0.1" title="Sphere centre Y" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="region-sphere-z" value="0" step="0.1" title="Sphere centre Z" /></label>
+                        <label class="axis"><span>r</span><input type="number" id="region-sphere-r" value="1" step="0.1" min="0" title="Sphere radius" /></label>
+                    </div>
+                    <span class="hint">Typed XYZ use CLI axes (same as the seed) — a draggable viewport box is coming.</span>
+                </div>
+
+                <div class="hint hidden" id="region-estimate" title="Rough marching-cubes overflow risk. Cropping the region or raising the voxel size both reduce it — the mesh fails above ~16.7M vertices."></div>
+                <div class="field-row hidden" id="region-estimate-actions">
+                    <button id="region-coarsen" title="Raise the voxel size just enough to drop the overflow risk">Coarsen voxel</button>
+                    <button id="region-shrink-seed" title="Resize the region to a small box around the seed point">Shrink to seed</button>
+                </div>
+
                 <div class="group">Seal</div>
                 <div class="field-row">
                     <label class="field half" title="How splat holes get sealed so the volume is watertight">
@@ -451,6 +485,10 @@
                 <div class="field-row hidden" id="cam-gizmo-mode" title="What the render-camera gizmo does">
                     <button id="cam-move" class="active" title="Drag the gizmo to move the render camera (updates the WebP Camera position)">Move</button>
                     <button id="cam-rotate" title="Drag the gizmo to rotate the render camera (updates the WebP Look-at)">Rotate</button>
+                </div>
+                <div class="field-row hidden" id="region-gizmo-mode" title="How the collision region gizmo behaves">
+                    <button id="region-move" class="active" title="Drag the gizmo to move the whole region box">Move</button>
+                    <button id="region-resize" title="Drag a face handle to resize the region — the opposite face stays put">Resize</button>
                 </div>
                 <span class="hint" id="scene-hint">Select an object to move it. Click it again to deselect.</span>
 
