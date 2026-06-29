@@ -134,6 +134,20 @@ The Convert panel runs one `splat-transform` conversion as a background job.
 > for the distant static surround; anything the viewer walks up to should be a
 > numbered level. One environment layer per bake; not available in Decimate mode.
 
+> **⚡ Auto-tune from splat stats (streamed LOD):** when the output format is
+> **streamed LOD**, an **Auto-tune** button reads each source's gaussian count and
+> world-space extents (a quick CPU `-m` summary, cached) and fills the settings for you:
+>
+> ![LOD auto-tune](screenshots/lod-autotune.png)
+>
+> - **Combine** mode — orders the level rows by gaussian count (most detail first →
+>   LOD 1, 2, …) and tags a backdrop (much larger extents, or an `env`/`sky`-ish name)
+>   as the **Env** layer. Warns if a level has more gaussians than the Input (LOD 0).
+> - **Decimate** mode — derives the number of **LOD levels** and **chunk extent** from
+>   the input's count and scene size (aiming the coarsest level near ~150k gaussians).
+>
+> A one-line plan summarises what it chose; every value stays editable afterwards.
+
 > **Generators:** when the input is a `.mjs` file, a **Generator params** field (and,
 > if the generator advertises a schema, live sliders) appear. **✨ Generate & view**
 > runs the generator and loads the result straight into the viewport.

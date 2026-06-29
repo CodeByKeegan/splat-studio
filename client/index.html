@@ -97,6 +97,10 @@
                         <option value="combine">Combine existing files as levels</option>
                     </select>
                 </label>
+                <div class="field-row hidden" id="row-lod-autotune">
+                    <button id="lod-autotune" title="Read each source's gaussian count + extents (a quick CPU summary) and fill the LOD settings automatically — decimate levels/keep for a single input, or order the combine rows by detail and tag a backdrop as the environment">⚡ Auto-tune from splat stats</button>
+                </div>
+                <div class="hint hidden" id="lod-autotune-plan"></div>
                 <div class="field-row hidden" id="row-lod-levels">
                     <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
                         <span>LOD levels</span>

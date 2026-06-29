@@ -133,6 +133,34 @@ const listFiles = async (projectDir) => {
     return out.sort((a, b) => a.name.localeCompare(b.name));
 };
 
+// ---------- per-file stats (cached) ----------
+// Gaussian count + x/y/z extents from the CLI summary (-m), for LOD auto-tune.
+// Cached per (absolute path, mtime) so repeated auto-tunes don't re-run the scan.
+const statsCache = new Map();
+const parseStats = (log) => {
+    const start = log.indexOf('# Summary');
+    if (start < 0) return null;
+    const block = log.slice(start);
+    const rc = block.match(/Row Count:\*\*\s*(\d+)/);
+    const minMax = {};
+    for (const line of block.split('\n')) {
+        if (!line.trim().startsWith('|')) continue;
+        const c = line.split('|').slice(1, -1).map((s) => s.trim());
+        if (c.length < 3 || c[0] === 'Column' || /^-+$/.test(c[0])) continue;
+        minMax[c[0]] = [Number(c[1]), Number(c[2])];
+    }
+    const extent = (k) => (minMax[k] ? minMax[k][1] - minMax[k][0] : NaN);
+    return { count: rc ? Number(rc[1]) : NaN, extents: [extent('x'), extent('y'), extent('z')] };
+};
+const runStats = (absInput) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '-m', 'null'], { windowsHide: true, timeout: 120000 });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { out += d; });
+    child.on('error', () => resolve(null));
+    child.on('close', () => resolve(parseStats(out)));
+});
+
 // ---------- routes ----------
 app.get('/api/health', (req, res) => {
     res.json({ ok: true, cli: existsSync(cliPath) });
@@ -282,6 +310,27 @@ const listGpus = () => new Promise((resolve) => {
     });
 });
 app.get('/api/gpus', async (req, res) => res.json({ gpus: await listGpus() }));
+
+// gaussian count + x/y/z extents for one splat (drives LOD auto-tune); cached by path+mtime
+app.get('/api/stats', async (req, res) => {
+    try {
+        const projectDir = resolveProject(req.query.project);
+        const input = String(req.query.input ?? '');
+        if (!isSafeRelPath(input) || !existsSync(toAbs(projectDir, input))) {
+            return res.status(400).json({ error: `No such file: ${input}` });
+        }
+        const abs = toAbs(projectDir, input);
+        const mtime = (await fs.stat(abs)).mtimeMs;
+        const hit = statsCache.get(abs);
+        if (hit && hit.mtime === mtime) return res.json(hit.stats);
+        const stats = await runStats(abs);
+        if (!stats) return res.status(500).json({ error: `Could not analyze ${input}` });
+        statsCache.set(abs, { mtime, stats });
+        res.json(stats);
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
 
 // Read a .mjs generator's advertised param schema (its static `Generator.params`)
 // by importing it in a throwaway child Node: isolates a crashing/looping module

@@ -695,6 +695,8 @@ const updateConvertRows = () => {
     $('row-lod-levels').classList.toggle('hidden', !isLod || combine);
     $('row-lod-files').classList.toggle('hidden', !isLod || !combine);
     $('row-lod-chunks').classList.toggle('hidden', !isLod);
+    $('row-lod-autotune').classList.toggle('hidden', !isLod);
+    if (!isLod) $('lod-autotune-plan').classList.add('hidden');
     $('html-rows').classList.toggle('hidden', f !== 'html');
     $('webp-rows').classList.toggle('hidden', !isWebp);
     if (isLod && combine && lodFileRows.children.length === 0) addLodRow();
@@ -702,6 +704,94 @@ const updateConvertRows = () => {
 };
 convertFormat.onchange = updateConvertRows;
 lodMode.onchange = updateConvertRows;
+
+// ----- LOD auto-tune: fill the LOD settings from each source's gaussian count + extents -----
+const lodAutotuneBtn = $<HTMLButtonElement>('lod-autotune');
+const lodAutotunePlan = $('lod-autotune-plan');
+const baseLabel = (n: string): string => n.split('/').pop() ?? n;
+const showLodPlan = (text: string, cls = ''): void => {
+    lodAutotunePlan.textContent = text;
+    lodAutotunePlan.className = `hint ${cls}`.trim();
+};
+
+// rebuild the combine rows from an ordered [{file, env}] list. No persistence
+// needed: convertRun reads the rows live from the DOM at submit time.
+const setCombineRows = (rows: { file: string; env: boolean }[]): void => {
+    lodFileRows.innerHTML = '';
+    for (const r of rows) {
+        addLodRow();
+        const row = lodFileRows.lastElementChild as HTMLElement;
+        (row.querySelector('select') as HTMLSelectElement).value = r.file;
+        (row.querySelector('.lod-env-box') as HTMLInputElement).checked = r.env;
+    }
+    relabelLodRows();
+};
+
+// single input → a decimation ladder sized to the gaussian count (and chunk
+// extent to the scene size). All values clamped to the fields' min/max.
+const autotuneDecimate = async (input: string): Promise<void> => {
+    const s = await api.getStats(input);
+    const maxExtent = Math.max(...s.extents.filter(Number.isFinite));
+    const KEEP = 50, FLOOR = 150_000; // aim the coarsest level near ~150k gaussians
+    let levels = 1;
+    if (Number.isFinite(s.count) && s.count > FLOOR) {
+        levels = Math.min(8, Math.max(2, 1 + Math.ceil(Math.log(FLOOR / s.count) / Math.log(KEEP / 100))));
+    }
+    const chunkExtent = Number.isFinite(maxExtent) ? Math.min(1000, Math.max(1, Math.round(maxExtent / 6))) : 16;
+    const setNum = (id: string, v: number): void => { const el = $<HTMLInputElement>(id); el.value = String(v); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    setNum('lod-levels', levels);
+    setNum('lod-keep', KEEP);
+    setNum('lod-chunk-extent', chunkExtent);
+    const ladder = Array.from({ length: levels }, (_, i) => fmtCount(Math.round(s.count * (KEEP / 100) ** i))).join(' → ');
+    showLodPlan(`Decimate ${fmtCount(s.count)} gaussians into ${levels} level${levels > 1 ? 's' : ''} at ${KEEP}% each: ${ladder}. Chunk extent ${chunkExtent} m (scene ≈ ${maxExtent.toFixed(1)} m).`);
+};
+
+// combine mode → order the level rows by gaussian count (most detail first) and
+// tag a backdrop (much larger extents, or an env/sky-ish name) as the environment.
+const autotuneCombine = async (input: string): Promise<void> => {
+    const candidates = [...new Set(lodRowSelects().map((s) => s.value).filter(Boolean))]
+        .filter((f) => f !== input && !f.toLowerCase().endsWith('.mjs'))
+        .slice(0, 8); // cap the fan-out — each candidate is one CPU summary
+    if (!candidates.length) {
+        showLodPlan('Add the LOD level files first (the Input is LOD 0), then Auto-tune to order them by gaussian count and tag a backdrop as the environment.', 'warn');
+        return;
+    }
+    const [inputStats, ...rowStats] = await Promise.all([api.getStats(input), ...candidates.map((f) => api.getStats(f))]);
+    const entries = candidates.map((file, i) => ({ file, count: rowStats[i].count, ext: Math.max(...rowStats[i].extents.filter(Number.isFinite)) }));
+    const sortedExts = entries.map((e) => e.ext).sort((a, b) => a - b);
+    const medianExt = sortedExts[Math.floor(sortedExts.length / 2)] || 1;
+    const isEnv = (e: { file: string; ext: number }): boolean => /env|background|backdrop|sky/i.test(e.file) || e.ext > medianExt * 2.5;
+    const env = entries.find(isEnv);
+    const detail = entries.filter((e) => e !== env).sort((a, b) => b.count - a.count);
+    setCombineRows([...detail.map((e) => ({ file: e.file, env: false })), ...(env ? [{ file: env.file, env: true }] : [])]);
+    const plan = [`L0 = ${baseLabel(input)} (${fmtCount(inputStats.count)})`,
+        ...detail.map((e, i) => `L${i + 1} = ${baseLabel(e.file)} (${fmtCount(e.count)})`),
+        ...(env ? [`env = ${baseLabel(env.file)}`] : [])].join('  ·  ');
+    const tooBig = entries.find((e) => Number.isFinite(inputStats.count) && e.count > inputStats.count);
+    showLodPlan(plan, tooBig ? 'warn' : '');
+    if (tooBig) showToast(`${baseLabel(tooBig.file)} has more gaussians than the Input — consider making it the Input (LOD 0).`, true);
+};
+
+lodAutotuneBtn.onclick = () => {
+    const input = convertInput.value;
+    if (!input) return showToast('Pick a Convert input first', true);
+    if (input.toLowerCase().endsWith('.mjs')) return showToast('Auto-tune reads existing splats, not generators — convert the generator to a splat first', true);
+    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
+    // mirror runJob's serialization (no server-side queue): block concurrent jobs
+    jobBusy = true;
+    convertRun.disabled = true; collisionRun.disabled = true; analyzeRun.disabled = true;
+    lodAutotuneBtn.disabled = true;
+    const prevLabel = lodAutotuneBtn.textContent;
+    lodAutotuneBtn.textContent = 'Reading stats…';
+    const run = lodMode.value === 'combine' ? autotuneCombine(input) : autotuneDecimate(input);
+    void run.catch((err) => showToast(`Auto-tune failed: ${err}`, true))
+        .finally(() => {
+            jobBusy = false;
+            convertRun.disabled = false; collisionRun.disabled = false; analyzeRun.disabled = false;
+            lodAutotuneBtn.disabled = false;
+            lodAutotuneBtn.textContent = prevLabel;
+        });
+};
 
 // ----- generator + input-driven rows -----
 // Keys off the selected INPUT (not the output format): a .mjs source → generator

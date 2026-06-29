@@ -238,6 +238,16 @@ try {
         assert(Array.isArray(json.gpus), `gpus: ${JSON.stringify(json)}`);
     });
 
+    await check('stats endpoint returns gaussian count + extents', async () => {
+        const { status, json } = await api('GET', `/api/stats?project=${PROJECT}&input=demo-room.ply`);
+        assert(status === 200, `status ${status}: ${JSON.stringify(json)}`);
+        assert(Number.isFinite(json.count) && json.count > 1000, `count ${json.count}`);
+        assert(Array.isArray(json.extents) && json.extents.length === 3 && json.extents.every((e) => Number.isFinite(e) && e > 0),
+            `extents ${JSON.stringify(json.extents)}`);
+        const bad = await api('GET', `/api/stats?project=${PROJECT}&input=does-not-exist.ply`);
+        assert(bad.status === 400, `missing file should 400, got ${bad.status}`);
+    });
+
     await check('rejects a bad WebP resolution', async () => {
         const { status } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '99999999x1' } } });
         assert(status === 400, `expected 400, got ${status}`);

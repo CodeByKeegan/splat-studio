@@ -213,6 +213,11 @@ export const startAnalyze = async (input: string): Promise<string> =>
         body: JSON.stringify({ input, project })
     }))).jobId;
 
+/** Gaussian count + x/y/z extents for a splat (cached server-side); drives LOD auto-tune. */
+export interface FileStats { count: number; extents: [number, number, number]; }
+export const getStats = async (input: string): Promise<FileStats> =>
+    jsonOrThrow(await fetch(`/api/stats?${pq()}&input=${encodeURIComponent(input)}`));
+
 /** A .mjs generator's advertised param schema, or null if it exposes none. */
 export const getGeneratorParams = async (input: string): Promise<GenParam[] | null> =>
     (await jsonOrThrow(await fetch(`/api/generator-params?${pq()}&input=${encodeURIComponent(input)}`))).params;
