@@ -60,6 +60,8 @@ export interface ConvertRequest {
     format: string;
     options: {
         iterations?: number;
+        /** SOG encoder worker threads (--max-workers); 0 = inline/serial */
+        maxWorkers?: number;
         spzVersion?: number;
         decimate?: string;
         filterNaN?: boolean;
@@ -88,6 +90,8 @@ export interface ConvertRequest {
         lodChunkExtent?: number;
         /** combine mode: files for LOD 1..n (the main input is LOD 0) */
         lodFiles?: string[];
+        /** combine mode: per-file flag aligned 1:1 with lodFiles; true tags that file -l -1 (always-resident environment level) */
+        lodEnvFlags?: boolean[];
         /** .mjs generator params, raw "key=val,key=val" forwarded to -p/--params */
         params?: string;
         /** WebP render options */

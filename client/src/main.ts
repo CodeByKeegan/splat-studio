@@ -104,7 +104,7 @@ const fillSelect = (select: HTMLSelectElement, names: string[]) => {
 const refreshFiles = async (highlight?: Set<string>) => {
     const files = await api.listFiles();
 
-    // anything the CLI can read (incl. .spz/.splat/.ksplat/.lcc), not just
+    // anything the CLI can read (incl. .spz/.splat/.ksplat/.lcc/.lcc2), not just
     // what the engine can render; lod-meta.json is viewable but not a CLI input
     const splatFiles = files.filter((f) => f.kind === 'splat' && !f.name.endsWith('lod-meta.json'));
     splatFileNames = splatFiles.map((f) => f.name);
@@ -510,9 +510,11 @@ const lodFileRows = $<HTMLDivElement>('lod-file-rows');
 const lodRowSelects = (): HTMLSelectElement[] => [...lodFileRows.querySelectorAll('select')];
 
 const relabelLodRows = () => {
-    [...lodFileRows.children].forEach((row, i) => {
+    let n = 1;
+    [...lodFileRows.children].forEach((row) => {
         const label = row.querySelector('.lod-label');
-        if (label) label.textContent = `LOD ${i + 1}`;
+        const isEnv = row.querySelector<HTMLInputElement>('.lod-env-box')?.checked;
+        if (label) label.textContent = isEnv ? 'ENV' : `LOD ${n++}`;
     });
 };
 
@@ -528,6 +530,22 @@ const addLodRow = () => {
     const used = new Set([convertInput.value, ...lodRowSelects().map((s) => s.value)]);
     const free = splatFileNames.find((n) => !used.has(n));
     if (free) select.value = free;
+    // optional environment tag: this file becomes an always-resident far/background
+    // shell (-l -1) rather than a distance-streamed level. Only one row may be the
+    // environment, so checking one clears the others.
+    const env = document.createElement('label');
+    env.className = 'lod-env';
+    env.title = 'Environment level (-l -1): keep this file resident at all distances as a far/background shell — skybox, distant cityscape, forest — instead of streaming it by camera distance';
+    const envBox = document.createElement('input');
+    envBox.type = 'checkbox';
+    envBox.className = 'lod-env-box';
+    envBox.onchange = () => {
+        if (envBox.checked) {
+            lodFileRows.querySelectorAll<HTMLInputElement>('.lod-env-box').forEach((b) => { if (b !== envBox) b.checked = false; });
+        }
+        relabelLodRows();
+    };
+    env.append(envBox, document.createTextNode(' Env'));
     const remove = document.createElement('button');
     remove.textContent = '✕';
     remove.title = 'Remove this level';
@@ -536,7 +554,7 @@ const addLodRow = () => {
         relabelLodRows();
         updateConvertRows(); // combine mode always keeps at least one row
     };
-    row.append(label, select, remove);
+    row.append(label, select, env, remove);
     lodFileRows.appendChild(row);
     relabelLodRows();
 };
@@ -560,7 +578,8 @@ const updateConvertRows = () => {
     const isLod = f === 'lod';
     const isWebp = f === 'webp';
     const combine = lodMode.value === 'combine';
-    $('row-iterations').classList.toggle('hidden', !(f === 'sog' || f === 'sog-unbundled' || f === 'html' || isLod));
+    const isSog = f === 'sog' || f === 'sog-unbundled' || f === 'html' || isLod;
+    $('row-sog-encode').classList.toggle('hidden', !isSog);
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
     $('row-decimate').classList.toggle('hidden', isLod || isWebp); // no decimate for LOD/render
     $('convert-actions').classList.toggle('hidden', isLod); // transforms/filters don't apply to LOD bakes
@@ -621,7 +640,8 @@ const currentGenParams = (): string => {
 const updateInputRows = async (): Promise<void> => {
     const input = convertInput.value;
     const isMjs = input.toLowerCase().endsWith('.mjs');
-    $('row-lod-select').classList.toggle('hidden', !input.toLowerCase().endsWith('.lcc'));
+    const lower = input.toLowerCase();
+    $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2')));
     $('row-gen-actions').classList.toggle('hidden', !isMjs);
     if (!isMjs) {
         $('row-gen-params').classList.add('hidden');
@@ -877,10 +897,22 @@ convertRun.onclick = () => {
     if (!input) return showToast('Pick an input file first', true);
     if (!panelValid('panel-convert')) return;
     let lodFiles: string[] | undefined;
+    let lodEnvFlags: boolean[] | undefined;
     if (convertFormat.value === 'lod' && lodMode.value === 'combine') {
-        lodFiles = lodRowSelects().map((s) => s.value).filter(Boolean);
+        // build files + env flags from the same row order so they stay aligned 1:1
+        const picked = [...lodFileRows.children]
+            .map((r) => ({
+                file: r.querySelector<HTMLSelectElement>('select')!.value,
+                env: !!r.querySelector<HTMLInputElement>('.lod-env-box')?.checked
+            }))
+            .filter((p) => p.file);
+        lodFiles = picked.map((p) => p.file);
+        lodEnvFlags = picked.map((p) => p.env);
         if (lodFiles.length === 0) {
             return showToast('Add at least one LOD level file, or switch LOD source to decimate', true);
+        }
+        if (lodEnvFlags.every((e) => e)) {
+            return showToast('Mark at least one row as a normal (non-environment) LOD level', true);
         }
         const chain = [input, ...lodFiles];
         if (new Set(chain).size !== chain.length) {
@@ -892,6 +924,7 @@ convertRun.onclick = () => {
         format: convertFormat.value,
         options: {
             iterations: Number($<HTMLInputElement>('convert-iterations').value),
+            maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
             spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
             decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
             filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
@@ -938,6 +971,7 @@ convertRun.onclick = () => {
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
             lodFiles,
+            lodEnvFlags,
             params: currentGenParams(),
             image: convertFormat.value === 'webp' ? webpImageOptions() : undefined
         }

@@ -204,6 +204,35 @@ try {
         assert(/ -U\b/.test(job.command) && /-E settings\.json/.test(job.command), `cmd: ${job.command}`);
     });
 
+    await check('SOG encoder workers (--max-workers)', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'html', options: { maxWorkers: 2 } });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/--max-workers 2\b/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('streamed LOD combine + environment level (-l -1)', async () => {
+        await fsp.copyFile(path.join(projectDir, 'demo-room.ply'), path.join(projectDir, 'env-shell.ply'));
+        await fsp.copyFile(path.join(projectDir, 'demo-room.ply'), path.join(projectDir, 'detail-1.ply'));
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply',
+            format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodFiles: ['env-shell.ply', 'detail-1.ply'], lodEnvFlags: [true, false] }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        // input is LOD 0; the env file is tagged -1; the detail file gets the next positive level (1)
+        assert(/env-shell\.ply -l -1\b/.test(job.command), `no env -l -1 in cmd: ${job.command}`);
+        assert(/ -l 0\b/.test(job.command) && /detail-1\.ply -l 1\b/.test(job.command), `levels not contiguous: ${job.command}`);
+        assert(fs.existsSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json')), 'no lod-meta.json');
+    });
+
+    await check('rejects an all-environment combine bake', async () => {
+        const { status } = await api('POST', '/api/convert', {
+            project: PROJECT, input: 'demo-room.ply', format: 'lod',
+            options: { lodFiles: ['env-shell.ply'], lodEnvFlags: [true] }
+        });
+        assert(status === 400, `expected 400, got ${status}`);
+    });
+
     await check('lists GPU adapters (-L)', async () => {
         const { json } = await api('GET', '/api/gpus');
         assert(Array.isArray(json.gpus), `gpus: ${JSON.stringify(json)}`);

@@ -32,7 +32,7 @@
     "dist:win": "npm run prepack:win && electron-builder --win"
   },
   "dependencies": {
-    "@playcanvas/splat-transform": "^2.5.2",
+    "@playcanvas/splat-transform": "^2.7.0",
     "dockview-core": "^7.0.2",
     "express": "^4.21.2"
   },
@@ -41,7 +41,7 @@
     "concurrently": "^9.1.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
-    "playcanvas": "^2.19.6",
+    "playcanvas": "^2.20.1",
     "png-to-ico": "^2.1.8",
     "pngjs": "^7.0.0",
     "rcedit": "^4.0.1",

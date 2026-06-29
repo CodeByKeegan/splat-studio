@@ -83,7 +83,7 @@ const fileKind = (name) => {
     if (name.endsWith('.collision.glb')) return 'collision';
     if (name.endsWith('lod-meta.json')) return 'lod';
     if (name.endsWith('meta.json')) return 'splat';
-    if (/\.(ply|sog|spz|splat|ksplat|lcc)$/i.test(name)) return 'splat';
+    if (/\.(ply|sog|spz|splat|ksplat|lcc2?)$/i.test(name)) return 'splat';
     if (name.endsWith('.glb')) return 'glb';
     if (/\.(csv|html|webp)$/i.test(name)) return 'export';
     if (/\.mjs$/i.test(name)) return 'generator'; // procedural splat source (-p params)

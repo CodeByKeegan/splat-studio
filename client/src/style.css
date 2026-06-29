@@ -449,6 +449,17 @@ body.dropping #viewport::after {
 }
 #lod-file-rows .lod-row select { flex: 1; min-width: 0; }
 #lod-file-rows .lod-row button { padding: 2px 8px; font-size: var(--fs-sm); }
+#lod-file-rows .lod-row .lod-env {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+#lod-file-rows .lod-row .lod-env input { margin: 0; }
 #lod-add-level { margin-top: 2px; font-size: var(--fs-sm); }
 
 #job-command {

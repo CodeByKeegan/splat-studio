@@ -192,6 +192,10 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     }
     if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
         args.push('-i', String(Math.round(num(options.iterations, 10, 1, 100))));
+        // SOG encoder worker threads (--max-workers); 0 = inline/serial
+        if (options.maxWorkers != null && options.maxWorkers !== '') {
+            args.push('--max-workers', String(Math.round(num(options.maxWorkers, 4, 0, 64))));
+        }
     }
     if (format === 'html') {
         if (options.unbundled) args.push('-U'); // separate files instead of one .html
@@ -214,24 +218,41 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         // the CLI parses -X with parseInteger; fractional input must be rounded
         args.push('-X', String(Math.round(num(options.lodChunkExtent, 16, 1, 1000))));
 
-        const lodFiles = Array.isArray(options.lodFiles) ? options.lodFiles.filter(Boolean) : [];
+        const rawFiles = Array.isArray(options.lodFiles) ? options.lodFiles : null;
+        const rawEnv = Array.isArray(options.lodEnvFlags) ? options.lodEnvFlags : [];
+        // pair each file with its environment flag, then drop blank rows so a
+        // missing selection can't desync the file <-> flag mapping
+        const pairs = (rawFiles ?? [])
+            .map((file, i) => ({ file, env: rawEnv[i] === true }))
+            .filter((p) => p.file);
         // lodFiles present-but-empty means combine mode with no levels — reject
         // rather than silently falling through to decimate mode
-        if (Array.isArray(options.lodFiles) && lodFiles.length === 0) {
+        if (rawFiles && pairs.length === 0) {
             throw new Error('Combine mode requires at least one additional LOD level file');
         }
-        if (lodFiles.length > 0) {
-            // combine mode: pre-authored detail levels — input is LOD 0,
-            // lodFiles are LOD 1..n, no decimation
-            const chain = [input, ...lodFiles];
-            chain.forEach((file, level) => {
+        // an environment shell (-l -1) needs at least one streamed detail level beside it
+        if (pairs.length > 0 && pairs.every((p) => p.env)) {
+            throw new Error('Combine mode needs at least one non-environment LOD level');
+        }
+        if (pairs.length > 0) {
+            // combine mode: pre-authored levels — input is LOD 0; each added file
+            // is the next positive level, except one flagged "environment" which is
+            // tagged -l -1 (the runtime keeps it resident as a far/background shell
+            // instead of streaming it by camera distance). nextLevel (not the array
+            // index) keeps positive levels gap-free around an environment row.
+            args.push(input);
+            if (options.filterNaN) args.push('-N');
+            args.push('-l', '0');
+            let nextLevel = 1;
+            for (const { file, env } of pairs) {
                 args.push(file);
                 if (options.filterNaN) args.push('-N');
-                args.push('-l', String(level));
-            });
+                args.push('-l', env ? '-1' : String(nextLevel++));
+            }
             args.push(output);
+            const envCount = pairs.filter((p) => p.env).length;
             return {
-                title: `Streamed LOD (combine ${chain.length} files) → ${output}`,
+                title: `Streamed LOD (combine ${pairs.length + 1} files${envCount ? ', +environment' : ''}) → ${output}`,
                 args,
                 expectedOutputs: [output],
                 viewables: viewableOutputs([output]),
@@ -273,8 +294,8 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         }
         args.push('-p', p);
     }
-    // LCC input: which LOD levels to read (-O n,n,...), a per-input action
-    if (/\.lcc$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
+    // LCC / LCC2 input: which LOD levels to read (-O n,n,...), a per-input action
+    if (/\.lcc2?$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
         const sel = String(options.lodSelect).trim();
         if (!/^\d+(,\d+)*$/.test(sel)) throw new Error(`Invalid LOD select: ${sel} (use comma-separated levels like 0,1,2)`);
         args.push('-O', sel);

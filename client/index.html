@@ -29,8 +29,8 @@
                     Drop splat files anywhere or
                     <button type="button" class="link" id="browse-btn">browse</button>
                     <input type="file" id="file-input" multiple
-                        accept=".ply,.sog,.spz,.splat,.ksplat,.lcc,.json,.mjs" hidden />
-                    <span class="hint">.ply · .compressed.ply · .sog · .spz · .splat · .ksplat · .lcc · meta.json · .mjs generator</span>
+                        accept=".ply,.sog,.spz,.splat,.ksplat,.lcc,.lcc2,.json,.mjs" hidden />
+                    <span class="hint">.ply · .compressed.ply · .sog · .spz · .splat · .ksplat · .lcc · .lcc2 · meta.json · .mjs generator</span>
                     <button type="button" class="link" id="add-sample-generator"
                         title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then pick it as a Convert input and pass params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
                 </div>
@@ -39,7 +39,7 @@
 
             <section class="panel" id="panel-convert">
                 <h2 title="Convert between gaussian splat formats using splat-transform">Convert</h2>
-                <label class="field" title="Source file — anything splat-transform can read, including formats the viewer can't display (.spz, .splat, .ksplat, .lcc) and .mjs generators">
+                <label class="field" title="Source file — anything splat-transform can read, including formats the viewer can't display (.spz, .splat, .ksplat, .lcc, .lcc2) and .mjs generators">
                     <span>Input</span>
                     <select id="convert-input"></select>
                 </label>
@@ -54,8 +54,8 @@
                 <div class="field-row hidden" id="row-gen-actions">
                     <button id="generate-view" title="Run the .mjs generator with the params above and load the result straight into the 3D viewer (one click — no convert-then-find-the-file)">✨ Generate &amp; view</button>
                 </div>
-                <label class="field hidden" id="row-lod-select" title="LCC input: comma-separated LOD levels to read (-O/--lod-select), e.g. 0,1,2. Empty reads all">
-                    <span>LCC LOD levels <em>(.lcc input only)</em></span>
+                <label class="field hidden" id="row-lod-select" title="LCC / LCC2 input: comma-separated LOD levels to read (-O/--lod-select), e.g. 0,1,2. Empty reads all">
+                    <span>LCC LOD levels <em>(.lcc / .lcc2 input only)</em></span>
                     <input type="text" id="convert-lod-select" placeholder="e.g. 0,1,2 — empty = all" />
                 </label>
                 <label class="field" title="Output format. SOG bundling is filename-driven: the single-file form writes name.sog, the folder forms write a directory">
@@ -73,10 +73,16 @@
                         <option value="webp" title="Render a lossless WebP image of the splat via the GPU rasterizer — set the camera below">WebP image (render)</option>
                     </select>
                 </label>
-                <label class="field" id="row-iterations" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
-                    <span>SH compression iterations</span>
-                    <input type="number" id="convert-iterations" value="10" min="1" max="100" required />
-                </label>
+                <div class="field-row" id="row-sog-encode">
+                    <label class="field half" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
+                        <span>SH iterations</span>
+                        <input type="number" id="convert-iterations" value="10" min="1" max="100" required />
+                    </label>
+                    <label class="field half" title="Worker threads for SOG encoding (--max-workers). Higher = faster on many-core machines; 0 = inline/serial. Changes speed, not output. Default 4">
+                        <span>Encoder workers</span>
+                        <input type="number" id="convert-max-workers" value="4" min="0" max="64" />
+                    </label>
+                </div>
                 <label class="field hidden" id="row-spz-version" title="SPZ container version (--spz-version). 4 is current; use 3 for older consumers">
                     <span>SPZ version</span>
                     <select id="convert-spz-version">
@@ -101,8 +107,8 @@
                         <input type="number" id="lod-keep" value="50" min="5" max="95" required />
                     </label>
                 </div>
-                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before">
-                    <span>Additional levels <em>(Input = LOD 0, highest detail)</em></span>
+                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick a row's Env box to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
+                    <span>Additional levels <em>(Input = LOD 0; tick 'Env' for an always-visible backdrop)</em></span>
                     <div id="lod-file-rows"></div>
                     <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
                 </div>

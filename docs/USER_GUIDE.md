@@ -74,7 +74,7 @@ active project.
 To add splats:
 
 1. **Drop** files anywhere in the window, or click **browse**. Supported inputs:
-   `.ply`, `.compressed.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`, `.lcc`,
+   `.ply`, `.compressed.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`, `.lcc`, `.lcc2`,
    `meta.json`, and `.mjs` generators.
 2. The **file list** shows every source in the project. Click **view** to display a
    splat (or collision mesh / voxel octree) in the viewport, or **✕** to delete it.
@@ -90,7 +90,7 @@ To add splats:
 The Convert panel runs one `splat-transform` conversion as a background job.
 
 1. **Input** — pick any source in the project (including formats the viewer can't
-   display, like `.spz`/`.splat`/`.ksplat`/`.lcc`, and `.mjs` generators).
+   display, like `.spz`/`.splat`/`.ksplat`/`.lcc`/`.lcc2`, and `.mjs` generators).
 2. **Output format** — choose the target:
 
    | Format | Notes |
@@ -105,10 +105,21 @@ The Convert panel runs one `splat-transform` conversion as a background job.
    | **HTML viewer** | Self-contained viewer page with the splat embedded |
    | **WebP image (render)** | A rendered image of the splat — see [below](#webp-image-render) |
 
-3. Set format-specific options as they appear (SH compression iterations for SOG,
-   SPZ version, LOD levels, etc.), then click **Convert**. The exact CLI command
+3. Set format-specific options as they appear. For SOG-backed outputs that's a
+   paired **SH iterations** / **Encoder workers** row — iterations trade quality
+   for speed, while Encoder workers (`--max-workers`) only changes encode speed,
+   not the output (`0` = serial). Other formats surface SPZ version, LOD levels,
+   etc. Then click **Convert**. The exact CLI command
    and live output appear in the **Job** panel. With **Load result into viewport**
    checked (default), any viewable result loads automatically when the job finishes.
+
+> **Environment backdrop (streamed LOD):** in **Combine** mode each added row is a
+> streamed detail level (LOD 1, 2, …). Tick a row's **Env** box to designate that
+> file as an always-visible backdrop — a coarse, decimated far-field shell (skybox,
+> distant cityscape, forest) the runtime keeps resident at negligible budget cost
+> instead of culling it by camera distance (emitted as `<file> -l -1`). Use it only
+> for the distant static surround; anything the viewer walks up to should be a
+> numbered level. One environment layer per bake; not available in Decimate mode.
 
 > **Generators:** when the input is a `.mjs` file, a **Generator params** field (and,
 > if the generator advertises a schema, live sliders) appear. **✨ Generate & view**
