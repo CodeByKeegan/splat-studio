@@ -173,6 +173,19 @@ pipeline to the splat before it's written (they don't apply to streamed-LOD bake
 - **Decimate to** — reduce the gaussian count to a number or percentage (`-F`).
 - **Verbose** — print memory/timing diagnostics in the job log.
 
+> **Linked group — edit a proxy, apply to every LOD:** when the output is a splat
+> format (PLY / compressed / SOG), a **Linked group** section lets you tick the files
+> that are the same location at different detail (its LODs), then **apply the current
+> Transform / Filter settings to every member at once**. Edit on a lightweight proxy
+> and the whole ladder stays consistent. Choices are remembered per project.
+>
+> ![Linked group](screenshots/linked-group.png)
+>
+> Each member is converted in turn to the chosen format, producing an edited copy. A
+> heads-up appears if the members' extents differ a lot (they may not be the same
+> location). Streamed-LOD / WebP / CSV are excluded — they don't carry these
+> per-gaussian transforms.
+
 ### WebP image render
 
 ![WebP render options](screenshots/convert-webp.png)

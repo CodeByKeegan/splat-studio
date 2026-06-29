@@ -617,6 +617,16 @@ body.dropping #viewport::after {
 #carve-remove:disabled { opacity: 0.5; cursor: not-allowed; }
 #carve-count { margin-top: 2px; }
 
+/* ----- linked group: apply edits to several files at once ----- */
+.group-members { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; max-height: 150px; overflow-y: auto; }
+.group-member { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; }
+.group-member input { margin: 0; flex-shrink: 0; }
+.group-member span { overflow: hidden; text-overflow: ellipsis; }
+.group-members:empty::after { content: 'No splats in this project yet.'; color: var(--text-dim); font-size: var(--fs-xs); font-style: italic; }
+#group-apply { background: var(--bg-input); border: 1px solid var(--accent-2); color: var(--accent-2); font-weight: 600; }
+#group-apply:hover:not(:disabled) { background: var(--accent-2); color: #07210f; }
+#group-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ----- analyze stats card ----- */
 .analyze-result { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .result-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
