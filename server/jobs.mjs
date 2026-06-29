@@ -20,14 +20,15 @@ const pruneFinished = () => {
     }
 };
 
-export const createJob = ({ title, args, cwd, expectedOutputs = [], viewables = [], onOutputs }) => {
+export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], onOutputs }) => {
     pruneFinished();
     const id = String(nextId++);
     const job = {
         id,
         title,
         status: 'running',
-        command: `splat-transform ${args.slice(1).join(' ')}`,
+        // non-CLI jobs (e.g. the PLY trim worker) pass a readable command label
+        command: command ?? `splat-transform ${args.slice(1).join(' ')}`,
         log: '',
         outputs: [],
         viewables: [],

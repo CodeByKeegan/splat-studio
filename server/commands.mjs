@@ -12,6 +12,10 @@ export const recordOutputs = (names) => names.forEach((n) => priorOutputs.add(n)
 // spawn it rather than driving the programmatic API.
 export const cliPath = path.join(rootDir, 'node_modules', '@playcanvas', 'splat-transform', 'bin', 'cli.mjs');
 
+// Region trim runs in-process (Node, no CLI/GPU) via a spawned worker, so it slots
+// into the same job system as the CLI commands. See server/ply-trim.mjs.
+export const trimWorkerPath = path.join(rootDir, 'server', 'ply-trim-worker.mjs');
+
 const num = (value, fallback, min, max) => {
     const n = Number(value ?? fallback);
     if (!Number.isFinite(n)) throw new Error(`Invalid number: ${value}`);
@@ -423,3 +427,40 @@ export const viewableOutputs = (names) => names
         return null;
     })
     .filter(Boolean);
+
+// Remove (or keep) the gaussians inside a box/sphere region, writing a trimmed
+// .ply. Runs the Node trim worker (no CLI/GPU). The region is in the same frame
+// the GUI box/sphere fields use (what -B/-S consume). PLY-only: the worker reads
+// and rewrites PLY records directly; convert other formats to PLY first.
+export const buildTrimCommand = ({ input, options = {}, workspaceDir }) => {
+    if (!/\.ply$/i.test(input)) throw new Error('Trim works on .ply sources — convert to PLY first');
+    const mode = options.mode === 'keep' ? 'keep' : 'remove';
+    const box = Array.isArray(options.box) ? options.box : null;
+    const sphere = Array.isArray(options.sphere) ? options.sphere : null;
+    if (box) {
+        if (box.length !== 6) throw new Error('trim box needs 6 values (min x,y,z, max x,y,z)');
+        if (box.every((s) => String(s ?? '').trim() === '' || String(s).trim() === '-')) {
+            throw new Error('trim box: set at least one bound');
+        }
+    }
+    if (sphere) {
+        if (sphere.length !== 4) throw new Error('trim sphere needs 4 values (x, y, z, radius)');
+        if (!(Number(sphere[3]) >= 0)) throw new Error('trim sphere: radius must be >= 0');
+    }
+    if (!box && !sphere) throw new Error('Trim needs a box or sphere region');
+
+    const base = baseName(input);
+    let output = `${base}-trimmed.ply`;
+    const collides = (name) => name === input ||
+        (workspaceDir && !priorOutputs.has(name) && existsSync(path.join(workspaceDir, ...name.split('/'))));
+    if (collides(output)) output = `${base}-trimmed-2.ply`;
+
+    const shapes = `${box ? 'box' : ''}${box && sphere ? '+' : ''}${sphere ? 'sphere' : ''}`;
+    return {
+        title: `Trim ${input} → ${output} (${mode} inside ${shapes})`,
+        command: `ply-trim ${input} → ${output} [${mode} inside ${shapes}]`,
+        args: [trimWorkerPath, JSON.stringify({ src: input, out: output, mode, box, sphere })],
+        expectedOutputs: [output],
+        viewables: viewableOutputs([output])
+    };
+};

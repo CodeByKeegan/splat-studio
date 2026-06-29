@@ -205,6 +205,22 @@ export const startCollision = async (req: CollisionRequest): Promise<string> =>
         body: JSON.stringify({ ...req, project })
     }))).jobId;
 
+/** Carve out (remove) or keep the gaussians inside a box/sphere region → a trimmed .ply. */
+export interface TrimRequest {
+    input: string;
+    options: {
+        mode: 'remove' | 'keep';
+        box?: string[];                               // 6 raw values [minX,minY,minZ,maxX,maxY,maxZ]; blank = unbounded
+        sphere?: [number, number, number, number];    // [x,y,z,radius]
+    };
+}
+export const startTrim = async (req: TrimRequest): Promise<string> =>
+    (await jsonOrThrow(await fetch('/api/trim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...req, project })
+    }))).jobId;
+
 /** Analysis-only run: per-column stats (-m) to the job log, no file written. */
 export const startAnalyze = async (input: string): Promise<string> =>
     (await jsonOrThrow(await fetch('/api/summary', {

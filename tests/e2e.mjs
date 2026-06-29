@@ -248,6 +248,27 @@ try {
         assert(bad.status === 400, `missing file should 400, got ${bad.status}`);
     });
 
+    await check('trim (carve out) removes gaussians inside a box; remove+keep partitions', async () => {
+        const keptOf = (log) => {
+            const m = log.match(/kept ([\d,]+) of ([\d,]+)/);
+            assert(m, `no kept/total in trim log: ${log.slice(-200)}`);
+            return [Number(m[1].replace(/,/g, '')), Number(m[2].replace(/,/g, ''))];
+        };
+        const rm = await runJob('/api/trim', { input: 'demo-room.ply', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(rm.status === 'done', `remove job ${rm.status}: ${(rm.log || '').slice(-200)}`);
+        assert(fs.existsSync(path.join(projectDir, 'demo-room-trimmed.ply')), 'no trimmed output');
+        const [k1, total] = keptOf(rm.log);
+        assert(total > 0 && k1 > 0 && k1 < total, `expected 0 < kept(${k1}) < total(${total})`);
+        const keep = await runJob('/api/trim', { input: 'demo-room.ply', options: { mode: 'keep', box: ['0', '', '', '', '', ''] } });
+        assert(keep.status === 'done', `keep job ${keep.status}`);
+        const [k2] = keptOf(keep.log);
+        assert(k1 + k2 === total, `remove + keep must partition every gaussian: ${k1} + ${k2} != ${total}`);
+        const bad = await api('POST', '/api/trim', { project: PROJECT, input: 'demo-room.ply', options: { mode: 'remove' } });
+        assert(bad.status === 400, `trim with no region should 400, got ${bad.status}`);
+        const notPly = await api('POST', '/api/trim', { project: PROJECT, input: 'gen-grid.mjs', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(notPly.status === 400, `trim of a non-ply should 400, got ${notPly.status}`);
+    });
+
     await check('rejects a bad WebP resolution', async () => {
         const { status } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '99999999x1' } } });
         assert(status === 400, `expected 400, got ${status}`);

@@ -165,6 +165,13 @@ pipeline to the splat before it's written (they don't apply to streamed-LOD bake
   (`-H`, e.g. keep only band 0 for flat color).
 - **Crop to box / sphere** — keep only gaussians inside a region (`-B` / `-S`); the
   region draws as a draggable wireframe in the viewport.
+- **✂ Carve out region (remove inside)** — the inverse of cropping: **delete** the
+  gaussians inside the enabled crop box/sphere and write a new trimmed `.ply` that
+  loads into the viewport (the source is left untouched). `-B`/`-S` can only *keep*
+  inside, so removal runs a local trim instead of a CLI flag. PLY sources only.
+
+  ![Carve out a region](screenshots/trim-carve.png)
+
 - **Filter by value** — keep/drop by a column comparison (`-V`).
 - **Remove floaters** — strip disconnected specks (`-G`).
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`-M`).

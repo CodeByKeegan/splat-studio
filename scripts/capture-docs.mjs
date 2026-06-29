@@ -245,6 +245,21 @@ async function run() {
         await js(`window.__doc.hl(['#measure-toggle','#measure-edit-row','#apply-scale'],{numbered:true});`);
     });
 
+    // carve out a region: crop box on, then trim-remove → the carved splat autoloads
+    add('trim-carve', async () => {
+        await js(`window.__doc.clear(); window.__doc.rail('panel-convert');
+            var ci=document.getElementById('convert-input'); ci.value='demo-room.ply'; ci.dispatchEvent(new Event('change',{bubbles:true}));
+            var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true}));
+            var cb=document.getElementById('filter-box-on'); if(!cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
+            var bx=document.getElementById('box-min-x'); bx.value='-1'; bx.dispatchEvent(new Event('input',{bubbles:true}));`);
+        await sleep(300);
+        // confirm() would block headlessly — auto-accept for the capture
+        await js(`window.confirm=function(){return true;}; document.getElementById('trim-remove').click();`);
+        await js(`new Promise(function(res){var t=Date.now();(function p(){var s=document.getElementById('job-status'); if(s && /done|error/.test(s.textContent)) return res(true); if(Date.now()-t>15000) return res(false); setTimeout(p,300);})();})`);
+        await sleep(1600); // let the trimmed splat autoload + frame
+        await js(`window.__doc.hl(['#trim-remove'],{pad:3});`);
+    });
+
     // LOD auto-tune: seed a few copies (one a 'sky' backdrop), combine mode, auto-tune
     add('lod-autotune', async () => {
         await js(`window.__doc.clear();`);

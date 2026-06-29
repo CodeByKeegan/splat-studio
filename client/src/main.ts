@@ -1005,6 +1005,35 @@ for (const id of ['filter-box-on', 'filter-sphere-on']) $(id).addEventListener('
 convertInput.addEventListener('change', syncPreview);
 convertFormat.addEventListener('change', syncPreview);
 
+// ----- carve out a region (remove the gaussians inside) → a trimmed .ply -----
+// Reuses the crop box/sphere region. The CLI's -B/-S only KEEP inside, so removal
+// runs a local Node trim (server/ply-trim.mjs) instead of a CLI flag.
+const trimRemoveBtn = $<HTMLButtonElement>('trim-remove');
+const syncTrimBtn = (): void => {
+    const hasRegion = $<HTMLInputElement>('filter-box-on').checked || $<HTMLInputElement>('filter-sphere-on').checked;
+    trimRemoveBtn.disabled = !hasRegion;
+    trimRemoveBtn.title = hasRegion
+        ? 'Delete the gaussians inside the enabled box / sphere and write a trimmed .ply that loads into the viewport'
+        : 'Enable "Crop to box" or "Crop to sphere" above to define the region to remove';
+};
+for (const id of ['filter-box-on', 'filter-sphere-on']) $(id).addEventListener('change', syncTrimBtn);
+syncTrimBtn();
+trimRemoveBtn.onclick = () => {
+    const input = convertInput.value;
+    if (!input) return showToast('Pick a Convert input first', true);
+    if (!/\.ply$/i.test(input)) return showToast('Carve works on .ply sources — convert to PLY first', true);
+    const box = $<HTMLInputElement>('filter-box-on').checked
+        ? [boxMinX.value, boxMinY.value, boxMinZ.value, boxMaxX.value, boxMaxY.value, boxMaxZ.value]
+        : undefined;
+    const sphere = $<HTMLInputElement>('filter-sphere-on').checked
+        ? [Number(sphX.value), Number(sphY.value), Number(sphZ.value), Number(sphR.value)] as [number, number, number, number]
+        : undefined;
+    if (!box && !sphere) return showToast('Enable a Crop box or sphere to define the region to remove', true);
+    if (!panelValid('panel-convert')) return;
+    if (!confirm(`Remove the gaussians inside the region from ${input}? This writes a new trimmed .ply — the source is left untouched.`)) return;
+    void runJob(() => api.startTrim({ input, options: { mode: 'remove', box, sphere } }), trimRemoveBtn);
+};
+
 // ---------- collision region box (viewport <-> Collision-panel fields) ----------
 const regMinX = $<HTMLInputElement>('region-min-x'), regMinY = $<HTMLInputElement>('region-min-y'), regMinZ = $<HTMLInputElement>('region-min-z');
 const regMaxX = $<HTMLInputElement>('region-max-x'), regMaxY = $<HTMLInputElement>('region-max-y'), regMaxZ = $<HTMLInputElement>('region-max-z');
