@@ -136,6 +136,9 @@ export class SplatViewer {
     private regionHandleMat!: pc.StandardMaterial;
     private regionDrag: { axis: 0 | 1 | 2; sign: 1 | -1 } | null = null;
 
+    /** Bundled PlayCanvas engine version (e.g. "2.20.0"), for the Settings/About section. */
+    static get engineVersion(): string { return (pc as unknown as { version?: string }).version ?? ''; }
+
     static async create(canvas: HTMLCanvasElement): Promise<SplatViewer> {
         const viewer = new SplatViewer();
         await viewer.init(canvas);

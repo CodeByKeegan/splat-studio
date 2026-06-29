@@ -1249,6 +1249,14 @@ $<HTMLInputElement>('wire-color').oninput = (e) =>
     viewer?.setWireColor((e.currentTarget as HTMLInputElement).value);
 $<HTMLInputElement>('wire-opacity').oninput = (e) =>
     viewer?.setWireOpacity(Number((e.currentTarget as HTMLInputElement).value));
+
+// Settings ▸ About: component versions (PlayCanvas from the bundled engine, app + splat-transform from the server)
+void (async () => {
+    const set = (id: string, v: string | null | undefined) => { const el = $(id); el.textContent = v ? `v${v}` : 'unknown'; };
+    set('ver-playcanvas', SplatViewer.engineVersion);
+    try { const v = await api.getVersions(); set('ver-app', v.app); set('ver-splat-transform', v.splatTransform); }
+    catch { set('ver-app', null); set('ver-splat-transform', null); }
+})();
 $<HTMLSelectElement>('collision-style').onchange = (e) =>
     viewer?.setCollisionStyle((e.currentTarget as HTMLSelectElement).value as 'xray' | 'hidden' | 'solid');
 $<HTMLInputElement>('collision-flip').onchange = (e) =>

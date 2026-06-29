@@ -110,6 +110,12 @@ try {
         assert(json.ok === true && json.cli === true, `health: ${JSON.stringify(json)}`);
     });
 
+    await check('versions endpoint reports app + splat-transform', async () => {
+        const { json } = await api('GET', '/api/versions');
+        assert(/^\d+\.\d+\.\d+/.test(json.app || ''), `app version: ${JSON.stringify(json)}`);
+        assert(/^\d+\.\d+\.\d+/.test(json.splatTransform || ''), `splat-transform version: ${JSON.stringify(json)}`);
+    });
+
     await check('lists the seeded project', async () => {
         const { json } = await api('GET', '/api/projects');
         assert(json.projects.includes(PROJECT), `projects: ${JSON.stringify(json.projects)}`);

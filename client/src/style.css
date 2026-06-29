@@ -191,6 +191,12 @@ button.primary:focus-visible { outline-color: var(--text); }
 .hint.warn { color: #e0a838; }
 .hint.danger { color: #e8654f; }
 
+.about-list { display: flex; flex-direction: column; gap: 5px; margin-top: 3px; }
+.about-row { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-sm); }
+.about-row a { color: var(--accent); text-decoration: none; }
+.about-row a:hover { text-decoration: underline; }
+.about-row span { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
 .group {
     font-size: var(--fs-xs);
     text-transform: uppercase;

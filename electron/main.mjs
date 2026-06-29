@@ -132,6 +132,11 @@ const createWindow = () => {
         show: false,
         webPreferences: { contextIsolation: true, nodeIntegration: false }
     });
+    // external links (the Settings version repo links, etc.) open in the OS browser
+    win.webContents.setWindowOpenHandler(({ url }) => {
+        if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+        return { action: 'deny' };
+    });
     win.once('ready-to-show', () => {
         win.show();
         // a few seconds after the UI is up, quietly check for a newer release

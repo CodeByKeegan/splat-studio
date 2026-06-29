@@ -149,6 +149,11 @@ export const saveLayout = async (layout: Layout): Promise<void> => {
 export const listGpus = async (): Promise<Gpu[]> =>
     (await jsonOrThrow(await fetch('/api/gpus'))).gpus;
 
+/** Component versions for the Settings/About section (PlayCanvas comes from the bundled engine). */
+export interface Versions { app: string | null; splatTransform: string | null; }
+export const getVersions = async (): Promise<Versions> =>
+    jsonOrThrow(await fetch('/api/versions'));
+
 export const createProject = async (name: string): Promise<void> => {
     await jsonOrThrow(await fetch('/api/projects', {
         method: 'POST',

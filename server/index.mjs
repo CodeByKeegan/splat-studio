@@ -138,6 +138,20 @@ app.get('/api/health', (req, res) => {
     res.json({ ok: true, cli: existsSync(cliPath) });
 });
 
+// component versions for the Settings/About section. PlayCanvas is a build-time
+// dep (bundled into the client; the packaged app prunes it from node_modules),
+// so the client reads its version from the engine; these two are always present.
+app.get('/api/versions', async (req, res) => {
+    const ver = async (rel) => {
+        try { return JSON.parse(await fs.readFile(path.join(rootDir, rel), 'utf8')).version || null; }
+        catch { return null; }
+    };
+    res.json({
+        app: await ver('package.json'),
+        splatTransform: await ver('node_modules/@playcanvas/splat-transform/package.json')
+    });
+});
+
 app.get('/api/projects', async (req, res) => {
     try {
         res.json({ projects: await listProjects() });
