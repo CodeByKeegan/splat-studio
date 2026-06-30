@@ -380,7 +380,6 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
     const isSplat = f.kind === 'splat' && !isLod;                 // .ply/.sog/.spz/.splat/.ksplat/.lcc/meta.json
     const isSog = isSplat && (lower.endsWith('.sog') || lower.endsWith('meta.json'));
     const isRaw = isSplat && !isSog;                              // an uncompressed source worth compressing to SOG
-    const base = f.name.replace(/\.[^./]+$/, '');                 // drop the extension for sibling lookup
 
     if (f.viewable) items.push({ label: '👁  View in viewport', hint: 'Load this file into the 3D viewer', run: () => void viewFile(f.name, f.viewable!) });
 
@@ -396,7 +395,8 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
         items.push({ label: 'Analyze stats', hint: 'Run -m/--summary and show the stats card', run: () => { prefillSelect(analyzeInput, f.name); openPanel('panel-analyze'); analyzeRun.click(); } });
     }
     if (isSplat) {
-        const hasCollision = all.some((x) => x.name === `${base}.collision.glb`);
+        // collision output is a single canonical file per project (collision.collision.glb)
+        const hasCollision = all.some((x) => x.name === 'collision.collision.glb');
         items.push({ label: hasCollision ? 'Regenerate collision…' : 'Generate collision…', hint: 'Open the Collision panel with this file selected', run: () => { prefillSelect(collisionInput, f.name); openPanel('panel-collision'); } });
         items.push({ label: 'Edit (scale / origin)…', hint: 'Measure to set real scale, or pick a new origin', run: () => { prefillSelect(editInput, f.name); if (f.viewable) void viewFile(f.name, f.viewable); openPanel('panel-edit'); } });
     }
