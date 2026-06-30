@@ -63,7 +63,8 @@ workspace.
 - **Dockable editor** — every panel and the viewport is a tab you can move,
   float, close, and reopen; layouts are saved per workspace.
 - **Self-updating desktop app** — ships as a standalone Windows app (Electron)
-  that checks GitHub Releases on launch and points you to new versions.
+  that checks GitHub Releases on launch, then downloads and installs new versions
+  in the background (you choose when to restart).
 
 ## Download & install
 
@@ -80,9 +81,14 @@ what changed.
 
 On first run the workspace defaults to `Documents\Splat Studio`; **File → Change
 Workspace Folder…** points it at any folder of project subfolders (the choice is
-remembered). **File → Open Workspace in Explorer** reveals it on disk. On launch
-the app checks GitHub Releases and, if a newer version exists, offers to open the
-downloads page (also available any time via **Help → Check for Updates**).
+remembered). **File → Open Workspace in Explorer** reveals it on disk.
+
+**Automatic updates:** on launch (and every few hours), the app checks GitHub
+Releases. If a newer version exists it offers to **download** it — the download runs
+in the background (progress shows on the taskbar icon) and, when ready, it offers to
+**restart and install** (or installs automatically the next time you quit). Check any
+time via **Help → Check for Updates**. (The NSIS installer self-updates; the portable
+exe does not.)
 
 ## Run from source
 

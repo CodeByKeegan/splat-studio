@@ -454,10 +454,15 @@ hint); closing the tab frees its GPU memory.
 
 Every push to the project's `main` branch builds a new Windows release (installer +
 portable exe) and publishes it to
-[GitHub Releases](https://github.com/CodeByKeegan/splat-studio/releases). The
-installed app checks for a newer release on launch and, if one exists, offers to open
-the downloads page — or check any time via **Help → Check for Updates…**. See
+[GitHub Releases](https://github.com/CodeByKeegan/splat-studio/releases). See
 [AUTOMATION.md](AUTOMATION.md) for the release pipeline.
+
+The installed app **updates itself**: on launch (and every few hours) it checks for a
+newer release and, if one exists, offers to **download** it. The download runs in the
+background — progress shows on the taskbar icon — and when it's ready the app offers to
+**restart and install**, or installs automatically the next time you quit. You can
+trigger a check any time via **Help → Check for Updates…**. (The NSIS installer build
+self-updates; the standalone portable exe does not.)
 
 ---
 
