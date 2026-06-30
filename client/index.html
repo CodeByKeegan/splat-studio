@@ -337,6 +337,36 @@
                 <div class="group">Set origin</div>
                 <label class="check" title="Click the splat at the point that should become the origin (0,0,0). The point snaps to the surface"><input type="checkbox" id="origin-toggle" /> Pick origin point</label>
                 <button id="apply-origin" class="primary" title="Recenter the splat so the marker sits at the origin (-t/--translate), writing a new splat that auto-loads">Set as origin</button>
+
+                <div class="group">Remove region (carve)</div>
+                <span class="hint">Enable a box or sphere, drag it in the viewport over the part to delete, then carve — the inverse of cropping. Writes a trimmed .ply that auto-loads (the source is untouched). PLY sources only.</span>
+                <label class="check" title="Carve out the gaussians inside an axis-aligned box. Drag the box in the viewport; leave a min/max field blank for no limit on that side."><input type="checkbox" id="carve-box-on" /> Box region</label>
+                <div class="field hidden" id="carve-box-rows" title="Box corners in splat-transform world units (same axes as the collision seed). Blank = unbounded on that side.">
+                    <div class="label-row"><span>Box min <em>(x, y, z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="carve-box-min-x" step="0.1" placeholder="−∞" title="Box min X (blank = unbounded)" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="carve-box-min-y" step="0.1" placeholder="−∞" title="Box min Y (blank = unbounded)" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="carve-box-min-z" step="0.1" placeholder="−∞" title="Box min Z (blank = unbounded)" /></label>
+                    </div>
+                    <div class="label-row"><span>Box max <em>(x, y, z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="carve-box-max-x" step="0.1" placeholder="+∞" title="Box max X (blank = unbounded)" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="carve-box-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="carve-box-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
+                    </div>
+                </div>
+                <label class="check" title="Carve out the gaussians inside a sphere."><input type="checkbox" id="carve-sphere-on" /> Sphere region</label>
+                <div class="field hidden" id="carve-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the collision seed).">
+                    <div class="label-row"><span>Sphere centre <em>(x, y, z)</em> + radius</span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="carve-sphere-x" value="0" step="0.1" title="Sphere centre X" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="carve-sphere-y" value="0" step="0.1" title="Sphere centre Y" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="carve-sphere-z" value="0" step="0.1" title="Sphere centre Z" /></label>
+                        <label class="axis"><span>r</span><input type="number" id="carve-sphere-r" value="1" step="0.1" min="0" title="Sphere radius" /></label>
+                    </div>
+                </div>
+                <div class="hint hidden" id="carve-count" title="How many gaussians the carve would remove, counted live in the viewport"></div>
+                <button id="carve-remove" title="Delete the gaussians inside the enabled box / sphere and write a trimmed .ply that loads into the viewport. The inverse of cropping — the CLI's -B/-S can only KEEP inside, so this runs a local trim to remove. PLY sources only.">✂ Carve out region (remove inside)</button>
             </section>
 
             <section class="panel" id="panel-collision">

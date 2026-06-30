@@ -611,6 +611,12 @@ body.dropping #viewport::after {
 #lod-autotune:disabled { opacity: 0.6; cursor: wait; }
 #lod-autotune-plan { margin-top: 2px; }
 
+/* ----- carve out / trim (removes data → amber accent) ----- */
+#carve-remove { width: 100%; margin-top: 4px; border-color: #e0a838; color: #e0a838; font-weight: 600; }
+#carve-remove:hover:not(:disabled) { background: #e0a838; color: #1a1205; }
+#carve-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+#carve-count { margin-top: 2px; }
+
 /* ----- analyze stats card ----- */
 .analyze-result { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .result-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }

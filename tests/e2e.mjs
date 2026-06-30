@@ -248,6 +248,39 @@ try {
         assert(bad.status === 400, `missing file should 400, got ${bad.status}`);
     });
 
+    await check('trim (carve out) removes gaussians inside a box; remove+keep partitions', async () => {
+        const keptOf = (log) => {
+            const m = log.match(/kept ([\d,]+) of ([\d,]+)/);
+            assert(m, `no kept/total in trim log: ${log.slice(-200)}`);
+            return [Number(m[1].replace(/,/g, '')), Number(m[2].replace(/,/g, ''))];
+        };
+        const rm = await runJob('/api/trim', { input: 'demo-room.ply', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(rm.status === 'done', `remove job ${rm.status}: ${(rm.log || '').slice(-200)}`);
+        assert(fs.existsSync(path.join(projectDir, 'demo-room-trimmed.ply')), 'no trimmed output');
+        const [k1, total] = keptOf(rm.log);
+        assert(total > 0 && k1 > 0 && k1 < total, `expected 0 < kept(${k1}) < total(${total})`);
+        const keep = await runJob('/api/trim', { input: 'demo-room.ply', options: { mode: 'keep', box: ['0', '', '', '', '', ''] } });
+        assert(keep.status === 'done', `keep job ${keep.status}`);
+        const [k2] = keptOf(keep.log);
+        assert(k1 + k2 === total, `remove + keep must partition every gaussian: ${k1} + ${k2} != ${total}`);
+        const bad = await api('POST', '/api/trim', { project: PROJECT, input: 'demo-room.ply', options: { mode: 'remove' } });
+        assert(bad.status === 400, `trim with no region should 400, got ${bad.status}`);
+        const notPly = await api('POST', '/api/trim', { project: PROJECT, input: 'gen-grid.mjs', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(notPly.status === 400, `trim of a non-ply should 400, got ${notPly.status}`);
+    });
+
+    await check('trim of a truncated binary PLY errors clearly (no silent corrupt output)', async () => {
+        // header declares 3 vertices (x,y,z float32 = 12 bytes each) but the body is short
+        const header = 'ply\nformat binary_little_endian 1.0\nelement vertex 3\n'
+            + 'property float x\nproperty float y\nproperty float z\nend_header\n';
+        const body = Buffer.alloc(12); // one vertex worth — 2 short of the declared 3
+        await fsp.writeFile(path.join(projectDir, 'truncated.ply'), Buffer.concat([Buffer.from(header, 'ascii'), body]));
+        const job = await runJob('/api/trim', { input: 'truncated.ply', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(job.status === 'error', `truncated PLY should error, got ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/truncated/i.test(job.log || ''), `error should mention "truncated": ${(job.log || '').slice(-200)}`);
+        assert(!fs.existsSync(path.join(projectDir, 'truncated-trimmed.ply')), 'must not leave a corrupt trimmed output');
+    });
+
     await check('rejects a bad WebP resolution', async () => {
         const { status } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '99999999x1' } } });
         assert(status === 400, `expected 400, got ${status}`);
