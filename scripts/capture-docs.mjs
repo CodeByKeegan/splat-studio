@@ -291,6 +291,25 @@ async function run() {
         await js(`window.__doc.hl(['#lod-autotune','#row-lod-files'],{});`);
     });
 
+    // linked group (Files panel): set a transform on the proxy in Convert, tick
+    // members in Files, apply to all
+    add('linked-group', async () => {
+        await js(`window.__doc.clear(); window.__doc.rail('panel-convert');
+            var ci=document.getElementById('convert-input'); ci.value='demo-room.ply'; ci.dispatchEvent(new Event('change',{bubbles:true}));
+            var f=document.getElementById('convert-format'); f.value='ply'; f.dispatchEvent(new Event('change',{bubbles:true}));
+            var tx=document.getElementById('tf-translate-x'); tx.value='1'; tx.dispatchEvent(new Event('input',{bubbles:true})); tx.dispatchEvent(new Event('change',{bubbles:true}));`);
+        await sleep(150);
+        await js(`window.__doc.rail('panel-scene'); window.__doc.rail('panel-files');
+            var want=['demo-room.ply','scene-mid.ply'];
+            [...document.querySelectorAll('#group-members input[type=checkbox]')].forEach(function(cb){ if(want.indexOf(cb.value)>=0 && !cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));} });`);
+        await sleep(300);
+        await js(`window.confirm=function(){return true;}; document.getElementById('group-apply').click();`);
+        await js(`new Promise(function(res){var t=Date.now();(function p(){var st=document.getElementById('job-status'), ti=document.getElementById('job-title'); if(st && ti && /done/.test(st.textContent) && /scene-mid/.test(ti.textContent)) return res(true); if(Date.now()-t>20000) return res(false); setTimeout(p,300);})();})`);
+        await js(`document.getElementById('group-actions').scrollIntoView({block:'center'});`);
+        await sleep(700);
+        await js(`window.__doc.hl(['#group-members','#group-apply'],{numbered:true});`);
+    });
+
     for (const s of scenes) {
         try { await s.fn(); await shot(s.name); }
         catch (e) { console.error(`  ✗ ${s.name}: ${e.message}`); }

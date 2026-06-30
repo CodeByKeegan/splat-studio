@@ -281,6 +281,39 @@ try {
         assert(!fs.existsSync(path.join(projectDir, 'truncated-trimmed.ply')), 'must not leave a corrupt trimmed output');
     });
 
+    await check('location groups round-trip (project-scoped) + dotfile stays hidden', async () => {
+        const empty = await api('GET', `/api/groups?project=${PROJECT}`);
+        assert(empty.status === 200 && Array.isArray(empty.json.members), `empty: ${JSON.stringify(empty.json)}`);
+        const save = await api('POST', `/api/groups?project=${PROJECT}`, { members: ['demo-room.ply'], proxy: 'demo-room.ply' });
+        assert(save.status === 200 && save.json.ok, `save: ${save.status} ${JSON.stringify(save.json)}`);
+        const read = await api('GET', `/api/groups?project=${PROJECT}`);
+        assert(read.json.members[0] === 'demo-room.ply' && read.json.proxy === 'demo-room.ply', `read: ${JSON.stringify(read.json)}`);
+        const bad = await api('POST', `/api/groups?project=${PROJECT}`, { members: ['../../etc/passwd'] });
+        assert(bad.status === 400, `traversal member should 400, got ${bad.status}`);
+        const files = await api('GET', `/api/files?project=${PROJECT}`);
+        assert(!files.json.files.some((f) => f.name.includes('location-group')), 'group dotfile must not be surfaced');
+    });
+
+    await check('convert: an identical transform lands consistently across files (group fan-out invariant)', async () => {
+        // two members = copies of the demo splat; the SAME -t must shift both identically
+        await fsp.copyFile(path.join(projectDir, 'demo-room.ply'), path.join(projectDir, 'grp-a.ply'));
+        await fsp.copyFile(path.join(projectDir, 'demo-room.ply'), path.join(projectDir, 'grp-b.ply'));
+        const xMin = (log) => {
+            const m = log.match(/\|\s*x\s*\|\s*(-?[\d.eE+]+)/);
+            assert(m, `no x row in summary: ${log.slice(0, 300)}`);
+            return Number(m[1]);
+        };
+        const src = xMin((await runJob('/api/summary', { input: 'grp-a.ply' })).log);
+        const ja = await runJob('/api/convert', { input: 'grp-a.ply', format: 'ply', options: { translate: [5, 0, 0] } });
+        const jb = await runJob('/api/convert', { input: 'grp-b.ply', format: 'ply', options: { translate: [5, 0, 0] } });
+        assert(ja.status === 'done' && jb.status === 'done', `jobs: ${ja.status}/${jb.status}`);
+        const xa = xMin((await runJob('/api/summary', { input: 'grp-a-converted.ply' })).log);
+        const xb = xMin((await runJob('/api/summary', { input: 'grp-b-converted.ply' })).log);
+        // the CLI's -t negates world x; assert both moved by the SAME ~±5 delta, not a hardcoded sign
+        assert(Math.abs(xa - xb) < 1e-3, `members diverged: x-min ${xa} vs ${xb}`);
+        assert(Math.abs(Math.abs(xa - src) - 5) < 0.5, `expected a ±5 shift, got ${(xa - src).toFixed(3)}`);
+    });
+
     await check('rejects a bad WebP resolution', async () => {
         const { status } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '99999999x1' } } });
         assert(status === 400, `expected 400, got ${status}`);

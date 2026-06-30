@@ -35,6 +35,14 @@
                         title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then pick it as a Convert input and pass params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
                 </div>
                 <ul id="file-list" class="file-list"></ul>
+
+                <div id="group-actions" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
+                    <div class="group">Linked group <em>— apply edits to several files at once</em></div>
+                    <span class="hint">Tick the files that are the same location at different detail (LODs). Set the Transform / Filter and output format in the <strong>Convert</strong> panel on your proxy, then apply them to every member here. Choices are remembered per project.</span>
+                    <div id="group-members" class="group-members"></div>
+                    <div class="hint hidden" id="group-warn"></div>
+                    <button id="group-apply" title="Run the current Convert Transform / Filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
+                </div>
             </section>
 
             <section class="panel" id="panel-convert">

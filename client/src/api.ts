@@ -149,6 +149,18 @@ export const saveLayout = async (layout: Layout): Promise<void> => {
     }));
 };
 
+/** A location group: source splats that are the same place at different detail. Project-scoped. */
+export interface LocationGroup { members: string[]; proxy: string | null; }
+export const getGroup = async (): Promise<LocationGroup> =>
+    jsonOrThrow(await fetch(`/api/groups?${pq()}`));
+export const saveGroup = async (group: LocationGroup): Promise<void> => {
+    await jsonOrThrow(await fetch(`/api/groups?${pq()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(group)
+    }));
+};
+
 /** GPU adapters (-L/--list-gpus) for the device dropdown. */
 export const listGpus = async (): Promise<Gpu[]> =>
     (await jsonOrThrow(await fetch('/api/gpus'))).gpus;

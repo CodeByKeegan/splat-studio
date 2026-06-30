@@ -143,6 +143,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
         if (!select.value && typeof want === 'string' && names.includes(want)) select.value = want;
     }
     updateInputRows();
+    renderGroupMembers(new Set(checkedMembers())); // refresh the member list, keep ticks
 
     fileList.innerHTML = '';
     let firstNew: HTMLLIElement | null = null;
@@ -1155,6 +1156,28 @@ $('region-shrink-seed').onclick = () => {
     showToast('Region shrunk to a 12 m box around the seed');
 };
 
+// the Convert-panel transform + filter fields, shared by the Convert run and the
+// linked-group apply (so a group edit replays exactly what a single convert would)
+const transformFilterOptions = () => ({
+    translate: [Number(tfX.value), Number(tfY.value), Number(tfZ.value)] as [number, number, number],
+    rotate: [Number(rfX.value), Number(rfY.value), Number(rfZ.value)] as [number, number, number],
+    scale: Number(tfScaleEl.value),
+    filterHarmonics: $<HTMLSelectElement>('convert-harmonics').value,
+    filterBox: $<HTMLInputElement>('filter-box-on').checked
+        ? [boxMinX.value, boxMinY.value, boxMinZ.value, boxMaxX.value, boxMaxY.value, boxMaxZ.value]
+        : undefined,
+    filterSphere: $<HTMLInputElement>('filter-sphere-on').checked
+        ? [Number(sphX.value), Number(sphY.value), Number(sphZ.value), Number(sphR.value)] as [number, number, number, number]
+        : undefined,
+    filterValue: $<HTMLInputElement>('filter-value-on').checked
+        ? { column: $<HTMLSelectElement>('fv-column').value, comparator: $<HTMLSelectElement>('fv-cmp').value, value: Number($<HTMLInputElement>('fv-value').value) }
+        : undefined,
+    filterFloaters: $<HTMLInputElement>('filter-floaters-on').checked
+        ? { size: $<HTMLInputElement>('ff-size').value, opacity: $<HTMLInputElement>('ff-op').value, min: $<HTMLInputElement>('ff-min').value }
+        : undefined,
+    mortonOrder: $<HTMLInputElement>('convert-morton').checked
+});
+
 convertRun.onclick = () => {
     const input = convertInput.value;
     if (!input) return showToast('Pick an input file first', true);
@@ -1196,39 +1219,7 @@ convertRun.onclick = () => {
             unbundled: $<HTMLInputElement>('convert-unbundled').checked,
             viewerSettings: $<HTMLInputElement>('convert-viewer-settings').value.trim(),
             lodSelect: $<HTMLInputElement>('convert-lod-select').value.trim(),
-            translate: [
-                Number($<HTMLInputElement>('tf-translate-x').value),
-                Number($<HTMLInputElement>('tf-translate-y').value),
-                Number($<HTMLInputElement>('tf-translate-z').value)
-            ],
-            rotate: [
-                Number($<HTMLInputElement>('tf-rotate-x').value),
-                Number($<HTMLInputElement>('tf-rotate-y').value),
-                Number($<HTMLInputElement>('tf-rotate-z').value)
-            ],
-            scale: Number($<HTMLInputElement>('tf-scale').value),
-            filterHarmonics: $<HTMLSelectElement>('convert-harmonics').value,
-            filterBox: $<HTMLInputElement>('filter-box-on').checked ? [
-                $<HTMLInputElement>('box-min-x').value, $<HTMLInputElement>('box-min-y').value, $<HTMLInputElement>('box-min-z').value,
-                $<HTMLInputElement>('box-max-x').value, $<HTMLInputElement>('box-max-y').value, $<HTMLInputElement>('box-max-z').value
-            ] : undefined,
-            filterSphere: $<HTMLInputElement>('filter-sphere-on').checked ? [
-                Number($<HTMLInputElement>('sphere-x').value),
-                Number($<HTMLInputElement>('sphere-y').value),
-                Number($<HTMLInputElement>('sphere-z').value),
-                Number($<HTMLInputElement>('sphere-r').value)
-            ] : undefined,
-            filterValue: $<HTMLInputElement>('filter-value-on').checked ? {
-                column: $<HTMLSelectElement>('fv-column').value,
-                comparator: $<HTMLSelectElement>('fv-cmp').value,
-                value: Number($<HTMLInputElement>('fv-value').value)
-            } : undefined,
-            filterFloaters: $<HTMLInputElement>('filter-floaters-on').checked ? {
-                size: $<HTMLInputElement>('ff-size').value,
-                opacity: $<HTMLInputElement>('ff-op').value,
-                min: $<HTMLInputElement>('ff-min').value
-            } : undefined,
-            mortonOrder: $<HTMLInputElement>('convert-morton').checked,
+            ...transformFilterOptions(),
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
@@ -1239,6 +1230,94 @@ convertRun.onclick = () => {
             image: convertFormat.value === 'webp' ? webpImageOptions() : undefined
         }
     }), convertRun, $<HTMLInputElement>('convert-autoload').checked);
+};
+
+// ---------- linked group: apply the Convert transforms/filters to every member ----------
+// Edit on a proxy (the loaded splat / Convert input), then fan the same transform +
+// filter ops out to every ticked member — the LODs of one location stay consistent.
+const groupMembersEl = $<HTMLDivElement>('group-members');
+const groupApplyBtn = $<HTMLButtonElement>('group-apply');
+const groupWarn = $<HTMLDivElement>('group-warn');
+
+const checkedMembers = (): string[] =>
+    [...groupMembersEl.querySelectorAll<HTMLInputElement>('input:checked')].map((i) => i.value);
+
+const updateGroupApply = (): void => {
+    const n = checkedMembers().length;
+    groupApplyBtn.textContent = n ? `Apply transforms to ${n} member${n > 1 ? 's' : ''}` : 'Apply transforms to members';
+    groupApplyBtn.disabled = n === 0;
+};
+
+const persistGroup = (): void => {
+    void api.saveGroup({ members: checkedMembers(), proxy: convertInput.value || null }).catch(() => { /* best-effort */ });
+};
+
+// (re)build the member checkboxes from the project splats, preserving the ticked set
+const renderGroupMembers = (preselect: Set<string>): void => {
+    groupMembersEl.innerHTML = '';
+    for (const name of splatFileNames) {
+        const row = document.createElement('label');
+        row.className = 'group-member';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = name;
+        cb.checked = preselect.has(name);
+        cb.onchange = () => { updateGroupApply(); persistGroup(); };
+        const span = document.createElement('span');
+        span.textContent = name;
+        row.append(cb, span);
+        groupMembersEl.appendChild(row);
+    }
+    updateGroupApply();
+};
+
+// load the saved group for the active project and tick its members
+const loadGroup = async (): Promise<void> => {
+    let saved: api.LocationGroup = { members: [], proxy: null };
+    try { saved = await api.getGroup(); } catch { /* none yet */ }
+    renderGroupMembers(new Set(saved.members.filter((m) => splatFileNames.includes(m))));
+};
+
+groupApplyBtn.onclick = async () => {
+    const members = checkedMembers();
+    if (!members.length) return showToast('Tick at least one member', true);
+    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
+    if (!panelValid('panel-convert')) return;
+    const format = convertFormat.value;
+    if (['lod', 'webp', 'csv'].includes(format)) {
+        return showToast('Pick a splat output format in the Convert panel (PLY / SOG / …) — streamed-LOD, WebP and CSV don’t carry these per-gaussian edits', true);
+    }
+    groupWarn.classList.add('hidden');
+    groupApplyBtn.disabled = true; // claim the button now — the stats await below is a re-entrancy gap
+    try {
+        // frame-compat guard: members of one location should have similar extents
+        const stats = (await Promise.all(members.map((m) => api.getStats(m).catch(() => null)))).filter(Boolean);
+        const sizes = stats.map((s) => Math.max(...s!.extents.filter(Number.isFinite))).filter(Number.isFinite);
+        if (sizes.length > 1) {
+            const ratio = Math.max(...sizes) / Math.max(Math.min(...sizes), 1e-6);
+            if (ratio > 3) {
+                groupWarn.textContent = `These members span very different sizes (≈${ratio.toFixed(1)}× extent) — they may not be the same location.`;
+                groupWarn.className = 'hint warn';
+                if (!confirm('These members have quite different extents and may not be the same location. Apply the transforms to all of them anyway?')) return;
+            }
+        }
+        // fan out one edited copy per member, sequentially (jobBusy + runJob serialize)
+        const options = {
+            ...transformFilterOptions(),
+            filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
+            decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            device: $<HTMLSelectElement>('convert-device').value
+        };
+        const outputs: string[] = [];
+        for (const member of members) {
+            const job = await runJob(() => api.startConvert({ input: member, format, options }), groupApplyBtn, false);
+            if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
+            outputs.push(...job.outputs);
+        }
+        if (outputs.length) showToast(`Applied to ${outputs.length} member${outputs.length > 1 ? 's' : ''}: ${outputs.join(', ')}`);
+    } finally {
+        updateGroupApply(); // restore the enabled state + count label
+    }
 };
 
 // ---------- analyze panel + persistent stats card ----------
@@ -1884,6 +1963,7 @@ const switchProject = async (name: string) => {
     currentSplatName = null;
     syncPreview();
     await refreshFiles();
+    await loadGroup(); // tick the saved group members for this project
 };
 
 const loadProjects = async (preferred?: string) => {

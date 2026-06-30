@@ -94,6 +94,16 @@ To add splats:
 4. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
    project so you can try the generator workflow immediately.
 
+> **Linked group — edit a proxy, apply to every LOD:** the **Linked group** section at
+> the bottom of the Files panel lets you tick the files that are the same location at
+> different detail (its LODs). Set the Transform / Filter and a splat output format in
+> the **Convert** panel on your proxy, then **Apply transforms to members** — every
+> ticked member is converted in turn with the same edits, so the whole ladder stays
+> consistent. Choices are remembered per project; a heads-up appears if the members'
+> extents differ a lot (they may not be the same location).
+>
+> ![Linked group](screenshots/linked-group.png)
+
 ---
 
 ## Convert: formats & rendering
