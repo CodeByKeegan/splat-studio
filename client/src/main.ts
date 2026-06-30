@@ -14,6 +14,8 @@ const $ = <T extends HTMLElement>(id: string): T => {
 
 const fileList = $<HTMLUListElement>('file-list');
 const convertInput = $<HTMLSelectElement>('convert-input');
+const lodInput = $<HTMLSelectElement>('lod-input');
+const renderInput = $<HTMLSelectElement>('render-input');
 const collisionInput = $<HTMLSelectElement>('collision-input');
 const analyzeInput = $<HTMLSelectElement>('analyze-input');
 const editInput = $<HTMLSelectElement>('edit-input');
@@ -50,7 +52,7 @@ const fmtSize = (bytes: number): string => {
 // ---------- persisted form state ----------
 const FORM_KEY = 'splat-studio.form';
 // selects whose options come from the workspace — restored after the file list loads
-const FILE_SELECT_IDS = new Set(['convert-input', 'collision-input', 'analyze-input', 'edit-input']);
+const FILE_SELECT_IDS = new Set(['convert-input', 'lod-input', 'render-input', 'collision-input', 'analyze-input', 'edit-input']);
 const formState: Record<string, string | boolean> = (() => {
     try { return JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'); } catch { return {}; }
 })();
@@ -113,7 +115,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
     const convertNames = [...splatFileNames, ...generatorNames];
     fillSelect(convertInput, convertNames);
     fillSelect(analyzeInput, convertNames);
-    for (const select of [collisionInput, editInput, ...lodRowSelects()]) {
+    for (const select of [lodInput, renderInput, collisionInput, editInput, ...lodRowSelects()]) {
         fillSelect(select, splatFileNames);
     }
     // skybox picker: any image file in the project (equirect panorama)
@@ -136,6 +138,8 @@ const refreshFiles = async (highlight?: Set<string>) => {
     for (const [select, id, names] of [
         [convertInput, 'convert-input', convertNames],
         [analyzeInput, 'analyze-input', convertNames],
+        [lodInput, 'lod-input', splatFileNames],
+        [renderInput, 'render-input', splatFileNames],
         [collisionInput, 'collision-input', splatFileNames],
         [editInput, 'edit-input', splatFileNames]
     ] as const) {
@@ -388,7 +392,8 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
     }
     if (isRaw) {
         items.push({ label: 'Convert → SOG bundle', hint: 'Compress to a single .sog (~95% smaller)', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'sog'); openPanel('panel-convert'); } });
-        items.push({ label: 'Convert → Streamed LOD', hint: 'Streamable multi-LOD SOG for big scenes', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'lod'); openPanel('panel-convert'); } });
+        items.push({ label: 'Convert → Streamed LOD', hint: 'Streamable multi-LOD SOG for big scenes', run: () => { prefillSelect(lodInput, f.name); openPanel('panel-lod'); } });
+        items.push({ label: 'Render → WebP image', hint: 'Render a lossless image via the GPU rasterizer', run: () => { prefillSelect(renderInput, f.name); openPanel('panel-render'); } });
     }
     if (isSplat || isGenerator) {
         items.push({ label: isRaw ? 'Convert (other formats)…' : 'Convert…', hint: 'Open the Convert panel with this file selected', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); } });
@@ -437,6 +442,8 @@ const uploadFiles = async (files: Iterable<File>) => {
         // fresh upload becomes the active input — that's almost always the intent
         if (lastSplat && splatFileNames.includes(lastSplat)) {
             convertInput.value = lastSplat;
+            lodInput.value = lastSplat;
+            renderInput.value = lastSplat;
             collisionInput.value = lastSplat;
             analyzeInput.value = lastSplat;
         } else if (lastSplat && lastSplat.endsWith('.mjs')) {
@@ -541,8 +548,12 @@ $<HTMLButtonElement>('add-sample-generator').onclick = () => {
 // ---------- jobs ----------
 const jobCancel = $<HTMLButtonElement>('job-cancel');
 const convertRun = $<HTMLButtonElement>('convert-run');
+const lodRun = $<HTMLButtonElement>('lod-run');
+const renderRun = $<HTMLButtonElement>('render-run');
 const collisionRun = $<HTMLButtonElement>('collision-run');
 const analyzeRun = $<HTMLButtonElement>('analyze-run');
+// every run button is disabled together while a job runs (one GPU, one Job panel)
+const RUN_BUTTONS = [convertRun, lodRun, renderRun, collisionRun, analyzeRun];
 let activeJobId: string | null = null;
 
 jobCancel.onclick = () => {
@@ -564,9 +575,7 @@ let jobBusy = false;
 const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
     const prevLabel = button.textContent;
     jobBusy = true;
-    convertRun.disabled = true;
-    collisionRun.disabled = true;
-    analyzeRun.disabled = true;
+    for (const b of RUN_BUTTONS) b.disabled = true;
     button.textContent = 'Running…';
     try {
         const jobId = await start();
@@ -603,9 +612,7 @@ const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, a
         return undefined;
     } finally {
         jobBusy = false;
-        convertRun.disabled = false;
-        collisionRun.disabled = false;
-        analyzeRun.disabled = false;
+        for (const b of RUN_BUTTONS) b.disabled = false;
         button.textContent = prevLabel;
         updateConvertRows(); // restores the format-specific Convert label
     }
@@ -636,7 +643,7 @@ const addLodRow = () => {
     select.title = 'File for this detail level — should hold fewer gaussians than the level above it';
     fillSelect(select, splatFileNames);
     // default to a file not already used by the input or another row
-    const used = new Set([convertInput.value, ...lodRowSelects().map((s) => s.value)]);
+    const used = new Set([lodInput.value, ...lodRowSelects().map((s) => s.value)]);
     const free = splatFileNames.find((n) => !used.has(n));
     if (free) select.value = free;
     // optional environment tag: this file becomes an always-resident far/background
@@ -661,7 +668,7 @@ const addLodRow = () => {
     remove.onclick = () => {
         row.remove();
         relabelLodRows();
-        updateConvertRows(); // combine mode always keeps at least one row
+        updateLodRows(); // combine mode always keeps at least one row
     };
     row.append(label, select, env, remove);
     lodFileRows.appendChild(row);
@@ -672,39 +679,32 @@ $<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
 const RUN_LABELS: Record<string, string> = {
     'sog': 'Convert → SOG bundle',
     'sog-unbundled': 'Convert → SOG folder',
-    'lod': 'Convert → Streamed LOD',
     'ply': 'Convert → PLY',
     'compressed-ply': 'Convert → Compressed PLY',
     'spz': 'Convert → SPZ',
     'glb': 'Convert → GLB',
     'csv': 'Convert → CSV',
-    'html': 'Convert → HTML viewer',
-    'webp': 'Render → WebP'
+    'html': 'Convert → HTML viewer'
 };
 
 const updateConvertRows = () => {
     const f = convertFormat.value;
-    const isLod = f === 'lod';
-    const isWebp = f === 'webp';
-    const combine = lodMode.value === 'combine';
-    const isSog = f === 'sog' || f === 'sog-unbundled' || f === 'html' || isLod;
+    const isSog = f === 'sog' || f === 'sog-unbundled' || f === 'html';
     $('row-sog-encode').classList.toggle('hidden', !isSog);
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
-    $('row-decimate').classList.toggle('hidden', isLod || isWebp); // no decimate for LOD/render
-    $('convert-actions').classList.toggle('hidden', isLod); // transforms/filters don't apply to LOD bakes
-    $('row-lod-mode').classList.toggle('hidden', !isLod);
-    $('row-lod-levels').classList.toggle('hidden', !isLod || combine);
-    $('row-lod-files').classList.toggle('hidden', !isLod || !combine);
-    $('row-lod-chunks').classList.toggle('hidden', !isLod);
-    $('row-lod-autotune').classList.toggle('hidden', !isLod);
-    if (!isLod) $('lod-autotune-plan').classList.add('hidden');
     $('html-rows').classList.toggle('hidden', f !== 'html');
-    $('webp-rows').classList.toggle('hidden', !isWebp);
-    if (isLod && combine && lodFileRows.children.length === 0) addLodRow();
     if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Convert';
 };
 convertFormat.onchange = updateConvertRows;
-lodMode.onchange = updateConvertRows;
+
+// LOD panel: decimate vs combine swaps which level controls show
+const updateLodRows = () => {
+    const combine = lodMode.value === 'combine';
+    $('row-lod-levels').classList.toggle('hidden', combine);
+    $('row-lod-files').classList.toggle('hidden', !combine);
+    if (combine && lodFileRows.children.length === 0) addLodRow();
+};
+lodMode.onchange = updateLodRows;
 
 // ----- LOD auto-tune: fill the LOD settings from each source's gaussian count + extents -----
 const lodAutotuneBtn = $<HTMLButtonElement>('lod-autotune');
@@ -775,13 +775,13 @@ const autotuneCombine = async (input: string): Promise<void> => {
 };
 
 lodAutotuneBtn.onclick = () => {
-    const input = convertInput.value;
-    if (!input) return showToast('Pick a Convert input first', true);
+    const input = lodInput.value;
+    if (!input) return showToast('Pick a LOD input first', true);
     if (input.toLowerCase().endsWith('.mjs')) return showToast('Auto-tune reads existing splats, not generators — convert the generator to a splat first', true);
     if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     // mirror runJob's serialization (no server-side queue): block concurrent jobs
     jobBusy = true;
-    convertRun.disabled = true; collisionRun.disabled = true; analyzeRun.disabled = true;
+    for (const b of RUN_BUTTONS) b.disabled = true;
     lodAutotuneBtn.disabled = true;
     const prevLabel = lodAutotuneBtn.textContent;
     lodAutotuneBtn.textContent = 'Reading stats…';
@@ -789,7 +789,7 @@ lodAutotuneBtn.onclick = () => {
     void run.catch((err) => showToast(`Auto-tune failed: ${err}`, true))
         .finally(() => {
             jobBusy = false;
-            convertRun.disabled = false; collisionRun.disabled = false; analyzeRun.disabled = false;
+            for (const b of RUN_BUTTONS) b.disabled = false;
             lodAutotuneBtn.disabled = false;
             lodAutotuneBtn.textContent = prevLabel;
         });
@@ -860,17 +860,19 @@ const updateInputRows = async (): Promise<void> => {
 };
 convertInput.onchange = () => void updateInputRows();
 
-// populate the device dropdown with GPU adapters (-L), then reapply any saved choice
+// populate the device dropdowns with GPU adapters (-L), then reapply any saved choice
 void api.listGpus().then((gpus) => {
-    const sel = $<HTMLSelectElement>('convert-device');
-    for (const g of gpus) {
-        const opt = document.createElement('option');
-        opt.value = String(g.index);
-        opt.textContent = `GPU ${g.index}: ${g.name}`;
-        sel.appendChild(opt);
+    for (const id of ['convert-device', 'lod-device', 'render-device']) {
+        const sel = $<HTMLSelectElement>(id);
+        for (const g of gpus) {
+            const opt = document.createElement('option');
+            opt.value = String(g.index);
+            opt.textContent = `GPU ${g.index}: ${g.name}`;
+            sel.appendChild(opt);
+        }
+        const want = formState[id];
+        if (typeof want === 'string' && [...sel.options].some((o) => o.value === want)) sel.value = want;
     }
-    const want = formState['convert-device'];
-    if (typeof want === 'string' && [...sel.options].some((o) => o.value === want)) sel.value = want;
 }).catch(() => { /* device list is best-effort */ });
 
 // WebP: grab the viewer camera, converted to CLI render space
@@ -905,7 +907,13 @@ const webpImageOptions = (): api.ImageOptions => ({
     motionSamples: numOrUndef('webp-motionsamples')
 });
 
-// show the WebP render camera as a frustum in the viewport while WebP is selected
+// the Render panel is the shown tab in its group (gates the render frustum + camera view)
+function renderActive(): boolean {
+    const p = dock.getPanel('panel-render');
+    return !!p && p.group.activePanel?.id === 'panel-render';
+}
+
+// show the WebP render camera as a frustum in the viewport while the Render tab is active
 const updateRenderFrustum = (): void => {
     if (!viewer) return;
     const m = /^(\d+)x(\d+)$/i.exec($<HTMLInputElement>('webp-resolution').value.trim());
@@ -916,17 +924,15 @@ const updateRenderFrustum = (): void => {
         $<HTMLInputElement>('webp-lookat').value,
         Number($<HTMLInputElement>('webp-fov').value),
         aspect,
-        convertFormat.value === 'webp' && !equirect
+        renderActive() && !equirect
     );
-    refreshCameraViewHint(); // show/hide the Camera-view placeholder with WebP mode
+    refreshCameraViewHint(); // show/hide the Camera-view placeholder with the Render tab
 };
 for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', 'webp-projection']) {
     $(id).addEventListener('input', updateRenderFrustum);
     $(id).addEventListener('change', updateRenderFrustum);
 }
-convertFormat.addEventListener('change', updateRenderFrustum);
-// the render-camera scene item appears/disappears with the format/projection
-convertFormat.addEventListener('change', () => rebuildSceneList());
+// the render-camera scene item appears/disappears with the projection
 $('webp-projection').addEventListener('change', () => rebuildSceneList());
 
 const doGenerateView = (): void => {
@@ -944,6 +950,7 @@ generateViewBtn.onclick = doGenerateView;
 
 restoreFormState();
 updateConvertRows();
+updateLodRows();
 void updateInputRows();
 
 // reveal each optional filter's inputs only when its checkbox is on
@@ -969,8 +976,8 @@ const boxMinX = $<HTMLInputElement>('box-min-x'), boxMinY = $<HTMLInputElement>(
 const boxMaxX = $<HTMLInputElement>('box-max-x'), boxMaxY = $<HTMLInputElement>('box-max-y'), boxMaxZ = $<HTMLInputElement>('box-max-z');
 const sphX = $<HTMLInputElement>('sphere-x'), sphY = $<HTMLInputElement>('sphere-y'), sphZ = $<HTMLInputElement>('sphere-z'), sphR = $<HTMLInputElement>('sphere-r');
 
-// preview only while the displayed splat is the Convert input, and not for LOD output
-const previewingInput = () => convertFormat.value !== 'lod' && currentSplatName !== null && currentSplatName === convertInput.value;
+// preview only while the displayed splat is the Convert input
+const previewingInput = () => currentSplatName !== null && currentSplatName === convertInput.value;
 const numOrNull = (el: HTMLInputElement) => el.value.trim() === '' ? null : Number(el.value);
 
 const syncSplatXform = () => {
@@ -1182,9 +1189,34 @@ convertRun.onclick = () => {
     const input = convertInput.value;
     if (!input) return showToast('Pick an input file first', true);
     if (!panelValid('panel-convert')) return;
+    void runJob(() => api.startConvert({
+        input,
+        format: convertFormat.value,
+        options: {
+            iterations: Number($<HTMLInputElement>('convert-iterations').value),
+            maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
+            spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
+            decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
+            device: $<HTMLSelectElement>('convert-device').value,
+            verbose: $<HTMLInputElement>('convert-verbose').checked,
+            unbundled: $<HTMLInputElement>('convert-unbundled').checked,
+            viewerSettings: $<HTMLInputElement>('convert-viewer-settings').value.trim(),
+            lodSelect: $<HTMLInputElement>('convert-lod-select').value.trim(),
+            ...transformFilterOptions(),
+            params: currentGenParams()
+        }
+    }), convertRun, $<HTMLInputElement>('convert-autoload').checked);
+};
+
+// ---------- LOD panel: bake a streamed multi-LOD SOG ----------
+lodRun.onclick = () => {
+    const input = lodInput.value;
+    if (!input) return showToast('Pick a LOD input first', true);
+    if (!panelValid('panel-lod')) return;
     let lodFiles: string[] | undefined;
     let lodEnvFlags: boolean[] | undefined;
-    if (convertFormat.value === 'lod' && lodMode.value === 'combine') {
+    if (lodMode.value === 'combine') {
         // build files + env flags from the same row order so they stay aligned 1:1
         const picked = [...lodFileRows.children]
             .map((r) => ({
@@ -1207,29 +1239,34 @@ convertRun.onclick = () => {
     }
     void runJob(() => api.startConvert({
         input,
-        format: convertFormat.value,
+        format: 'lod',
         options: {
-            iterations: Number($<HTMLInputElement>('convert-iterations').value),
-            maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
-            spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
-            decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
-            filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
-            device: $<HTMLSelectElement>('convert-device').value,
-            verbose: $<HTMLInputElement>('convert-verbose').checked,
-            unbundled: $<HTMLInputElement>('convert-unbundled').checked,
-            viewerSettings: $<HTMLInputElement>('convert-viewer-settings').value.trim(),
-            lodSelect: $<HTMLInputElement>('convert-lod-select').value.trim(),
-            ...transformFilterOptions(),
+            iterations: Number($<HTMLInputElement>('lod-iterations').value),
+            maxWorkers: Number($<HTMLInputElement>('lod-max-workers').value),
+            device: $<HTMLSelectElement>('lod-device').value,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
             lodFiles,
-            lodEnvFlags,
-            params: currentGenParams(),
-            image: convertFormat.value === 'webp' ? webpImageOptions() : undefined
+            lodEnvFlags
         }
-    }), convertRun, $<HTMLInputElement>('convert-autoload').checked);
+    }), lodRun, $<HTMLInputElement>('lod-autoload').checked);
+};
+
+// ---------- Render panel: render a WebP image ----------
+renderRun.onclick = () => {
+    const input = renderInput.value;
+    if (!input) return showToast('Pick a file to render first', true);
+    if (!panelValid('panel-render')) return;
+    void runJob(() => api.startConvert({
+        input,
+        format: 'webp',
+        options: {
+            device: $<HTMLSelectElement>('render-device').value,
+            image: webpImageOptions()
+        }
+    }), renderRun);
 };
 
 // ---------- linked group: apply the Convert transforms/filters to every member ----------
@@ -1284,8 +1321,8 @@ groupApplyBtn.onclick = async () => {
     if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     if (!panelValid('panel-convert')) return;
     const format = convertFormat.value;
-    if (['lod', 'webp', 'csv'].includes(format)) {
-        return showToast('Pick a splat output format in the Convert panel (PLY / SOG / …) — streamed-LOD, WebP and CSV don’t carry these per-gaussian edits', true);
+    if (format === 'csv') {
+        return showToast('Pick a splat output format in the Convert panel (PLY / SOG / …) — CSV doesn’t carry these per-gaussian edits', true);
     }
     groupWarn.classList.add('hidden');
     groupApplyBtn.disabled = true; // claim the button now — the stats await below is a re-entrancy gap
@@ -1762,6 +1799,8 @@ type Win = { id: string; component: string; title: string; closable: boolean };
 const WINDOWS: Win[] = [
     { id: 'panel-files', component: 'panel-files', title: 'Files', closable: true },
     { id: 'panel-convert', component: 'panel-convert', title: 'Convert', closable: true },
+    { id: 'panel-lod', component: 'panel-lod', title: 'LOD', closable: true },
+    { id: 'panel-render', component: 'panel-render', title: 'Render', closable: true },
     { id: 'panel-analyze', component: 'panel-analyze', title: 'Analyze', closable: true },
     { id: 'panel-edit', component: 'panel-edit', title: 'Edit', closable: true },
     { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
@@ -1789,7 +1828,7 @@ class CameraViewPanel implements IContentRenderer {
         this.element.className = 'camera-view-panel';
         this.canvas.className = 'camera-view-canvas';
         this.hint.className = 'camera-view-hint';
-        this.hint.textContent = 'Set the Convert output to “WebP image (render)” to preview the render camera here.';
+        this.hint.textContent = 'Open the Render tab and set a camera to preview the render here.';
         this.element.append(this.canvas, this.hint);
     }
     init(): void {
@@ -1850,7 +1889,7 @@ function applyDefaultLayout(): void {
     dock.clear();
     dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
     dock.addPanel({ id: 'panel-files', component: 'panel-files', title: 'Files', position: { referencePanel: 'viewer', direction: 'left' } });
-    for (const id of ['panel-convert', 'panel-analyze', 'panel-edit', 'panel-collision']) {
+    for (const id of ['panel-convert', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
@@ -1877,8 +1916,9 @@ function closeWindow(w: Win): void {
 
 applyDefaultLayout();
 // keep the scene list fresh when tabs change (the capsule item depends on the
-// Collision tab being visible) or the Scene tab is shown
-dock.onDidActivePanelChange(() => rebuildSceneList());
+// Collision tab being visible) or the Scene tab is shown; the render frustum +
+// camera-view preview are gated on the Render tab being the active one
+dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); });
 (window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
 
 // ---------- top menu bar (Window / Layout) ----------
@@ -2065,7 +2105,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         syncPreview(); // reflect restored Convert fields once the viewer is up
         syncRegionViz(); // reflect a restored collision region box
         updateRegionEstimate(); // and its overflow risk
-        updateRenderFrustum(); // show the WebP frustum if WebP is the restored format
+        updateRenderFrustum(); // show the render frustum if the Render tab is active
         rebuildSceneList();
         (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
     })

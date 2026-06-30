@@ -71,14 +71,12 @@
                     <select id="convert-format">
                         <option value="sog" selected title="Single compressed .sog file (a ZIP of meta.json + WebP textures) — ~95% smaller than PLY">SOG — single .sog file</option>
                         <option value="sog-unbundled" title="SOG as a folder: meta.json + WebP textures, for streaming-friendly hosting">SOG — unbundled folder (meta.json + WebP)</option>
-                        <option value="lod" title="Multi-LOD streamed SOG: lod-meta.json + per-LOD chunk folders. The engine streams chunks by camera distance — the format for big scenes">SOG — streamed LOD folder (lod-meta.json + chunks)</option>
                         <option value="ply" title="Standard uncompressed 3DGS PLY">PLY</option>
                         <option value="compressed-ply" title="SuperSplat compressed PLY — smaller, still a single .ply">Compressed PLY</option>
                         <option value="spz" title="Niantic SPZ format">SPZ</option>
                         <option value="glb" title="glTF binary with the KHR_gaussian_splatting extension">GLB (KHR_gaussian_splatting)</option>
                         <option value="csv" title="Raw gaussian data as CSV — for analysis, not rendering">CSV</option>
                         <option value="html" title="Self-contained HTML viewer page with the splat embedded">HTML viewer</option>
-                        <option value="webp" title="Render a lossless WebP image of the splat via the GPU rasterizer — set the camera below">WebP image (render)</option>
                     </select>
                 </label>
                 <div class="field-row" id="row-sog-encode">
@@ -98,42 +96,6 @@
                         <option value="3">3</option>
                     </select>
                 </label>
-                <label class="field hidden" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
-                    <span>LOD source</span>
-                    <select id="lod-mode">
-                        <option value="decimate" selected>Decimate input automatically</option>
-                        <option value="combine">Combine existing files as levels</option>
-                    </select>
-                </label>
-                <div class="field-row hidden" id="row-lod-autotune">
-                    <button id="lod-autotune" title="Read each source's gaussian count + extents (a quick CPU summary) and fill the LOD settings automatically — decimate levels/keep for a single input, or order the combine rows by detail and tag a backdrop as the environment">⚡ Auto-tune from splat stats</button>
-                </div>
-                <div class="hint hidden" id="lod-autotune-plan"></div>
-                <div class="field-row hidden" id="row-lod-levels">
-                    <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
-                        <span>LOD levels</span>
-                        <input type="number" id="lod-levels" value="3" min="1" max="8" required />
-                    </label>
-                    <label class="field half" title="Each successive level keeps this percentage of the previous one (-F/--decimate, GPU-accelerated)">
-                        <span>Keep per level (%)</span>
-                        <input type="number" id="lod-keep" value="50" min="5" max="95" required />
-                    </label>
-                </div>
-                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick a row's Env box to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
-                    <span>Additional levels <em>(Input = LOD 0; tick 'Env' for an always-visible backdrop)</em></span>
-                    <div id="lod-file-rows"></div>
-                    <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
-                </div>
-                <div class="field-row hidden" id="row-lod-chunks">
-                    <label class="field half" title="Approximate gaussians per streamed chunk, in thousands (-C/--lod-chunk-count). Default 512">
-                        <span>Chunk size (K splats)</span>
-                        <input type="number" id="lod-chunk-count" value="512" min="16" max="8192" required />
-                    </label>
-                    <label class="field half" title="Approximate world-space size of a chunk in meters (-X/--lod-chunk-extent, whole meters). Default 16">
-                        <span>Chunk extent (m)</span>
-                        <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
-                    </label>
-                </div>
                 <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (-F/--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
                     <span>Decimate to (count or %)</span>
                     <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
@@ -145,36 +107,6 @@
                         <span>Viewer settings (.json)</span>
                         <input type="text" id="convert-viewer-settings" placeholder="e.g. settings.json — optional" />
                     </label>
-                </div>
-
-                <div class="hidden" id="webp-rows">
-                    <div class="group">Render camera</div>
-                    <label class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera">
-                        <div class="label-row"><span>Camera (x,y,z)</span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
-                        <input type="text" id="webp-camera" value="2,1,-2" />
-                    </label>
-                    <label class="field" title="Camera target point (--look-at)"><span>Look at (x,y,z)</span><input type="text" id="webp-lookat" value="0,0,0" /></label>
-                    <div class="field-row">
-                        <label class="field half" title="Vertical field of view in degrees (--fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
-                        <label class="field half" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
-                    </div>
-                    <div class="field-row">
-                        <label class="field half" title="--projection. equirect renders a 360°×180° panorama (FOV ignored, resolution forced 2:1)"><span>Projection</span>
-                            <select id="webp-projection"><option value="pinhole" selected>Pinhole</option><option value="equirect">Equirect 360°</option></select>
-                        </label>
-                        <label class="field half" title="Background colour r,g,b in 0..1 (--background)"><span>Background</span><input type="text" id="webp-background" value="0,0,0" /></label>
-                    </div>
-                    <div class="group">Depth of field <em>— pinhole only</em></div>
-                    <div class="field-row">
-                        <label class="field half" title="Aperture f-stop (--f-stop). Smaller = more blur. Empty = no defocus"><span>f-stop</span><input type="number" id="webp-fstop" step="0.1" min="0.5" placeholder="off" /></label>
-                        <label class="field half" title="Focus plane distance in world units (--focus-distance). Empty = distance to look-at"><span>Focus dist</span><input type="number" id="webp-focus" step="0.1" min="0.001" placeholder="look-at" /></label>
-                    </div>
-                    <div class="group">Motion blur</div>
-                    <label class="field" title="End camera position (--camera-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
-                    <div class="field-row">
-                        <label class="field half" title="Shutter fraction 0..1 (--shutter). 1=full, 0.5=180°"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
-                        <label class="field half" title="Sub-frames accumulated (--motion-samples). Cost is N× a render"><span>Samples</span><input type="number" id="webp-motionsamples" value="16" min="1" max="256" /></label>
-                    </div>
                 </div>
 
                 <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by -L/--list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU">
@@ -300,6 +232,106 @@
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
                 <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>
+            </section>
+
+            <section class="panel" id="panel-lod">
+                <h2 title="Bake a streamed multi-LOD SOG (lod-meta.json + per-LOD chunk folders). The engine streams chunks by camera distance — the format for big scenes">LOD</h2>
+                <label class="field" title="Source splat to build LODs from — the highest-detail level (LOD 0)">
+                    <span>Input</span>
+                    <select id="lod-input"></select>
+                </label>
+                <div class="field-row" id="row-lod-encode">
+                    <label class="field half" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
+                        <span>SH iterations</span>
+                        <input type="number" id="lod-iterations" value="10" min="1" max="100" required />
+                    </label>
+                    <label class="field half" title="Worker threads for SOG encoding (--max-workers). Higher = faster on many-core machines; 0 = inline/serial. Changes speed, not output. Default 4">
+                        <span>Encoder workers</span>
+                        <input type="number" id="lod-max-workers" value="4" min="0" max="64" />
+                    </label>
+                </div>
+                <label class="field" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
+                    <span>LOD source</span>
+                    <select id="lod-mode">
+                        <option value="decimate" selected>Decimate input automatically</option>
+                        <option value="combine">Combine existing files as levels</option>
+                    </select>
+                </label>
+                <div class="field-row" id="row-lod-autotune">
+                    <button id="lod-autotune" title="Read each source's gaussian count + extents (a quick CPU summary) and fill the LOD settings automatically — decimate levels/keep for a single input, or order the combine rows by detail and tag a backdrop as the environment">⚡ Auto-tune from splat stats</button>
+                </div>
+                <div class="hint hidden" id="lod-autotune-plan"></div>
+                <div class="field-row" id="row-lod-levels">
+                    <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
+                        <span>LOD levels</span>
+                        <input type="number" id="lod-levels" value="3" min="1" max="8" required />
+                    </label>
+                    <label class="field half" title="Each successive level keeps this percentage of the previous one (-F/--decimate, GPU-accelerated)">
+                        <span>Keep per level (%)</span>
+                        <input type="number" id="lod-keep" value="50" min="5" max="95" required />
+                    </label>
+                </div>
+                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick a row's Env box to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
+                    <span>Additional levels <em>(Input = LOD 0; tick 'Env' for an always-visible backdrop)</em></span>
+                    <div id="lod-file-rows"></div>
+                    <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
+                </div>
+                <div class="field-row" id="row-lod-chunks">
+                    <label class="field half" title="Approximate gaussians per streamed chunk, in thousands (-C/--lod-chunk-count). Default 512">
+                        <span>Chunk size (K splats)</span>
+                        <input type="number" id="lod-chunk-count" value="512" min="16" max="8192" required />
+                    </label>
+                    <label class="field half" title="Approximate world-space size of a chunk in meters (-X/--lod-chunk-extent, whole meters). Default 16">
+                        <span>Chunk extent (m)</span>
+                        <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
+                    </label>
+                </div>
+                <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by -L/--list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower)">
+                    <span>Device</span>
+                    <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
+                </label>
+                <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
+                <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Job panel">Generate streamed LOD</button>
+            </section>
+
+            <section class="panel" id="panel-render">
+                <h2 title="Render a lossless WebP image of the splat via the GPU rasterizer — set the camera below">Render</h2>
+                <label class="field" title="Source splat to render">
+                    <span>Input</span>
+                    <select id="render-input"></select>
+                </label>
+                <div class="group">Render camera</div>
+                <label class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera">
+                    <div class="label-row"><span>Camera (x,y,z)</span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
+                    <input type="text" id="webp-camera" value="2,1,-2" />
+                </label>
+                <label class="field" title="Camera target point (--look-at)"><span>Look at (x,y,z)</span><input type="text" id="webp-lookat" value="0,0,0" /></label>
+                <div class="field-row">
+                    <label class="field half" title="Vertical field of view in degrees (--fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
+                    <label class="field half" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
+                </div>
+                <div class="field-row">
+                    <label class="field half" title="--projection. equirect renders a 360°×180° panorama (FOV ignored, resolution forced 2:1)"><span>Projection</span>
+                        <select id="webp-projection"><option value="pinhole" selected>Pinhole</option><option value="equirect">Equirect 360°</option></select>
+                    </label>
+                    <label class="field half" title="Background colour r,g,b in 0..1 (--background)"><span>Background</span><input type="text" id="webp-background" value="0,0,0" /></label>
+                </div>
+                <div class="group">Depth of field <em>— pinhole only</em></div>
+                <div class="field-row">
+                    <label class="field half" title="Aperture f-stop (--f-stop). Smaller = more blur. Empty = no defocus"><span>f-stop</span><input type="number" id="webp-fstop" step="0.1" min="0.5" placeholder="off" /></label>
+                    <label class="field half" title="Focus plane distance in world units (--focus-distance). Empty = distance to look-at"><span>Focus dist</span><input type="number" id="webp-focus" step="0.1" min="0.001" placeholder="look-at" /></label>
+                </div>
+                <div class="group">Motion blur</div>
+                <label class="field" title="End camera position (--camera-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
+                <div class="field-row">
+                    <label class="field half" title="Shutter fraction 0..1 (--shutter). 1=full, 0.5=180°"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
+                    <label class="field half" title="Sub-frames accumulated (--motion-samples). Cost is N× a render"><span>Samples</span><input type="number" id="webp-motionsamples" value="16" min="1" max="256" /></label>
+                </div>
+                <label class="field" id="row-render-device" title="GPU adapter for GPU operations (-g, listed by -L/--list-gpus). The render needs a GPU rasterizer; 'Auto' picks the default">
+                    <span>Device</span>
+                    <select id="render-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
+                </label>
+                <button id="render-run" class="primary" title="Render the WebP image as a background job — the exact CLI command appears in the Job panel">Render WebP image</button>
             </section>
 
             <section class="panel" id="panel-analyze">
