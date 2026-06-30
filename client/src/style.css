@@ -146,6 +146,8 @@ button.primary:focus-visible { outline-color: var(--text); }
 }
 #panel-files h2 { --panel-hue: var(--text-dim); }
 #panel-convert h2 { --panel-hue: var(--accent); }
+#panel-lod h2 { --panel-hue: var(--accent); }
+#panel-render h2 { --panel-hue: #c792ea; }
 #panel-collision h2 { --panel-hue: var(--accent-2); }
 #panel-viewer h2 { --panel-hue: #c792ea; }
 #panel-job h2 { --panel-hue: #ff9e40; cursor: default; }

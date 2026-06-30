@@ -429,11 +429,14 @@ export const viewableOutputs = (names) => names
     .filter(Boolean);
 
 // Remove (or keep) the gaussians inside a box/sphere region, writing a trimmed
-// .ply. Runs the Node trim worker (no CLI/GPU). The region is in the same frame
-// the GUI box/sphere fields use (what -B/-S consume). PLY-only: the worker reads
-// and rewrites PLY records directly; convert other formats to PLY first.
+// .ply. Runs the Node trim worker. The region is in the same frame the GUI
+// box/sphere fields use (what -B/-S consume). Any single-file splat works: PLY is
+// trimmed directly; other formats (.sog/.spz/.splat/.ksplat/.lcc) are decompressed
+// to a temp PLY via the CLI first, then trimmed — so the output is always .ply.
 export const buildTrimCommand = ({ input, options = {}, workspaceDir }) => {
-    if (!/\.ply$/i.test(input)) throw new Error('Trim works on .ply sources — convert to PLY first');
+    if (/(^|\/)(lod-)?meta\.json$/i.test(input) || !/\.(ply|sog|spz|splat|ksplat|lcc2?)$/i.test(input)) {
+        throw new Error('Trim works on single-file splats (.ply/.sog/.spz/.splat/.ksplat/.lcc) — not bundle folders');
+    }
     const mode = options.mode === 'keep' ? 'keep' : 'remove';
     const box = Array.isArray(options.box) ? options.box : null;
     const sphere = Array.isArray(options.sphere) ? options.sphere : null;

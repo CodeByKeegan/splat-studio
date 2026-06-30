@@ -78,8 +78,10 @@ flowchart LR
   server under the bundled Node and points the window at it.
 - **Server** is a thin Express layer: it lists projects/files, and runs each GUI
   action as one background job — usually a `splat-transform` CLI run, streaming the
-  command + output back; a couple (the PLY region-trim) run in-process as a Node
-  worker, since `-B`/`-S` can only crop, not remove inside a region.
+  command + output back; the region-trim (`server/ply-trim-worker.mjs`) runs as a Node
+  worker, since `-B`/`-S` can only crop, not remove inside a region. It works on any
+  single-file splat: non-PLY inputs are first decompressed to a temp PLY via the CLI,
+  then trimmed (output is always `.ply`).
 - **Renderer** is the Vite/TypeScript UI plus the PlayCanvas viewport (`viewer.ts`),
   which renders splats, collision wireframes, voxels, gizmos, the measure tools, and a
   render-to-texture camera preview. The shell is a dockable tab editor (dockview-core);
