@@ -743,7 +743,8 @@ const autotuneDecimate = async (input: string): Promise<void> => {
     setNum('lod-keep', KEEP);
     setNum('lod-chunk-extent', chunkExtent);
     const ladder = Array.from({ length: levels }, (_, i) => fmtCount(Math.round(s.count * (KEEP / 100) ** i))).join(' → ');
-    showLodPlan(`Decimate ${fmtCount(s.count)} gaussians into ${levels} level${levels > 1 ? 's' : ''} at ${KEEP}% each: ${ladder}. Chunk extent ${chunkExtent} m (scene ≈ ${maxExtent.toFixed(1)} m).`);
+    const sceneM = Number.isFinite(maxExtent) ? maxExtent.toFixed(1) : '?';
+    showLodPlan(`Decimate ${fmtCount(s.count)} gaussians into ${levels} level${levels > 1 ? 's' : ''} at ${KEEP}% each: ${ladder}. Chunk extent ${chunkExtent} m (scene ≈ ${sceneM} m).`);
 };
 
 // combine mode → order the level rows by gaussian count (most detail first) and

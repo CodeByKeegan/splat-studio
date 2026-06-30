@@ -268,7 +268,10 @@ async function run() {
         await js(`document.getElementById('lod-autotune').click();`);
         await js(`new Promise(function(res){var t=Date.now();(function p(){var el=document.getElementById('lod-autotune-plan'); if(el && !el.classList.contains('hidden') && el.textContent.trim()) return res(true); if(Date.now()-t>9000) return res(false); setTimeout(p,200);})();})`);
         await sleep(300);
-        await js(`window.__doc.hl(['#row-lod-files','#lod-autotune','#lod-autotune-plan'],{numbered:true});`);
+        await js(`window.__doc.rail('panel-scene');`); // clean right side (avoid the stale Camera view render)
+        await sleep(150);
+        // plain glow on the auto-tune button + the ordered rows (no numbered badges to overlap)
+        await js(`window.__doc.hl(['#lod-autotune','#row-lod-files'],{});`);
     });
 
     for (const s of scenes) {

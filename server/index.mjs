@@ -150,7 +150,9 @@ const parseStats = (log) => {
         minMax[c[0]] = [Number(c[1]), Number(c[2])];
     }
     const extent = (k) => (minMax[k] ? minMax[k][1] - minMax[k][0] : NaN);
-    return { count: rc ? Number(rc[1]) : NaN, extents: [extent('x'), extent('y'), extent('z')] };
+    const result = { count: rc ? Number(rc[1]) : NaN, extents: [extent('x'), extent('y'), extent('z')] };
+    // a partial/garbled summary parse → treat as failure (don't 200 + cache a NaN)
+    return Number.isFinite(result.count) ? result : null;
 };
 const runStats = (absInput) => new Promise((resolve) => {
     const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '-m', 'null'], { windowsHide: true, timeout: 120000 });
