@@ -53,6 +53,11 @@ Every control has a tooltip — hover to see what it does and which CLI flag it 
 
 ![Window menu](screenshots/window-menu.png)
 
+- **Edit** — **Undo** (`Ctrl+Z`) and **Redo** (`Ctrl+Y` or `Ctrl+Shift+Z`) step through
+  recent changes: panel settings, gizmo moves (a single drag is one step), layer
+  visibility, and which splat is loaded. Native text-field undo still works while you're
+  typing in a field. Running a job or deleting a file is **not** undoable (those write to
+  disk), and the history resets when you switch projects.
 - **Window** — lists every panel with a checkmark for the ones that are open. Click to
   **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Job** tabs
   can't be closed.)
