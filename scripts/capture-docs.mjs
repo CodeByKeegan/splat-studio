@@ -73,7 +73,7 @@ const startServer = async (port) => {
 // highlight: outline + glow over each selector, with optional numbered badges
 const PAGE_HELPERS = `
 window.__doc = {
-  clear() { document.querySelectorAll('.__doc-hl,.__doc-badge').forEach(n => n.remove()); },
+  clear() { document.querySelectorAll('.__doc-hl,.__doc-badge,.ctx-menu').forEach(n => n.remove()); document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); },
   closeMenus() { document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); },
   hl(selectors, opts) {
     opts = opts || {};
@@ -116,7 +116,7 @@ window.__doc = {
     const dock = window.__dock;
     if (!dock) return;
     if (!dock.getPanel(panel)) {
-      const w = { 'panel-files':'Files','panel-convert':'Convert','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','panel-settings':'Settings','camera-view':'Camera view' }[panel];
+      const w = { 'panel-files':'Files','panel-convert':'Convert','panel-lod':'LOD','panel-render':'Render','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','panel-settings':'Settings','camera-view':'Camera view' }[panel];
       try { dock.addPanel({ id: panel, component: panel, title: w || panel }); } catch (e) {}
     }
     const p = dock.getPanel(panel);
@@ -197,9 +197,21 @@ async function run() {
         await sleep(200);
         await js(`var m=document.querySelector('.ctx-menu'); window.__doc.hl(m?[m]:['#file-list'],{pad:3});`);
     });
-    add('convert-formats', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.hl(['#convert-input','#convert-format'],{numbered:true});`); });
-    add('convert-transforms', async () => { await js(`window.__doc.rail('panel-convert'); var g=[...document.querySelectorAll('#panel-convert .group')].find(e=>/transform/i.test(e.textContent)); window.__doc.hl(g?[g.parentElement]:['#panel-convert'],{});`); });
-    add('convert-webp', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true})); setTimeout(()=>window.__doc.hl('#convert-format'),50);`); await sleep(300); });
+    add('convert-formats', async () => { await js(`window.__doc.clear(); window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.hl(['#convert-input','#convert-format'],{numbered:true});`); });
+    // transforms now live in the Edit panel (Convert is format + filters only):
+    // one clean box around the whole Transform group (header → Apply transform)
+    add('edit-transform', async () => {
+        await js(`window.__doc.clear(); window.__doc.rail('panel-scene'); window.__doc.rail('panel-edit');`);
+        await sleep(200);
+        await js(`(function(){window.__doc.clear();var hdr=[...document.querySelectorAll('#panel-edit .group')].find(e=>/^transform/i.test(e.textContent.trim())),btn=document.getElementById('apply-transform');if(!hdr||!btn){window.__doc.hl(['#apply-transform'],{});return;}var a=hdr.getBoundingClientRect(),b=btn.getBoundingClientRect(),pad=5,left=Math.min(a.left,b.left)-pad,top=a.top-pad,right=Math.max(a.right,b.right)+pad,bottom=b.bottom+pad,box=document.createElement('div');box.className='__doc-hl';Object.assign(box.style,{position:'fixed',left:left+'px',top:top+'px',width:(right-left)+'px',height:(bottom-top)+'px',border:'2.5px solid #ffcf4d',borderRadius:'7px',boxShadow:'0 0 0 2px rgba(255,207,77,.35), 0 0 16px 3px rgba(255,207,77,.45)',pointerEvents:'none',zIndex:'99998'});document.body.appendChild(box);})();`);
+    });
+    // WebP rendering is its own Render tab — settle the layout before highlighting
+    add('render-tab', async () => {
+        await js(`window.__doc.clear(); window.__doc.rail('panel-scene'); window.__doc.rail('panel-render'); var ri=document.getElementById('render-input'); if(ri){ri.value='demo-room.ply'; ri.dispatchEvent(new Event('change',{bubbles:true}));}`);
+        await sleep(350);
+        await js(`var p=document.getElementById('panel-render'); if(p) p.scrollTop=0; window.__doc.hl(['#render-input','#webp-camera','#render-run'],{numbered:true});`);
+        await sleep(150);
+    });
     add('analyze-panel', async () => { await js(`var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.rail('panel-analyze'); window.__doc.hl('#panel-analyze');`); });
     add('collision-panel', async () => { await js(`window.__doc.rail('panel-collision'); window.__doc.hl('#panel-collision');`); });
     add('viewport-toolbar', async () => { await js(`window.__doc.clear(); window.__doc.rail('panel-files'); window.__doc.hl('#viewport-toolbar',{pad:3});`); });
@@ -259,7 +271,7 @@ async function run() {
         await sleep(600); // box shows + the debounced count computes
         await js(`document.getElementById('carve-remove').scrollIntoView({block:'center'});`);
         await sleep(250);
-        await js(`window.__doc.hl(['#carve-box-rows','#carve-count','#carve-remove'],{});`);
+        await js(`window.__doc.hl(['#region-mode','#carve-box-rows','#carve-count','#carve-remove'],{});`);
     });
 
     // LOD auto-tune: seed a few copies (one a 'sky' backdrop), combine mode, auto-tune
@@ -273,9 +285,8 @@ async function run() {
         await sleep(400);
         await js(`(function(){var ps=document.getElementById('project-select'); ps.dispatchEvent(new Event('change',{bubbles:true}));})()`);
         await sleep(700);
-        await js(`window.__doc.rail('panel-convert');
-            var ci=document.getElementById('convert-input'); ci.value='demo-room.ply'; ci.dispatchEvent(new Event('change',{bubbles:true}));
-            var f=document.getElementById('convert-format'); f.value='lod'; f.dispatchEvent(new Event('change',{bubbles:true}));
+        await js(`window.__doc.rail('panel-lod');
+            var li=document.getElementById('lod-input'); li.value='demo-room.ply'; li.dispatchEvent(new Event('change',{bubbles:true}));
             var m=document.getElementById('lod-mode'); m.value='combine'; m.dispatchEvent(new Event('change',{bubbles:true}));
             document.getElementById('lod-file-rows').innerHTML='';
             var add=document.getElementById('lod-add-level'); add.click(); add.click(); add.click();
@@ -291,11 +302,11 @@ async function run() {
         await js(`window.__doc.hl(['#lod-autotune','#row-lod-files'],{});`);
     });
 
-    // linked group (Files panel): set a transform on the proxy in Convert, tick
-    // members in Files, apply to all
+    // linked group (Files panel): set a transform on the proxy in the Edit panel,
+    // tick members in Files, apply the transform to all
     add('linked-group', async () => {
-        await js(`window.__doc.clear(); window.__doc.rail('panel-convert');
-            var ci=document.getElementById('convert-input'); ci.value='demo-room.ply'; ci.dispatchEvent(new Event('change',{bubbles:true}));
+        await js(`window.__doc.clear(); window.__doc.rail('panel-edit');
+            var ei=document.getElementById('edit-input'); ei.value='demo-room.ply'; ei.dispatchEvent(new Event('change',{bubbles:true}));
             var f=document.getElementById('convert-format'); f.value='ply'; f.dispatchEvent(new Event('change',{bubbles:true}));
             var tx=document.getElementById('tf-translate-x'); tx.value='1'; tx.dispatchEvent(new Event('input',{bubbles:true})); tx.dispatchEvent(new Event('change',{bubbles:true}));`);
         await sleep(150);
@@ -310,7 +321,27 @@ async function run() {
         await js(`window.__doc.hl(['#group-members','#group-apply'],{numbered:true});`);
     });
 
+    // carve propagation: set a Region on the proxy (Edit), tick members in Files,
+    // then 'Apply region to members' fans the carve/crop to every LOD
+    add('group-region', async () => {
+        await js(`window.__doc.clear(); window.__doc.rail('panel-edit');
+            var ei=document.getElementById('edit-input'); ei.value='demo-room.ply'; ei.dispatchEvent(new Event('change',{bubbles:true}));
+            var cb=document.getElementById('carve-box-on'); if(!cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
+            var bx=document.getElementById('carve-box-min-x'); bx.value='-1'; bx.dispatchEvent(new Event('input',{bubbles:true}));`);
+        await sleep(300);
+        await js(`window.__doc.rail('panel-files');
+            var want=['demo-room.ply','scene-mid.ply'];
+            [...document.querySelectorAll('#group-members input[type=checkbox]')].forEach(function(cb){ if(want.indexOf(cb.value)>=0 && !cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));} });`);
+        await sleep(300);
+        await js(`document.getElementById('group-actions').scrollIntoView({block:'center'});`);
+        await sleep(300);
+        await js(`window.__doc.hl(['#group-members','#group-apply-region'],{numbered:true});`);
+    });
+
+    // SCENES=a,b limits a run to specific scenes (faster doc iteration; others keep their last shot)
+    const only = (process.env.SCENES || '').split(',').map((s) => s.trim()).filter(Boolean);
     for (const s of scenes) {
+        if (only.length && !only.includes(s.name)) continue;
         try { await s.fn(); await shot(s.name); }
         catch (e) { console.error(`  ✗ ${s.name}: ${e.message}`); }
     }

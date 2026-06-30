@@ -12,11 +12,14 @@ meshes, and edit splats — all with a live PlayCanvas 3D viewport.
 ## Contents
 - [The interface](#the-interface)
 - [Projects & files](#projects--files)
-- [Convert: formats & rendering](#convert-formats--rendering)
-  - [Transforms & filters](#transforms--filters)
-  - [WebP image render](#webp-image-render)
+- [Convert: output formats & filters](#convert-output-formats--filters)
+  - [Filters](#filters)
+- [LOD: streamed multi-LOD](#lod-streamed-multi-lod)
+- [Render: WebP image](#render-webp-image)
 - [Analyze: summary statistics](#analyze-summary-statistics)
-- [Edit: measure-to-scale & set origin](#edit-measure-to-scale--set-origin)
+- [Edit: transform, measure & region](#edit-transform-measure--region)
+  - [Transform](#transform)
+  - [Region (crop / carve)](#region-crop--carve)
 - [Collision: voxels & mesh](#collision-voxels--mesh)
 - [Viewport toolbar & Settings](#viewport-toolbar--settings)
 - [Scene hierarchy](#scene-hierarchy)
@@ -36,8 +39,8 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
 
 - **Top menu bar** — the app title, the **Window** and **Layout** menus, and the
   project picker.
-- **Dock** — the default layout puts the panel tabs (Files, Convert, Analyze, Edit,
-  Collision) on the left, the **3D viewport** in the center, the **Job** panel
+- **Dock** — the default layout puts the panel tabs (Files, Convert, LOD, Render,
+  Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Job** panel
   (live `splat-transform` output) below it, and **Scene** / **Settings** on the
   right. Drag any tab to rearrange; drag a tab out to float it in its own window.
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
@@ -84,8 +87,9 @@ To add splats:
    ![File actions menu](screenshots/files-context-menu.png)
 
    - **View in viewport**
-   - **Convert → SOG bundle** / **Convert → Streamed LOD** / **Convert (other formats)…**
-     — jumps to the Convert panel with the file selected and the format preset.
+   - **Convert → SOG bundle** / **Convert (other formats)…** — jumps to the Convert
+     panel with the file selected and the format preset; **Convert → Streamed LOD**
+     jumps to the LOD panel.
    - **Generate / Regenerate collision…** — jumps to the Collision panel (the label
      tells you whether a collision mesh already sits next to the file).
    - **Analyze stats** — runs the summary and shows the stats card.
@@ -96,21 +100,34 @@ To add splats:
 
 > **Linked group — edit a proxy, apply to every LOD:** the **Linked group** section at
 > the bottom of the Files panel lets you tick the files that are the same location at
-> different detail (its LODs). Set the Transform / Filter and a splat output format in
-> the **Convert** panel on your proxy, then **Apply transforms to members** — every
-> ticked member is converted in turn with the same edits, so the whole ladder stays
-> consistent. Choices are remembered per project; a heads-up appears if the members'
-> extents differ a lot (they may not be the same location).
+> different detail (its LODs). Edit the proxy once, then fan that one edit across the
+> whole ladder so it stays consistent. Two actions:
+>
+> - **Apply transforms to members** — set the **Transform** in the **Edit** panel (plus
+>   a splat output format in **Convert**) on your proxy, then click this; every ticked
+>   member is converted in turn with the same transform/filter settings.
+> - **Apply region to members** — set a **Region** (carve or crop) in the **Edit** panel
+>   on your proxy, then click this; the same removal or crop is applied to every ticked
+>   member, so a region edit on the proxy propagates across all the LODs.
+>
+> Both run as sequential jobs. Choices are remembered per project; a heads-up appears
+> if the members' extents differ a lot (they may not be the same location).
 >
 > ![Linked group](screenshots/linked-group.png)
+>
+> ![Apply region to members](screenshots/group-region.png)
 
 ---
 
-## Convert: formats & rendering
+## Convert: output formats & filters
 
 ![Convert formats](screenshots/convert-formats.png)
 
-The Convert panel runs one `splat-transform` conversion as a background job.
+The Convert panel runs one `splat-transform` conversion as a background job. It handles
+**output formats** and **encode-time filters**; spatial edits (transform, crop/carve)
+live in the [Edit panel](#edit-transform-measure--region), streamed multi-LOD bakes in
+the [LOD panel](#lod-streamed-multi-lod), and image renders in the
+[Render panel](#render-webp-image).
 
 1. **Input** — pick any source in the project (including formats the viewer can't
    display, like `.spz`/`.splat`/`.ksplat`/`.lcc`/`.lcc2`, and `.mjs` generators).
@@ -120,86 +137,96 @@ The Convert panel runs one `splat-transform` conversion as a background job.
    | --- | --- |
    | **SOG — single `.sog`** | Compressed single file (a ZIP of `meta.json` + WebP textures), ~95% smaller than PLY |
    | **SOG — unbundled folder** | `meta.json` + WebP textures, for streaming-friendly hosting |
-   | **SOG — streamed LOD folder** | `lod-meta.json` + per-LOD chunks; the engine streams by camera distance (big scenes) |
    | **PLY** / **Compressed PLY** | Standard / SuperSplat-compressed point data |
    | **SPZ** | Niantic SPZ (pick container version 3 or 4) |
    | **GLB** | glTF binary with `KHR_gaussian_splatting` |
    | **CSV** | Raw gaussian data for analysis |
    | **HTML viewer** | Self-contained viewer page with the splat embedded |
-   | **WebP image (render)** | A rendered image of the splat — see [below](#webp-image-render) |
 
 3. Set format-specific options as they appear. For SOG-backed outputs that's a
    paired **SH iterations** / **Encoder workers** row — iterations trade quality
    for speed, while Encoder workers (`--max-workers`) only changes encode speed,
-   not the output (`0` = serial). Other formats surface SPZ version, LOD levels,
-   etc. Then click **Convert**. The exact CLI command
-   and live output appear in the **Job** panel. With **Load result into viewport**
-   checked (default), any viewable result loads automatically when the job finishes.
-
-> **Environment backdrop (streamed LOD):** in **Combine** mode each added row is a
-> streamed detail level (LOD 1, 2, …). Tick a row's **Env** box to designate that
-> file as an always-visible backdrop — a coarse, decimated far-field shell (skybox,
-> distant cityscape, forest) the runtime keeps resident at negligible budget cost
-> instead of culling it by camera distance (emitted as `<file> -l -1`). Use it only
-> for the distant static surround; anything the viewer walks up to should be a
-> numbered level. One environment layer per bake; not available in Decimate mode.
-
-> **⚡ Auto-tune from splat stats (streamed LOD):** when the output format is
-> **streamed LOD**, an **Auto-tune** button reads each source's gaussian count and
-> world-space extents (a quick CPU `-m` summary, cached) and fills the settings for you:
->
-> ![LOD auto-tune](screenshots/lod-autotune.png)
->
-> - **Combine** mode — orders the level rows by gaussian count (most detail first →
->   LOD 1, 2, …) and tags a backdrop (much larger extents, or an `env`/`sky`-ish name)
->   as the **Env** layer. Warns if a level has more gaussians than the Input (LOD 0).
-> - **Decimate** mode — derives the number of **LOD levels** and **chunk extent** from
->   the input's count and scene size (aiming the coarsest level near ~150k gaussians).
->
-> A one-line plan summarises what it chose; every value stays editable afterwards.
+   not the output (`0` = serial). Other formats surface SPZ version, HTML viewer
+   options, etc. Then click **Convert**. The exact CLI command and live output appear
+   in the **Job** panel. With **Load result into viewport** checked (default), any
+   viewable result loads automatically when the job finishes.
 
 > **Generators:** when the input is a `.mjs` file, a **Generator params** field (and,
 > if the generator advertises a schema, live sliders) appear. **✨ Generate & view**
 > runs the generator and loads the result straight into the viewport.
 
-### Transforms & filters
+### Filters
 
-![Transforms and filters](screenshots/convert-transforms.png)
+The **Filter** section applies encode-time filters to the splat before it's written.
+They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 
-Below the format options, the **Transform** and **Filter** sections apply a fixed
-pipeline to the splat before it's written (they don't apply to streamed-LOD bakes):
-
-- **Translate / Rotate / Scale** — move (`-t`), rotate in Euler degrees (`-r`), and
-  uniformly scale (`-s`). The viewport previews the transform live as you type.
 - **Strip SH bands above** — drop spherical-harmonic bands to shrink the file
   (`-H`, e.g. keep only band 0 for flat color).
-- **Crop to box / sphere** — keep only gaussians inside a region (`-B` / `-S`); the
-  region draws as a draggable wireframe in the viewport. (To *remove* a region instead,
-  see **Carve** in the [Edit panel](#edit-measure-to-scale--set-origin).)
-- **Filter by value** — keep/drop by a column comparison (`-V`).
-- **Remove floaters** — strip disconnected specks (`-G`).
+- **Filter by value** — keep/drop by a property comparison (`-V`); pick the property,
+  comparator, and threshold.
+- **Remove floaters** — strip disconnected specks (`-G`); a GPU pass with optional
+  voxel size / opacity / min-contribution overrides.
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`-M`).
+- **Decimate to (count or %)** — reduce the gaussian count to a number or percentage
+  (`-F`).
 - **Filter NaN** — drop non-finite gaussians (`-N`).
-- **Decimate to** — reduce the gaussian count to a number or percentage (`-F`).
-- **Verbose** — print memory/timing diagnostics in the job log.
+- **Verbose** — print memory/timing diagnostics in the job log (`--verbose --mem`).
 
-### WebP image render
+---
 
-![WebP render options](screenshots/convert-webp.png)
+## LOD: streamed multi-LOD
 
-Choosing **WebP image (render)** turns the panel into a camera: it GPU-renders a
-lossless image of the splat.
+![LOD auto-tune](screenshots/lod-autotune.png)
 
-1. Set **Camera** and **Look at** positions — or click **⮌ from viewer** to copy the
-   current viewport camera as a starting point.
-2. Set **FOV**, **Resolution**, **Projection** (pinhole or equirectangular), and a
+The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-LOD chunk
+folders that the engine streams by camera distance, for scenes too big to load at once.
+
+1. **Input** — the highest-detail source (LOD 0).
+2. Set the paired **SH iterations** / **Encoder workers** row (as in Convert).
+3. **LOD source** — *Decimate input automatically* derives the lighter levels from the
+   single input, or *Combine existing files as levels* uses files you already have
+   (e.g. exports at different gaussian counts) as explicit levels.
+4. In Decimate mode, set **LOD levels** and **Keep per level (%)**. In Combine mode,
+   each **Additional level** row is the next, lighter level — order matters (each level
+   should have fewer gaussians than the one before). Tick a row's **Env** box to make
+   that file an always-visible far/background shell (a coarse, decimated backdrop —
+   skybox, distant cityscape — emitted as LOD `-1`) the runtime keeps resident instead
+   of culling it by distance. One environment layer per bake; Combine mode only.
+5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
+   **Generate streamed LOD**.
+
+> **⚡ Auto-tune from splat stats:** the **Auto-tune** button reads each source's
+> gaussian count and world-space extents (a quick CPU summary, cached) and fills the
+> settings for you:
+>
+> - **Decimate** mode — derives the number of **LOD levels** and **chunk extent** from
+>   the input's count and scene size (aiming the coarsest level near ~150k gaussians).
+> - **Combine** mode — orders the level rows by gaussian count (most detail first →
+>   LOD 1, 2, …) and tags a backdrop (much larger extents, or an `env`/`sky`-ish name)
+>   as the **Env** layer. Warns if a level has more gaussians than the Input (LOD 0).
+>
+> A one-line plan summarises what it chose; every value stays editable afterwards.
+
+---
+
+## Render: WebP image
+
+![Render WebP options](screenshots/render-tab.png)
+
+The Render panel GPU-renders a lossless **WebP image** of the splat through the
+rasterizer.
+
+1. Pick the **Input** splat.
+2. Set **Camera (x,y,z)** and **Look at (x,y,z)** — or click **📷 from viewer** to copy
+   the current viewport camera as a starting point.
+3. Set **FOV°**, **Resolution**, **Projection** (pinhole or equirect 360°), and a
    **Background** color.
-3. Optionally add **Depth of field** (f-stop + focus distance) and **Motion blur**
-   (an end camera pose + shutter/sample count).
-4. Pick the **Device** (GPU adapter or CPU) and click **Convert** to render.
+4. Optionally add **Depth of field** (f-stop + focus distance, pinhole only) and
+   **Motion blur** (an end camera pose + shutter / sample count).
+5. Pick the **Device** and click **Render WebP image**.
 
-The WebP camera is also previewed as a **frustum gizmo** in the viewport so you can
-see exactly what it will capture.
+The render camera is also previewed as a **frustum gizmo** in the viewport (and live in
+the [Camera view](#camera-view) tab) so you can see exactly what it will capture.
 
 ---
 
@@ -220,17 +247,32 @@ floaters, or unexpected SH bands.
 
 ---
 
-## Edit: measure-to-scale & set origin
+## Edit: transform, measure & region
+
+The Edit panel hosts the **spatial edits** — transform, measure-to-scale, set origin,
+and region trim. Each writes a new edited splat and loads it; the source is untouched.
+Most tools are viewport-driven: **you place points by clicking the splat**, and points
+snap to the surface and hide behind it as you orbit (no collision mesh needed).
+
+### Transform
+
+![Transform](screenshots/edit-transform.png)
+
+Apply a fixed translate / rotate / scale to the splat before writing:
+
+- **Translate (x, y, z)** — move every gaussian (`-t`), in `splat-transform` world units.
+- **Rotate (°, Euler x · y · z)** — rotate by Euler angles in degrees (`-r`).
+- **Scale (uniform factor)** — uniformly scale (`-s`); `1` = no change, `0.5` = half,
+  `2` = double.
+
+Click **Apply transform** to write a new edited `.ply` that auto-loads.
+
+### Measure → scale
 
 ![Measure mode](screenshots/edit-measure.png)
 
-The Edit panel turns the viewport into a measuring/aligning tool — like SuperSplat,
-but local and driven by `splat-transform`. **You place points by clicking the splat;**
-points snap to the surface and hide behind it as you orbit (no collision mesh needed).
-
-**Scale directly:** enter a **Scale factor** (e.g. `2` for twice as large, `0.5` for
-half) and click **Apply scale** — it runs `-s` on the splat and loads the result. No
-measuring required.
+The measure tool turns the viewport into a measuring/aligning tool — like SuperSplat,
+but local and driven by `splat-transform`.
 
 **Measure → real-world scale:**
 
@@ -244,17 +286,29 @@ measuring required.
 5. Click **Apply scale** — Splat Studio writes a new, correctly-scaled splat (`-s`)
    and loads it.
 
-**Set origin:** check **Pick origin point**, click the splat where `(0,0,0)` should
-be, then **Set as origin** to recenter the splat (`-t`).
+### Set origin
 
-**✂ Carve out region (remove inside):** delete the gaussians inside a box or sphere —
-the inverse of cropping. Enable **Box region** and/or **Sphere region**, drag the
-wireframe in the viewport over the part to remove (a live readout shows how many
-gaussians the carve will delete), then **Carve out region**. It writes a new trimmed
-`.ply` that loads into the viewport; the source is untouched. `splat-transform`'s
-`-B`/`-S` can only *keep* inside, so this runs a local trim. PLY sources only.
+Check **Pick origin point**, click the splat where `(0,0,0)` should be, then **Set as
+origin** to recenter the splat (`-t`).
 
-![Carve out a region](screenshots/trim-carve.png)
+### Region (crop / carve)
+
+![Region trim](screenshots/trim-carve.png)
+
+Trim the splat to (or away from) a box or sphere. A **Mode** dropdown picks what
+*✂ Apply to region* does:
+
+- **Remove inside (carve)** — deletes the gaussians *inside* the box/sphere.
+- **Keep inside (crop)** — deletes everything *outside*, keeping only the inside.
+
+Enable **Box region** and/or **Sphere region**, drag the wireframe in the viewport over
+the part (a live readout shows how many gaussians the trim will remove), then **✂ Apply
+to region**. It writes a new trimmed `.ply` that auto-loads; the source is untouched.
+`splat-transform`'s `-B`/`-S` can only *keep* inside, so this runs a local trim.
+
+It works on **any single-file splat**, not just PLY: non-PLY inputs
+(`.sog`/`.spz`/`.splat`/`.ksplat`/`.lcc`) are decompressed to a temp PLY via the CLI
+first, then trimmed. The output is always a `.ply`.
 
 ---
 
