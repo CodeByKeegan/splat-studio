@@ -189,6 +189,14 @@ async function run() {
         await js(`var d=document.querySelector('#menubar .menu-drop:not(.hidden)'); window.__doc.hl(d?[d]:['#menubar'],{});`);
     });
     add('files-panel', async () => { await js(`window.__doc.clear(); window.__doc.rail('panel-files'); window.__doc.hl(['#drop-zone','#file-list'],{numbered:true});`); });
+    // right-click (context) menu of per-file actions: open it on the demo splat row
+    add('files-context-menu', async () => {
+        await js(`window.__doc.clear(); window.__doc.rail('panel-files');`);
+        await sleep(150);
+        await js(`(function(){var li=[...document.querySelectorAll('#file-list li')].find(x=>x.textContent.includes('demo-room'));if(!li)return false;var r=li.getBoundingClientRect();li.dispatchEvent(new MouseEvent('contextmenu',{clientX:Math.round(r.left+60),clientY:Math.round(r.top+12),bubbles:true,cancelable:true}));return true;})()`);
+        await sleep(200);
+        await js(`var m=document.querySelector('.ctx-menu'); window.__doc.hl(m?[m]:['#file-list'],{pad:3});`);
+    });
     add('convert-formats', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.hl(['#convert-input','#convert-format'],{numbered:true});`); });
     add('convert-transforms', async () => { await js(`window.__doc.rail('panel-convert'); var g=[...document.querySelectorAll('#panel-convert .group')].find(e=>/transform/i.test(e.textContent)); window.__doc.hl(g?[g.parentElement]:['#panel-convert'],{});`); });
     add('convert-webp', async () => { await js(`window.__doc.rail('panel-convert'); var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true})); setTimeout(()=>window.__doc.hl('#convert-format'),50);`); await sleep(300); });

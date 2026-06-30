@@ -331,7 +331,7 @@ body.dropping #viewport::after {
 }
 .file-list li {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
     align-items: center;
     gap: 6px;
     padding: 5px 2px;
@@ -406,6 +406,37 @@ body.dropping #viewport::after {
     background: var(--accent);
     transition: width 0.2s;
 }
+
+/* ⋯ row actions button + the floating per-file context menu */
+.row-more { padding: 4px 8px; font-size: 15px; line-height: 1; color: var(--text-dim); }
+.row-more:hover { color: var(--text); }
+.ctx-menu {
+    position: fixed;
+    z-index: 100000;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    padding: 4px;
+    min-width: 210px;
+}
+.ctx-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font: inherit;
+    cursor: pointer;
+}
+.ctx-item:hover:not(:disabled) { background: var(--bg-input); }
+.ctx-item:disabled { color: var(--text-dim); opacity: 0.5; cursor: default; }
+.ctx-item.danger { color: var(--error); }
+.ctx-item.danger:hover:not(:disabled) { background: rgba(255, 93, 93, 0.12); }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 2px; }
 
 .badge {
     font-size: var(--fs-xs);

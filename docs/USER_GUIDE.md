@@ -78,7 +78,20 @@ To add splats:
    `meta.json`, and `.mjs` generators.
 2. The **file list** shows every source in the project. Click **view** to display a
    splat (or collision mesh / voxel octree) in the viewport, or **✕** to delete it.
-3. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
+3. **Right-click any file** — or click its **⋯** button — for an actions menu of
+   everything you can do with that file. The menu adapts to the file's type:
+
+   ![File actions menu](screenshots/files-context-menu.png)
+
+   - **View in viewport**
+   - **Convert → SOG bundle** / **Convert → Streamed LOD** / **Convert (other formats)…**
+     — jumps to the Convert panel with the file selected and the format preset.
+   - **Generate / Regenerate collision…** — jumps to the Collision panel (the label
+     tells you whether a collision mesh already sits next to the file).
+   - **Analyze stats** — runs the summary and shows the stats card.
+   - **Edit (scale / origin)…**, **Generate & view** (`.mjs` generators),
+     **Copy file path**, and **Delete**.
+4. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
    project so you can try the generator workflow immediately.
 
 ---

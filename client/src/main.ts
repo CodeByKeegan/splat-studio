@@ -213,6 +213,15 @@ const refreshFiles = async (highlight?: Set<string>) => {
             li.appendChild(document.createElement('span')); // keep ✕ in its grid column
         }
 
+        // ⋯ actions button (and right-click anywhere on the row) → file menu
+        const more = document.createElement('button');
+        more.className = 'row-more';
+        more.textContent = '⋯';
+        more.title = 'Actions for this file (or right-click the row)';
+        more.onclick = (e) => { e.stopPropagation(); const rect = more.getBoundingClientRect(); showContextMenu(rect.right, rect.bottom + 2, fileActions(f, files)); };
+        li.appendChild(more);
+        li.oncontextmenu = (e) => { e.preventDefault(); showContextMenu(e.clientX, e.clientY, fileActions(f, files)); };
+
         // two-stage delete: first click arms, second click within 2.5s deletes
         const del = document.createElement('button');
         del.textContent = '✕';
@@ -296,6 +305,105 @@ const viewFile = async (name: string, as: api.ViewKind) => {
     } catch (err) {
         showToast(`Failed to load ${name}: ${err}`, true);
     }
+};
+
+// ---------- file context menu ----------
+// A floating menu of every action that applies to a file — right-click a row or
+// click its ⋯ button. Appended to <body> because dock panels are pooled /
+// overflow-clipped, so a menu inside the panel would be cut off.
+type CtxItem = 'sep' | { label: string; hint?: string; disabled?: boolean; danger?: boolean; run: () => void };
+
+let ctxMenuEl: HTMLDivElement | null = null;
+const closeContextMenu = (): void => {
+    ctxMenuEl?.remove();
+    ctxMenuEl = null;
+    document.removeEventListener('pointerdown', onCtxOutside, true);
+    document.removeEventListener('keydown', onCtxKey, true);
+    document.removeEventListener('scroll', closeContextMenu, true);
+    window.removeEventListener('blur', closeContextMenu);
+    window.removeEventListener('resize', closeContextMenu);
+};
+function onCtxOutside(e: PointerEvent): void { if (ctxMenuEl && !ctxMenuEl.contains(e.target as Node)) closeContextMenu(); }
+function onCtxKey(e: KeyboardEvent): void { if (e.key === 'Escape') closeContextMenu(); }
+
+const showContextMenu = (x: number, y: number, items: CtxItem[]): void => {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    for (const it of items) {
+        if (it === 'sep') { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); continue; }
+        const b = document.createElement('button');
+        b.className = 'ctx-item' + (it.danger ? ' danger' : '');
+        b.textContent = it.label;
+        if (it.hint) b.title = it.hint;
+        if (it.disabled) b.disabled = true;
+        else b.onclick = () => { closeContextMenu(); it.run(); };
+        menu.appendChild(b);
+    }
+    // measure off-screen, then clamp to the viewport
+    menu.style.visibility = 'hidden';
+    document.body.appendChild(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(6, Math.min(x, window.innerWidth - r.width - 6))}px`;
+    menu.style.top = `${Math.max(6, Math.min(y, window.innerHeight - r.height - 6))}px`;
+    menu.style.visibility = '';
+    ctxMenuEl = menu;
+    // defer the dismiss listeners so the opening click/right-click doesn't close it
+    setTimeout(() => {
+        document.addEventListener('pointerdown', onCtxOutside, true);
+        document.addEventListener('keydown', onCtxKey, true);
+        document.addEventListener('scroll', closeContextMenu, true);
+        window.addEventListener('blur', closeContextMenu);
+        window.addEventListener('resize', closeContextMenu);
+    }, 0);
+};
+
+// focus (or open) a dock panel by id, and prefill a panel's input <select>
+const openPanel = (id: string): void => { const w = winById(id); if (w) openWindow(w); };
+const prefillSelect = (select: HTMLSelectElement, name: string): void => {
+    select.value = name;
+    select.dispatchEvent(new Event('change', { bubbles: true })); // refresh dependent rows + persist
+};
+const deleteFromMenu = (f: api.FileEntry): void => {
+    const folder = f.name.includes('/') && (f.name.endsWith('meta.json') || f.name.endsWith('lod-meta.json'));
+    if (!confirm(`Delete ${f.name}?${folder ? ' This removes the whole output folder.' : ''}`)) return;
+    void api.deleteFile(f.name).then(() => refreshFiles()).catch((err) => showToast(`Delete failed (${f.name}): ${err}`, true));
+};
+
+// every action a given file supports, gated by its kind (mirrors fileKind on the server)
+const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
+    const items: CtxItem[] = [];
+    const lower = f.name.toLowerCase();
+    const isLod = f.kind === 'lod';
+    const isGenerator = f.kind === 'generator';
+    const isSplat = f.kind === 'splat' && !isLod;                 // .ply/.sog/.spz/.splat/.ksplat/.lcc/meta.json
+    const isSog = isSplat && (lower.endsWith('.sog') || lower.endsWith('meta.json'));
+    const isRaw = isSplat && !isSog;                              // an uncompressed source worth compressing to SOG
+    const base = f.name.replace(/\.[^./]+$/, '');                 // drop the extension for sibling lookup
+
+    if (f.viewable) items.push({ label: '👁  View in viewport', hint: 'Load this file into the 3D viewer', run: () => void viewFile(f.name, f.viewable!) });
+
+    if (isGenerator) {
+        items.push({ label: '✨  Generate & view', hint: 'Run the .mjs generator and load the result', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); void updateInputRows().then(() => generateViewBtn.click()); } });
+    }
+    if (isRaw) {
+        items.push({ label: 'Convert → SOG bundle', hint: 'Compress to a single .sog (~95% smaller)', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'sog'); openPanel('panel-convert'); } });
+        items.push({ label: 'Convert → Streamed LOD', hint: 'Streamable multi-LOD SOG for big scenes', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'lod'); openPanel('panel-convert'); } });
+    }
+    if (isSplat || isGenerator) {
+        items.push({ label: isRaw ? 'Convert (other formats)…' : 'Convert…', hint: 'Open the Convert panel with this file selected', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); } });
+        items.push({ label: 'Analyze stats', hint: 'Run -m/--summary and show the stats card', run: () => { prefillSelect(analyzeInput, f.name); openPanel('panel-analyze'); analyzeRun.click(); } });
+    }
+    if (isSplat) {
+        const hasCollision = all.some((x) => x.name === `${base}.collision.glb`);
+        items.push({ label: hasCollision ? 'Regenerate collision…' : 'Generate collision…', hint: 'Open the Collision panel with this file selected', run: () => { prefillSelect(collisionInput, f.name); openPanel('panel-collision'); } });
+        items.push({ label: 'Edit (scale / origin)…', hint: 'Measure to set real scale, or pick a new origin', run: () => { prefillSelect(editInput, f.name); if (f.viewable) void viewFile(f.name, f.viewable); openPanel('panel-edit'); } });
+    }
+
+    items.push('sep');
+    items.push({ label: 'Copy file path', hint: f.name, run: () => void navigator.clipboard.writeText(f.name).then(() => showToast('Path copied')).catch(() => showToast('Copy failed', true)) });
+    items.push({ label: 'Delete', danger: true, hint: 'Remove from the workspace', run: () => deleteFromMenu(f) });
+    return items;
 };
 
 // ---------- upload ----------
