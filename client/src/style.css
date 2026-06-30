@@ -605,6 +605,12 @@ body.dropping #viewport::after {
 #generate-view { background: var(--bg-input); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; }
 #generate-view:hover { background: var(--accent); color: #08121f; }
 
+/* ----- LOD auto-tune ----- */
+#lod-autotune { background: var(--bg-input); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; }
+#lod-autotune:hover:not(:disabled) { background: var(--accent); color: #08121f; }
+#lod-autotune:disabled { opacity: 0.6; cursor: wait; }
+#lod-autotune-plan { margin-top: 2px; }
+
 /* ----- analyze stats card ----- */
 .analyze-result { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .result-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }

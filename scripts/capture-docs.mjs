@@ -245,6 +245,35 @@ async function run() {
         await js(`window.__doc.hl(['#measure-toggle','#measure-edit-row','#apply-scale'],{numbered:true});`);
     });
 
+    // LOD auto-tune: seed a few copies (one a 'sky' backdrop), combine mode, auto-tune
+    add('lod-autotune', async () => {
+        await js(`window.__doc.clear();`);
+        await js(`(async function(){
+            var blob = await (await fetch('/files/Demo%20room/demo-room.ply')).blob();
+            async function up(n){ await fetch('/api/upload?project=Demo%20room&name='+encodeURIComponent(n),{method:'POST',body:blob}); }
+            await up('scene-mid.ply'); await up('scene-low.ply'); await up('sky.ply'); return true;
+        })()`);
+        await sleep(400);
+        await js(`(function(){var ps=document.getElementById('project-select'); ps.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await sleep(700);
+        await js(`window.__doc.rail('panel-convert');
+            var ci=document.getElementById('convert-input'); ci.value='demo-room.ply'; ci.dispatchEvent(new Event('change',{bubbles:true}));
+            var f=document.getElementById('convert-format'); f.value='lod'; f.dispatchEvent(new Event('change',{bubbles:true}));
+            var m=document.getElementById('lod-mode'); m.value='combine'; m.dispatchEvent(new Event('change',{bubbles:true}));
+            document.getElementById('lod-file-rows').innerHTML='';
+            var add=document.getElementById('lod-add-level'); add.click(); add.click(); add.click();
+            var names=['scene-mid.ply','scene-low.ply','sky.ply'];
+            [...document.querySelectorAll('#lod-file-rows .lod-row')].forEach(function(r,i){var s=r.querySelector('select'); if(names[i]){s.value=names[i]; s.dispatchEvent(new Event('change',{bubbles:true}));}});`);
+        await sleep(200);
+        await js(`document.getElementById('lod-autotune').click();`);
+        await js(`new Promise(function(res){var t=Date.now();(function p(){var el=document.getElementById('lod-autotune-plan'); if(el && !el.classList.contains('hidden') && el.textContent.trim()) return res(true); if(Date.now()-t>9000) return res(false); setTimeout(p,200);})();})`);
+        await sleep(300);
+        await js(`window.__doc.rail('panel-scene');`); // clean right side (avoid the stale Camera view render)
+        await sleep(150);
+        // plain glow on the auto-tune button + the ordered rows (no numbered badges to overlap)
+        await js(`window.__doc.hl(['#lod-autotune','#row-lod-files'],{});`);
+    });
+
     for (const s of scenes) {
         try { await s.fn(); await shot(s.name); }
         catch (e) { console.error(`  ✗ ${s.name}: ${e.message}`); }
