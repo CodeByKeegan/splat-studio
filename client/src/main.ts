@@ -1316,7 +1316,8 @@ groupApplyBtn.onclick = async () => {
         return showToast('Pick a splat output format in the Convert panel (PLY / SOG / …) — CSV doesn’t carry these per-gaussian edits', true);
     }
     groupWarn.classList.add('hidden');
-    groupApplyBtn.disabled = true; // claim the button now — the stats await below is a re-entrancy gap
+    groupApplyBtn.disabled = true;
+    groupApplyRegionBtn.disabled = true; // claim both buttons — the stats await below is a re-entrancy gap
     try {
         // frame-compat guard: members of one location should have similar extents
         const stats = (await Promise.all(members.map((m) => api.getStats(m).catch(() => null)))).filter(Boolean);

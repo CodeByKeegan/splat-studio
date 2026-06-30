@@ -9,6 +9,7 @@
 // is a real Node binary in every mode), then trimmed — so the output is always .ply.
 import { spawn } from 'node:child_process';
 import { rm } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { trimPly } from './ply-trim.mjs';
 import { cliPath } from './commands.mjs';
@@ -18,7 +19,9 @@ const cwd = process.cwd();
 const rel = (p) => String(p).split('/').join(path.sep);
 const srcAbs = path.resolve(cwd, rel(opts.src));
 const outAbs = path.resolve(cwd, rel(opts.out));
-const isPly = /\.ply$/i.test(String(opts.src));
+// .compressed.ply holds packed (not float x/y/z) records, so it must go through the
+// CLI-decompress path like the other compressed formats — not the direct PLY reader.
+const isPly = /\.ply$/i.test(String(opts.src)) && !/\.compressed\.ply$/i.test(String(opts.src));
 
 const t0 = Date.now();
 const fmt = (n) => n.toLocaleString();
@@ -49,13 +52,13 @@ const main = async () => {
         report(kept, total);
         return;
     }
-    // non-PLY: decompress to a temp PLY (dotfile, hidden from the file list), trim it,
-    // then drop the temp. The output is the trimmed .ply.
-    const tmp = `.trim-${Date.now().toString(36)}.ply`;
-    const tmpAbs = path.resolve(cwd, tmp);
+    // non-PLY: decompress to a temp PLY in the OS temp dir — never inside the project,
+    // so a cancelled/killed trim (the finally won't run on a hard kill) can't orphan it
+    // into the file list. Trim it, then drop the temp. The output is the trimmed .ply.
+    const tmpAbs = path.join(os.tmpdir(), `splat-trim-${process.pid}-${Date.now().toString(36)}.ply`);
     try {
         console.log(`Reading ${opts.src} → PLY for trimming…`);
-        await cliConvert(opts.src, tmp);
+        await cliConvert(opts.src, tmpAbs);
         console.log(`Trimming — ${verb} gaussians inside the region…`);
         const { kept, total } = await trimPly(tmpAbs, outAbs, opts, scan);
         report(kept, total);

@@ -269,16 +269,21 @@ try {
         assert(notSplat.status === 400, `trim of a non-splat (.mjs) should 400, got ${notSplat.status}`);
     });
 
-    await check('non-PLY trim (.sog) decompresses to PLY then trims', async () => {
-        assert(fs.existsSync(path.join(projectDir, 'demo-room.sog')), 'precondition: demo-room.sog (from the sog convert test)');
-        const job = await runJob('/api/trim', { input: 'demo-room.sog', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
-        assert(job.status === 'done', `sog trim ${job.status}: ${(job.log || '').slice(-200)}`);
-        assert(/for trimming/i.test(job.log || ''), `expected a decompress-to-PLY step in the log: ${(job.log || '').slice(-200)}`);
-        const m = (job.log || '').match(/kept ([\d,]+) of ([\d,]+)/);
-        assert(m, `no kept/total in sog trim log: ${(job.log || '').slice(-200)}`);
-        const kept = Number(m[1].replace(/,/g, '')), total = Number(m[2].replace(/,/g, ''));
-        assert(total > 0 && kept > 0 && kept < total, `sog trim expected 0 < kept(${kept}) < total(${total})`);
-    });
+    // compressed formats route through a CLI decompress before trimming. .compressed.ply
+    // is the trap case — its records are packed, not float x/y/z, so it must NOT take the
+    // direct-PLY path despite the .ply suffix.
+    for (const [src, made] of [['demo-room.sog', 'sog convert test'], ['demo-room.compressed.ply', 'compressed-ply convert test']]) {
+        await check(`non-PLY trim (${src}) decompresses to PLY then trims`, async () => {
+            assert(fs.existsSync(path.join(projectDir, src)), `precondition: ${src} (from the ${made})`);
+            const job = await runJob('/api/trim', { input: src, options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+            assert(job.status === 'done', `${src} trim ${job.status}: ${(job.log || '').slice(-200)}`);
+            assert(/for trimming/i.test(job.log || ''), `expected a decompress-to-PLY step in the log: ${(job.log || '').slice(-200)}`);
+            const m = (job.log || '').match(/kept ([\d,]+) of ([\d,]+)/);
+            assert(m, `no kept/total in ${src} trim log: ${(job.log || '').slice(-200)}`);
+            const kept = Number(m[1].replace(/,/g, '')), total = Number(m[2].replace(/,/g, ''));
+            assert(total > 0 && kept > 0 && kept < total, `${src} trim expected 0 < kept(${kept}) < total(${total})`);
+        });
+    }
 
     await check('trim of a truncated binary PLY errors clearly (no silent corrupt output)', async () => {
         // header declares 3 vertices (x,y,z float32 = 12 bytes each) but the body is short
