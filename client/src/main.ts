@@ -700,8 +700,6 @@ const updateConvertRows = () => {
     if (!isLod) $('lod-autotune-plan').classList.add('hidden');
     $('html-rows').classList.toggle('hidden', f !== 'html');
     $('webp-rows').classList.toggle('hidden', !isWebp);
-    // linked group fans out transform/filter ops, which LOD bakes / WebP / CSV don't carry
-    $('group-actions').classList.toggle('hidden', isLod || isWebp || f === 'csv');
     if (isLod && combine && lodFileRows.children.length === 0) addLodRow();
     if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Convert';
 };
@@ -1286,9 +1284,13 @@ groupApplyBtn.onclick = async () => {
     if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     if (!panelValid('panel-convert')) return;
     const format = convertFormat.value;
+    if (['lod', 'webp', 'csv'].includes(format)) {
+        return showToast('Pick a splat output format in the Convert panel (PLY / SOG / …) — streamed-LOD, WebP and CSV don’t carry these per-gaussian edits', true);
+    }
     groupWarn.classList.add('hidden');
-    // frame-compat guard: members of one location should have similar extents
+    groupApplyBtn.disabled = true; // claim the button now — the stats await below is a re-entrancy gap
     try {
+        // frame-compat guard: members of one location should have similar extents
         const stats = (await Promise.all(members.map((m) => api.getStats(m).catch(() => null)))).filter(Boolean);
         const sizes = stats.map((s) => Math.max(...s!.extents.filter(Number.isFinite))).filter(Number.isFinite);
         if (sizes.length > 1) {
@@ -1299,22 +1301,23 @@ groupApplyBtn.onclick = async () => {
                 if (!confirm('These members have quite different extents and may not be the same location. Apply the transforms to all of them anyway?')) return;
             }
         }
-    } catch { /* stats are best-effort */ }
-    // fan out one edited copy per member, sequentially (jobBusy + runJob serialize)
-    const options = {
-        ...transformFilterOptions(),
-        filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
-        decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
-        device: $<HTMLSelectElement>('convert-device').value
-    };
-    const outputs: string[] = [];
-    for (const member of members) {
-        const job = await runJob(() => api.startConvert({ input: member, format, options }), groupApplyBtn, false);
-        if (!job || job.status !== 'done') { showToast(`Stopped — ${member.split('/').pop()} did not finish`, true); break; }
-        outputs.push(...job.outputs);
+        // fan out one edited copy per member, sequentially (jobBusy + runJob serialize)
+        const options = {
+            ...transformFilterOptions(),
+            filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
+            decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            device: $<HTMLSelectElement>('convert-device').value
+        };
+        const outputs: string[] = [];
+        for (const member of members) {
+            const job = await runJob(() => api.startConvert({ input: member, format, options }), groupApplyBtn, false);
+            if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
+            outputs.push(...job.outputs);
+        }
+        if (outputs.length) showToast(`Applied to ${outputs.length} member${outputs.length > 1 ? 's' : ''}: ${outputs.join(', ')}`);
+    } finally {
+        updateGroupApply(); // restore the enabled state + count label
     }
-    updateGroupApply();
-    if (outputs.length) showToast(`Applied to ${outputs.length} member${outputs.length > 1 ? 's' : ''}: ${outputs.join(', ')}`);
 };
 
 // ---------- analyze panel + persistent stats card ----------

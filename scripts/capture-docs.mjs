@@ -291,13 +291,15 @@ async function run() {
         await js(`window.__doc.hl(['#lod-autotune','#row-lod-files'],{});`);
     });
 
-    // linked group: edit on a proxy, tick members, apply the transform to all
+    // linked group (Files panel): set a transform on the proxy in Convert, tick
+    // members in Files, apply to all
     add('linked-group', async () => {
         await js(`window.__doc.clear(); window.__doc.rail('panel-convert');
             var ci=document.getElementById('convert-input'); ci.value='demo-room.ply'; ci.dispatchEvent(new Event('change',{bubbles:true}));
             var f=document.getElementById('convert-format'); f.value='ply'; f.dispatchEvent(new Event('change',{bubbles:true}));
-            var fb=document.getElementById('filter-box-on'); if(fb.checked){fb.checked=false; fb.dispatchEvent(new Event('change',{bubbles:true}));}
-            var tx=document.getElementById('tf-translate-x'); tx.value='1'; tx.dispatchEvent(new Event('input',{bubbles:true})); tx.dispatchEvent(new Event('change',{bubbles:true}));
+            var tx=document.getElementById('tf-translate-x'); tx.value='1'; tx.dispatchEvent(new Event('input',{bubbles:true})); tx.dispatchEvent(new Event('change',{bubbles:true}));`);
+        await sleep(150);
+        await js(`window.__doc.rail('panel-scene'); window.__doc.rail('panel-files');
             var want=['demo-room.ply','scene-mid.ply'];
             [...document.querySelectorAll('#group-members input[type=checkbox]')].forEach(function(cb){ if(want.indexOf(cb.value)>=0 && !cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));} });`);
         await sleep(300);

@@ -35,6 +35,14 @@
                         title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then pick it as a Convert input and pass params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
                 </div>
                 <ul id="file-list" class="file-list"></ul>
+
+                <div id="group-actions" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
+                    <div class="group">Linked group <em>— apply edits to several files at once</em></div>
+                    <span class="hint">Tick the files that are the same location at different detail (LODs). Set the Transform / Filter and output format in the <strong>Convert</strong> panel on your proxy, then apply them to every member here. Choices are remembered per project.</span>
+                    <div id="group-members" class="group-members"></div>
+                    <div class="hint hidden" id="group-warn"></div>
+                    <button id="group-apply" title="Run the current Convert Transform / Filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
+                </div>
             </section>
 
             <section class="panel" id="panel-convert">
@@ -289,13 +297,6 @@
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
                     <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --mem)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
-                </div>
-                <div id="group-actions" class="hidden" title="Edit on a proxy, then apply the same Transform / Filter to every LOD of the same location.">
-                    <div class="group">Linked group <em>— apply edits to several files at once</em></div>
-                    <span class="hint">Tick the files that are the same location at different detail (LODs). Set the Transform / Filter above on your proxy, then apply them to every member. Choices are remembered per project.</span>
-                    <div id="group-members" class="group-members"></div>
-                    <div class="hint hidden" id="group-warn"></div>
-                    <button id="group-apply" title="Run the current Transform / Filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
                 <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>

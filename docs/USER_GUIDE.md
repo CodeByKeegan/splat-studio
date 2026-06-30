@@ -94,6 +94,16 @@ To add splats:
 4. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
    project so you can try the generator workflow immediately.
 
+> **Linked group — edit a proxy, apply to every LOD:** the **Linked group** section at
+> the bottom of the Files panel lets you tick the files that are the same location at
+> different detail (its LODs). Set the Transform / Filter and a splat output format in
+> the **Convert** panel on your proxy, then **Apply transforms to members** — every
+> ticked member is converted in turn with the same edits, so the whole ladder stays
+> consistent. Choices are remembered per project; a heads-up appears if the members'
+> extents differ a lot (they may not be the same location).
+>
+> ![Linked group](screenshots/linked-group.png)
+
 ---
 
 ## Convert: formats & rendering
@@ -172,19 +182,6 @@ pipeline to the splat before it's written (they don't apply to streamed-LOD bake
 - **Filter NaN** — drop non-finite gaussians (`-N`).
 - **Decimate to** — reduce the gaussian count to a number or percentage (`-F`).
 - **Verbose** — print memory/timing diagnostics in the job log.
-
-> **Linked group — edit a proxy, apply to every LOD:** when the output is a splat
-> format (PLY / compressed / SOG), a **Linked group** section lets you tick the files
-> that are the same location at different detail (its LODs), then **apply the current
-> Transform / Filter settings to every member at once**. Edit on a lightweight proxy
-> and the whole ladder stays consistent. Choices are remembered per project.
->
-> ![Linked group](screenshots/linked-group.png)
->
-> Each member is converted in turn to the chosen format, producing an edited copy. A
-> heads-up appears if the members' extents differ a lot (they may not be the same
-> location). Streamed-LOD / WebP / CSV are excluded — they don't carry these
-> per-gaussian transforms.
 
 ### WebP image render
 

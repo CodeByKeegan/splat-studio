@@ -294,7 +294,7 @@ try {
         assert(!files.json.files.some((f) => f.name.includes('location-group')), 'group dotfile must not be surfaced');
     });
 
-    await check('group apply: the same transform lands consistently on every member', async () => {
+    await check('convert: an identical transform lands consistently across files (group fan-out invariant)', async () => {
         // two members = copies of the demo splat; the SAME -t must shift both identically
         await fsp.copyFile(path.join(projectDir, 'demo-room.ply'), path.join(projectDir, 'grp-a.ply'));
         await fsp.copyFile(path.join(projectDir, 'demo-room.ply'), path.join(projectDir, 'grp-b.ply'));

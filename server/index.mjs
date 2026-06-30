@@ -410,16 +410,14 @@ app.post('/api/layout', json, async (req, res) => {
 const groupsFile = (projectDir) => path.join(projectDir, '.location-group.json');
 
 app.get('/api/groups', async (req, res) => {
+    let projectDir;
+    try { projectDir = resolveProject(req.query.project); }
+    catch (err) { return res.status(400).json({ error: err.message }); }
     try {
-        const projectDir = resolveProject(req.query.project);
-        try {
-            res.json(JSON.parse(await fs.readFile(groupsFile(projectDir), 'utf8')));
-        } catch (err) {
-            if (err.code === 'ENOENT') return res.json({ members: [], proxy: null });
-            throw err;
-        }
+        res.json(JSON.parse(await fs.readFile(groupsFile(projectDir), 'utf8')));
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        if (err.code === 'ENOENT') return res.json({ members: [], proxy: null }); // first run → empty
+        res.status(500).json({ error: `Failed to read group: ${err.message}` }); // corrupt sidecar → 500, not 400
     }
 });
 
@@ -436,6 +434,9 @@ app.post('/api/groups', json, async (req, res) => {
     }
     for (const m of body.members) {
         if (!isSafeRelPath(String(m))) return res.status(400).json({ error: `Invalid member path: ${m}` });
+    }
+    if (body.proxy != null && !isSafeRelPath(String(body.proxy))) {
+        return res.status(400).json({ error: `Invalid proxy path: ${body.proxy}` });
     }
     const data = { members: body.members.map(String), proxy: body.proxy ? String(body.proxy) : null };
     const tmp = `${groupsFile(projectDir)}.${Date.now().toString(36)}.tmp`;
