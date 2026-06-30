@@ -1322,6 +1322,36 @@ export class SplatViewer {
         return cnt;
     }
 
+    /** Count splat centres inside the active crop box/sphere — what "Carve out" would remove (0 if none shown). */
+    trimInsideCount(): number {
+        const centers = this.pickCenters, e = this.splatEntity;
+        const boxOn = this.cropBoxNode.enabled, sphOn = this.cropSphereNode.enabled;
+        if (!centers || !e || (!boxOn && !sphOn)) return 0;
+        const d = this.cropHolder.getWorldTransform().clone().invert().mul(e.getWorldTransform()).data;
+        let bminx = 0, bmaxx = 0, bminy = 0, bmaxy = 0, bminz = 0, bmaxz = 0;
+        if (boxOn) {
+            const c = this.cropBoxNode.getLocalPosition(), s = this.cropBoxNode.getLocalScale();
+            bminx = c.x - s.x / 2; bmaxx = c.x + s.x / 2; bminy = c.y - s.y / 2; bmaxy = c.y + s.y / 2; bminz = c.z - s.z / 2; bmaxz = c.z + s.z / 2;
+        }
+        let scx = 0, scy = 0, scz = 0, sr2 = 0;
+        if (sphOn) {
+            const c = this.cropSphereNode.getLocalPosition(), s = this.cropSphereNode.getLocalScale();
+            scx = c.x; scy = c.y; scz = c.z; sr2 = s.x * s.x; // unit sphere scaled uniformly to r
+        }
+        const n = centers.length / 3;
+        let cnt = 0;
+        for (let i = 0; i < n; i++) {
+            const j = i * 3, X = centers[j], Y = centers[j + 1], Z = centers[j + 2];
+            const px = d[0] * X + d[4] * Y + d[8] * Z + d[12];
+            const py = d[1] * X + d[5] * Y + d[9] * Z + d[13];
+            const pz = d[2] * X + d[6] * Y + d[10] * Z + d[14];
+            const inBox = boxOn && px >= bminx && px <= bmaxx && py >= bminy && py <= bmaxy && pz >= bminz && pz <= bmaxz;
+            const inSph = sphOn && ((px - scx) ** 2 + (py - scy) ** 2 + (pz - scz) ** 2) <= sr2;
+            if (inBox || inSph) cnt++;
+        }
+        return cnt;
+    }
+
     /** Splat AABB as [min,max] corners in CLI coords, for seeding a default region (or null). */
     regionDefaultBounds(): { min: [number, number, number]; max: [number, number, number] } | null {
         const b = this.splatOutputBounds();

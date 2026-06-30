@@ -245,19 +245,21 @@ async function run() {
         await js(`window.__doc.hl(['#measure-toggle','#measure-edit-row','#apply-scale'],{numbered:true});`);
     });
 
-    // carve out a region: crop box on, then trim-remove → the carved splat autoloads
+    // carve out a region (Edit panel): box on over the splat + live count, scrolled in
     add('trim-carve', async () => {
-        await js(`window.__doc.clear(); window.__doc.rail('panel-convert');
-            var ci=document.getElementById('convert-input'); ci.value='demo-room.ply'; ci.dispatchEvent(new Event('change',{bubbles:true}));
-            var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true}));
-            var cb=document.getElementById('filter-box-on'); if(!cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
-            var bx=document.getElementById('box-min-x'); bx.value='-1'; bx.dispatchEvent(new Event('input',{bubbles:true}));`);
-        await sleep(300);
-        // confirm() would block headlessly — auto-accept for the capture
-        await js(`window.confirm=function(){return true;}; document.getElementById('trim-remove').click();`);
-        await js(`new Promise(function(res){var t=Date.now();(function p(){var s=document.getElementById('job-status'); if(s && /done|error/.test(s.textContent)) return res(true); if(Date.now()-t>15000) return res(false); setTimeout(p,300);})();})`);
-        await sleep(1600); // let the trimmed splat autoload + frame
-        await js(`window.__doc.hl(['#trim-remove'],{pad:3});`);
+        await js(`window.__doc.clear();`);
+        // load the demo splat so the carve box previews against it
+        await js(`(function(){var li=[...document.querySelectorAll('#file-list li')].find(x=>x.textContent.includes('demo-room.ply'));if(li){var v=[...li.querySelectorAll('button')].find(b=>/view/i.test(b.textContent));v&&v.click();}return true;})()`);
+        await sleep(1300);
+        await js(`window.__doc.rail('panel-scene'); window.__doc.rail('panel-edit');
+            var mt=document.getElementById('measure-toggle'); if(mt.checked){mt.checked=false; mt.dispatchEvent(new Event('change',{bubbles:true}));}
+            var ei=document.getElementById('edit-input'); ei.value='demo-room.ply'; ei.dispatchEvent(new Event('change',{bubbles:true}));
+            var cb=document.getElementById('carve-box-on'); if(!cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
+            var bx=document.getElementById('carve-box-min-x'); bx.value='-1'; bx.dispatchEvent(new Event('input',{bubbles:true}));`);
+        await sleep(600); // box shows + the debounced count computes
+        await js(`document.getElementById('carve-remove').scrollIntoView({block:'center'});`);
+        await sleep(250);
+        await js(`window.__doc.hl(['#carve-box-rows','#carve-count','#carve-remove'],{});`);
     });
 
     // LOD auto-tune: seed a few copies (one a 'sky' backdrop), combine mode, auto-tune

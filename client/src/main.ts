@@ -982,56 +982,91 @@ const syncSplatXform = () => {
     );
 };
 
+// ----- Edit-panel "Carve out region" fields (its own box/sphere, separate from the
+// Convert crop filter) -----
+const ecBoxMinX = $<HTMLInputElement>('carve-box-min-x'), ecBoxMinY = $<HTMLInputElement>('carve-box-min-y'), ecBoxMinZ = $<HTMLInputElement>('carve-box-min-z');
+const ecBoxMaxX = $<HTMLInputElement>('carve-box-max-x'), ecBoxMaxY = $<HTMLInputElement>('carve-box-max-y'), ecBoxMaxZ = $<HTMLInputElement>('carve-box-max-z');
+const ecSphX = $<HTMLInputElement>('carve-sphere-x'), ecSphY = $<HTMLInputElement>('carve-sphere-y'), ecSphZ = $<HTMLInputElement>('carve-sphere-z'), ecSphR = $<HTMLInputElement>('carve-sphere-r');
+const cvBoxOn = () => $<HTMLInputElement>('filter-box-on').checked;
+const cvSphOn = () => $<HTMLInputElement>('filter-sphere-on').checked;
+const ecBoxOn = () => $<HTMLInputElement>('carve-box-on').checked;
+const ecSphOn = () => $<HTMLInputElement>('carve-sphere-on').checked;
+const previewingEdit = () => currentSplatName !== null && currentSplatName === editInput.value;
+
+// The viewport crop box/sphere is shared by the Convert crop filter (keep inside)
+// and the Edit carve (remove inside). The active panel + its enabled region decides
+// who drives — and who the gizmo writes back to.
+type CropOwner = 'edit' | 'convert' | 'none';
+const cropOwner = (): CropOwner => {
+    if (editActive() && previewingEdit() && (ecBoxOn() || ecSphOn())) return 'edit';
+    if (previewingInput() && (cvBoxOn() || cvSphOn())) return 'convert';
+    return 'none';
+};
+const ownerBoxFields = (): HTMLInputElement[] => cropOwner() === 'edit'
+    ? [ecBoxMinX, ecBoxMinY, ecBoxMinZ, ecBoxMaxX, ecBoxMaxY, ecBoxMaxZ]
+    : [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ];
+const ownerSphFields = (): HTMLInputElement[] => cropOwner() === 'edit' ? [ecSphX, ecSphY, ecSphZ, ecSphR] : [sphX, sphY, sphZ, sphR];
+
 const syncCropViz = () => {
     if (!viewer) return;
-    const on = previewingInput();
-    viewer.setCropBox(
-        [numOrNull(boxMinX), numOrNull(boxMinY), numOrNull(boxMinZ)],
-        [numOrNull(boxMaxX), numOrNull(boxMaxY), numOrNull(boxMaxZ)],
-        on && $<HTMLInputElement>('filter-box-on').checked
-    );
-    viewer.setCropSphere(
-        [Number(sphX.value), Number(sphY.value), Number(sphZ.value)],
-        Number(sphR.value),
-        on && $<HTMLInputElement>('filter-sphere-on').checked
-    );
+    const owner = cropOwner();
+    if (owner === 'edit') {
+        viewer.setCropBox([numOrNull(ecBoxMinX), numOrNull(ecBoxMinY), numOrNull(ecBoxMinZ)], [numOrNull(ecBoxMaxX), numOrNull(ecBoxMaxY), numOrNull(ecBoxMaxZ)], ecBoxOn());
+        viewer.setCropSphere([Number(ecSphX.value), Number(ecSphY.value), Number(ecSphZ.value)], Number(ecSphR.value), ecSphOn());
+    } else if (owner === 'convert') {
+        viewer.setCropBox([numOrNull(boxMinX), numOrNull(boxMinY), numOrNull(boxMinZ)], [numOrNull(boxMaxX), numOrNull(boxMaxY), numOrNull(boxMaxZ)], cvBoxOn());
+        viewer.setCropSphere([Number(sphX.value), Number(sphY.value), Number(sphZ.value)], Number(sphR.value), cvSphOn());
+    } else {
+        viewer.setCropBox([null, null, null], [null, null, null], false);
+        viewer.setCropSphere([0, 0, 0], 0, false);
+    }
+    updateCarveCountDebounced();
 };
 
 const syncPreview = () => { syncSplatXform(); syncCropViz(); };
 
 for (const el of [tfX, tfY, tfZ, rfX, rfY, rfZ, tfScaleEl]) el.addEventListener('input', syncSplatXform);
-for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.addEventListener('input', syncCropViz);
-for (const id of ['filter-box-on', 'filter-sphere-on']) $(id).addEventListener('change', syncCropViz);
+for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR,
+    ecBoxMinX, ecBoxMinY, ecBoxMinZ, ecBoxMaxX, ecBoxMaxY, ecBoxMaxZ, ecSphX, ecSphY, ecSphZ, ecSphR]) el.addEventListener('input', syncCropViz);
+for (const id of ['filter-box-on', 'filter-sphere-on', 'carve-box-on', 'carve-sphere-on']) $(id).addEventListener('change', syncCropViz);
 convertInput.addEventListener('change', syncPreview);
 convertFormat.addEventListener('change', syncPreview);
+editInput.addEventListener('change', syncCropViz);
+// reveal each carve region's fields only when its checkbox is on
+for (const [cb, rows] of [['carve-box-on', 'carve-box-rows'], ['carve-sphere-on', 'carve-sphere-rows']] as const) {
+    $(cb).addEventListener('change', () => $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked));
+}
 
-// ----- carve out a region (remove the gaussians inside) → a trimmed .ply -----
-// Reuses the crop box/sphere region. The CLI's -B/-S only KEEP inside, so removal
-// runs a local Node trim (server/ply-trim.mjs) instead of a CLI flag.
-const trimRemoveBtn = $<HTMLButtonElement>('trim-remove');
-const syncTrimBtn = (): void => {
-    const hasRegion = $<HTMLInputElement>('filter-box-on').checked || $<HTMLInputElement>('filter-sphere-on').checked;
-    trimRemoveBtn.disabled = !hasRegion;
-    trimRemoveBtn.title = hasRegion
-        ? 'Delete the gaussians inside the enabled box / sphere and write a trimmed .ply that loads into the viewport'
-        : 'Enable "Crop to box" or "Crop to sphere" above to define the region to remove';
+// ----- carve out a region (Edit panel) → a trimmed .ply -----
+// The CLI's -B/-S only KEEP inside, so removal runs a local Node trim (server/ply-trim.mjs).
+const carveRemoveBtn = $<HTMLButtonElement>('carve-remove');
+const carveCount = $<HTMLDivElement>('carve-count');
+const carveRegion = (): { box?: string[]; sphere?: [number, number, number, number] } | null => {
+    const box = ecBoxOn() ? [ecBoxMinX.value, ecBoxMinY.value, ecBoxMinZ.value, ecBoxMaxX.value, ecBoxMaxY.value, ecBoxMaxZ.value] : undefined;
+    const sphere = ecSphOn() ? [Number(ecSphX.value), Number(ecSphY.value), Number(ecSphZ.value), Number(ecSphR.value)] as [number, number, number, number] : undefined;
+    return box || sphere ? { box, sphere } : null;
 };
-for (const id of ['filter-box-on', 'filter-sphere-on']) $(id).addEventListener('change', syncTrimBtn);
-syncTrimBtn();
-trimRemoveBtn.onclick = () => {
-    const input = convertInput.value;
-    if (!input) return showToast('Pick a Convert input first', true);
+const syncCarveBtn = (): void => { carveRemoveBtn.disabled = !carveRegion(); };
+function updateCarveCount(): void {
+    if (!viewer || cropOwner() !== 'edit') { carveCount.classList.add('hidden'); return; }
+    const n = viewer.trimInsideCount();
+    const total = viewer.splatGaussianCount;
+    carveCount.textContent = `Carve removes ~${n.toLocaleString()} gaussians inside the region${total ? ` (${Math.round(100 * n / total)}%)` : ''}.`;
+    carveCount.classList.remove('hidden');
+}
+let carveCountTimer = 0;
+function updateCarveCountDebounced(): void { clearTimeout(carveCountTimer); carveCountTimer = window.setTimeout(updateCarveCount, 150); }
+for (const id of ['carve-box-on', 'carve-sphere-on']) $(id).addEventListener('change', syncCarveBtn);
+syncCarveBtn();
+carveRemoveBtn.onclick = () => {
+    const input = editInput.value;
+    if (!input) return showToast('Pick a splat to edit first', true);
     if (!/\.ply$/i.test(input)) return showToast('Carve works on .ply sources — convert to PLY first', true);
-    const box = $<HTMLInputElement>('filter-box-on').checked
-        ? [boxMinX.value, boxMinY.value, boxMinZ.value, boxMaxX.value, boxMaxY.value, boxMaxZ.value]
-        : undefined;
-    const sphere = $<HTMLInputElement>('filter-sphere-on').checked
-        ? [Number(sphX.value), Number(sphY.value), Number(sphZ.value), Number(sphR.value)] as [number, number, number, number]
-        : undefined;
-    if (!box && !sphere) return showToast('Enable a Crop box or sphere to define the region to remove', true);
-    if (!panelValid('panel-convert')) return;
+    const region = carveRegion();
+    if (!region) return showToast('Enable a Box or Sphere region to carve out', true);
+    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     if (!confirm(`Remove the gaussians inside the region from ${input}? This writes a new trimmed .ply — the source is left untouched.`)) return;
-    void runJob(() => api.startTrim({ input, options: { mode: 'remove', box, sphere } }), trimRemoveBtn);
+    void runJob(() => api.startTrim({ input, options: { mode: 'remove', ...region } }), carveRemoveBtn);
 };
 
 // ---------- collision region box (viewport <-> Collision-panel fields) ----------
@@ -1564,6 +1599,11 @@ function collisionActive(): boolean {
     const p = dock.getPanel('panel-collision');
     return !!p && p.group.activePanel?.id === 'panel-collision';
 }
+// the Edit panel is the shown tab in its group (gates the carve region viz)
+function editActive(): boolean {
+    const p = dock.getPanel('panel-edit');
+    return !!p && p.group.activePanel?.id === 'panel-edit';
+}
 
 const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has: () => boolean }[] = [
     { id: 'splat', label: 'Splat', icon: '✨', gizmo: false, has: () => !!viewer?.hasSplat },
@@ -1903,16 +1943,18 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             syncSeedViz(); // snap the node to the rounded field values
         };
         syncSeedViz();
-        // crop gizmo -> reflect into the box/sphere fields (live), persist on release
-        v.onCropSphereMove = (c) => { sphX.value = String(c.x); sphY.value = String(c.y); sphZ.value = String(c.z); };
+        // crop gizmo -> reflect into the OWNING panel's box/sphere fields (Convert crop
+        // or Edit carve), live; persist on release
+        v.onCropSphereMove = (c) => { const [x, y, z] = ownerSphFields(); x.value = String(c.x); y.value = String(c.y); z.value = String(c.z); };
         v.onCropBoxMove = (d) => {
             const shift = (el: HTMLInputElement, dv: number) => { if (el.value.trim() !== '') el.value = String(Math.round((Number(el.value) + dv) * 100) / 100); };
-            shift(boxMinX, d.x); shift(boxMaxX, d.x);
-            shift(boxMinY, d.y); shift(boxMaxY, d.y);
-            shift(boxMinZ, d.z); shift(boxMaxZ, d.z);
+            const [minX, minY, minZ, maxX, maxY, maxZ] = ownerBoxFields();
+            shift(minX, d.x); shift(maxX, d.x);
+            shift(minY, d.y); shift(maxY, d.y);
+            shift(minZ, d.z); shift(maxZ, d.z);
         };
         v.onCropMoveEnd = () => {
-            for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR]) el.dispatchEvent(new Event('change', { bubbles: true }));
+            for (const el of [...ownerBoxFields(), ...ownerSphFields()]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncCropViz();
         };
         // region box gizmo -> reflect absolute corners into the fields (live), persist on release

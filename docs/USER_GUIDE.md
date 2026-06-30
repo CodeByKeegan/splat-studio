@@ -164,14 +164,8 @@ pipeline to the splat before it's written (they don't apply to streamed-LOD bake
 - **Strip SH bands above** — drop spherical-harmonic bands to shrink the file
   (`-H`, e.g. keep only band 0 for flat color).
 - **Crop to box / sphere** — keep only gaussians inside a region (`-B` / `-S`); the
-  region draws as a draggable wireframe in the viewport.
-- **✂ Carve out region (remove inside)** — the inverse of cropping: **delete** the
-  gaussians inside the enabled crop box/sphere and write a new trimmed `.ply` that
-  loads into the viewport (the source is left untouched). `-B`/`-S` can only *keep*
-  inside, so removal runs a local trim instead of a CLI flag. PLY sources only.
-
-  ![Carve out a region](screenshots/trim-carve.png)
-
+  region draws as a draggable wireframe in the viewport. (To *remove* a region instead,
+  see **Carve** in the [Edit panel](#edit-measure-to-scale--set-origin).)
 - **Filter by value** — keep/drop by a column comparison (`-V`).
 - **Remove floaters** — strip disconnected specks (`-G`).
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`-M`).
@@ -242,6 +236,15 @@ measuring required.
 
 **Set origin:** check **Pick origin point**, click the splat where `(0,0,0)` should
 be, then **Set as origin** to recenter the splat (`-t`).
+
+**✂ Carve out region (remove inside):** delete the gaussians inside a box or sphere —
+the inverse of cropping. Enable **Box region** and/or **Sphere region**, drag the
+wireframe in the viewport over the part to remove (a live readout shows how many
+gaussians the carve will delete), then **Carve out region**. It writes a new trimmed
+`.ply` that loads into the viewport; the source is untouched. `splat-transform`'s
+`-B`/`-S` can only *keep* inside, so this runs a local trim. PLY sources only.
+
+![Carve out a region](screenshots/trim-carve.png)
 
 ---
 

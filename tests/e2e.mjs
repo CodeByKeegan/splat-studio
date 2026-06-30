@@ -269,6 +269,18 @@ try {
         assert(notPly.status === 400, `trim of a non-ply should 400, got ${notPly.status}`);
     });
 
+    await check('trim of a truncated binary PLY errors clearly (no silent corrupt output)', async () => {
+        // header declares 3 vertices (x,y,z float32 = 12 bytes each) but the body is short
+        const header = 'ply\nformat binary_little_endian 1.0\nelement vertex 3\n'
+            + 'property float x\nproperty float y\nproperty float z\nend_header\n';
+        const body = Buffer.alloc(12); // one vertex worth — 2 short of the declared 3
+        await fsp.writeFile(path.join(projectDir, 'truncated.ply'), Buffer.concat([Buffer.from(header, 'ascii'), body]));
+        const job = await runJob('/api/trim', { input: 'truncated.ply', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(job.status === 'error', `truncated PLY should error, got ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/truncated/i.test(job.log || ''), `error should mention "truncated": ${(job.log || '').slice(-200)}`);
+        assert(!fs.existsSync(path.join(projectDir, 'truncated-trimmed.ply')), 'must not leave a corrupt trimmed output');
+    });
+
     await check('rejects a bad WebP resolution', async () => {
         const { status } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '99999999x1' } } });
         assert(status === 400, `expected 400, got ${status}`);
