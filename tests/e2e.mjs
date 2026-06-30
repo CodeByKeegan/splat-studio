@@ -265,8 +265,19 @@ try {
         assert(k1 + k2 === total, `remove + keep must partition every gaussian: ${k1} + ${k2} != ${total}`);
         const bad = await api('POST', '/api/trim', { project: PROJECT, input: 'demo-room.ply', options: { mode: 'remove' } });
         assert(bad.status === 400, `trim with no region should 400, got ${bad.status}`);
-        const notPly = await api('POST', '/api/trim', { project: PROJECT, input: 'gen-grid.mjs', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
-        assert(notPly.status === 400, `trim of a non-ply should 400, got ${notPly.status}`);
+        const notSplat = await api('POST', '/api/trim', { project: PROJECT, input: 'gen-grid.mjs', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(notSplat.status === 400, `trim of a non-splat (.mjs) should 400, got ${notSplat.status}`);
+    });
+
+    await check('non-PLY trim (.sog) decompresses to PLY then trims', async () => {
+        assert(fs.existsSync(path.join(projectDir, 'demo-room.sog')), 'precondition: demo-room.sog (from the sog convert test)');
+        const job = await runJob('/api/trim', { input: 'demo-room.sog', options: { mode: 'remove', box: ['0', '', '', '', '', ''] } });
+        assert(job.status === 'done', `sog trim ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/for trimming/i.test(job.log || ''), `expected a decompress-to-PLY step in the log: ${(job.log || '').slice(-200)}`);
+        const m = (job.log || '').match(/kept ([\d,]+) of ([\d,]+)/);
+        assert(m, `no kept/total in sog trim log: ${(job.log || '').slice(-200)}`);
+        const kept = Number(m[1].replace(/,/g, '')), total = Number(m[2].replace(/,/g, ''));
+        assert(total > 0 && kept > 0 && kept < total, `sog trim expected 0 < kept(${kept}) < total(${total})`);
     });
 
     await check('trim of a truncated binary PLY errors clearly (no silent corrupt output)', async () => {

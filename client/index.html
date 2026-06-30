@@ -38,10 +38,11 @@
 
                 <div id="group-actions" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
                     <div class="group">Linked group <em>— apply edits to several files at once</em></div>
-                    <span class="hint">Tick the files that are the same location at different detail (LODs). Set the Transform / Filter and output format in the <strong>Convert</strong> panel on your proxy, then apply them to every member here. Choices are remembered per project.</span>
+                    <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Convert) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
                     <div id="group-members" class="group-members"></div>
                     <div class="hint hidden" id="group-warn"></div>
                     <button id="group-apply" title="Run the current Convert Transform / Filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
+                    <button id="group-apply-region" title="Run the Edit panel's Region (carve / crop) on every ticked member, writing a trimmed .ply of each — so a removal or crop on the proxy affects all its LODs (sequential jobs). Enable a Box or Sphere region in Edit first.">Apply region to members</button>
                 </div>
             </section>
 
@@ -114,28 +115,7 @@
                     <select id="convert-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
 
-                <div id="convert-actions" title="Transforms and filters applied to the splat before it's written. They run in a fixed pipeline order and don't apply to streamed-LOD bakes.">
-                    <div class="group">Transform</div>
-                    <div class="field" title="Move every gaussian by (x, y, z) before writing (-t/--translate), in splat-transform world units. All three zero = no move.">
-                        <div class="label-row"><span>Translate <em>(x, y, z)</em></span></div>
-                        <div class="field-row">
-                            <label class="axis"><span>x</span><input type="number" id="tf-translate-x" value="0" step="0.1" required title="Translate X" /></label>
-                            <label class="axis"><span>y</span><input type="number" id="tf-translate-y" value="0" step="0.1" required title="Translate Y" /></label>
-                            <label class="axis"><span>z</span><input type="number" id="tf-translate-z" value="0" step="0.1" required title="Translate Z" /></label>
-                        </div>
-                    </div>
-                    <div class="field" title="Rotate every gaussian by Euler angles (x, y, z) in degrees (-r/--rotate). All three zero = no rotation.">
-                        <div class="label-row"><span>Rotate <em>(°, Euler x · y · z)</em></span></div>
-                        <div class="field-row">
-                            <label class="axis"><span>x</span><input type="number" id="tf-rotate-x" value="0" step="5" required title="Rotate X (deg)" /></label>
-                            <label class="axis"><span>y</span><input type="number" id="tf-rotate-y" value="0" step="5" required title="Rotate Y (deg)" /></label>
-                            <label class="axis"><span>z</span><input type="number" id="tf-rotate-z" value="0" step="5" required title="Rotate Z (deg)" /></label>
-                        </div>
-                    </div>
-                    <label class="field" title="Uniformly scale every gaussian by this factor (-s/--scale). 1 = no scaling; 0.5 = half size; 2 = double.">
-                        <span>Scale <em>(uniform factor)</em></span>
-                        <input type="number" id="tf-scale" value="1" step="0.1" required title="Uniform scale factor" />
-                    </label>
+                <div id="convert-actions" title="Encode-time filters applied to the splat before it's written. They run in a fixed pipeline order and don't apply to streamed-LOD bakes.">
                     <div class="group">Filter</div>
                     <label class="field" title="Strip spherical-harmonic colour bands above this level (-H/--filter-harmonics). Lower = smaller files and flatter, less view-dependent shading. 0 keeps base colour only; 'Keep all' leaves SH untouched.">
                         <span>Strip SH bands above</span>
@@ -147,31 +127,6 @@
                             <option value="3">3</option>
                         </select>
                     </label>
-                    <label class="check" title="Keep only gaussians inside an axis-aligned box (-B/--filter-box). Leave a min/max field blank for no limit on that side."><input type="checkbox" id="filter-box-on" /> Crop to box</label>
-                    <div class="field hidden" id="filter-box-rows" title="Box corners in splat-transform world units (same axes as the collision seed). Blank = unbounded on that side.">
-                        <div class="label-row"><span>Box min <em>(x, y, z)</em></span></div>
-                        <div class="field-row">
-                            <label class="axis"><span>x</span><input type="number" id="box-min-x" step="0.1" placeholder="−∞" title="Box min X (blank = unbounded)" /></label>
-                            <label class="axis"><span>y</span><input type="number" id="box-min-y" step="0.1" placeholder="−∞" title="Box min Y (blank = unbounded)" /></label>
-                            <label class="axis"><span>z</span><input type="number" id="box-min-z" step="0.1" placeholder="−∞" title="Box min Z (blank = unbounded)" /></label>
-                        </div>
-                        <div class="label-row"><span>Box max <em>(x, y, z)</em></span></div>
-                        <div class="field-row">
-                            <label class="axis"><span>x</span><input type="number" id="box-max-x" step="0.1" placeholder="+∞" title="Box max X (blank = unbounded)" /></label>
-                            <label class="axis"><span>y</span><input type="number" id="box-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
-                            <label class="axis"><span>z</span><input type="number" id="box-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
-                        </div>
-                    </div>
-                    <label class="check" title="Keep only gaussians inside a sphere (-S/--filter-sphere)."><input type="checkbox" id="filter-sphere-on" /> Crop to sphere</label>
-                    <div class="field hidden" id="filter-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the collision seed).">
-                        <div class="label-row"><span>Sphere centre <em>(x, y, z)</em> + radius</span></div>
-                        <div class="field-row">
-                            <label class="axis"><span>x</span><input type="number" id="sphere-x" value="0" step="0.1" required title="Sphere centre X" /></label>
-                            <label class="axis"><span>y</span><input type="number" id="sphere-y" value="0" step="0.1" required title="Sphere centre Y" /></label>
-                            <label class="axis"><span>z</span><input type="number" id="sphere-z" value="0" step="0.1" required title="Sphere centre Z" /></label>
-                            <label class="axis"><span>r</span><input type="number" id="sphere-r" value="1" step="0.1" min="0" required title="Sphere radius" /></label>
-                        </div>
-                    </div>
                     <label class="check" title="Keep only gaussians where a chosen property compares to a value (-V/--filter-value). e.g. opacity > 0.1 drops faint splats."><input type="checkbox" id="filter-value-on" /> Filter by value</label>
                     <div class="field hidden" id="filter-value-rows" title="opacity / scale_* / f_dc_* use transformed values (opacity &amp; colour 0–1, linear scale). The _raw variants compare the stored PLY values instead.">
                         <label class="field" title="Property to test"><span>Property</span>
@@ -357,9 +312,28 @@
                 <h2 title="Viewport-driven edits: measure a feature to set real-world scale, or pick a new origin. Applies splat-transform -s/-t to write a new, edited splat">Edit</h2>
                 <label class="field" title="Splat to edit — load it in the viewer too, then measure/pick against it"><span>Input</span><select id="edit-input"></select></label>
 
-                <div class="group">Scale</div>
-                <label class="field" title="Uniform scale factor applied to the splat (-s/--scale). 2 = twice as large, 0.5 = half size"><span>Scale factor</span><input type="number" id="direct-scale" step="0.1" min="0.0001" value="1" /></label>
-                <button id="apply-direct-scale" class="primary" title="Scale the splat by this factor (-s/--scale), writing a new scaled splat that auto-loads">Apply scale</button>
+                <div class="group">Transform</div>
+                <div class="field" title="Move every gaussian by (x, y, z) before writing (-t/--translate), in splat-transform world units. All three zero = no move.">
+                    <div class="label-row"><span>Translate <em>(x, y, z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="tf-translate-x" value="0" step="0.1" required title="Translate X" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="tf-translate-y" value="0" step="0.1" required title="Translate Y" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="tf-translate-z" value="0" step="0.1" required title="Translate Z" /></label>
+                    </div>
+                </div>
+                <div class="field" title="Rotate every gaussian by Euler angles (x, y, z) in degrees (-r/--rotate). All three zero = no rotation.">
+                    <div class="label-row"><span>Rotate <em>(°, Euler x · y · z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="tf-rotate-x" value="0" step="5" required title="Rotate X (deg)" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="tf-rotate-y" value="0" step="5" required title="Rotate Y (deg)" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="tf-rotate-z" value="0" step="5" required title="Rotate Z (deg)" /></label>
+                    </div>
+                </div>
+                <label class="field" title="Uniformly scale every gaussian by this factor (-s/--scale). 1 = no scaling; 0.5 = half size; 2 = double.">
+                    <span>Scale <em>(uniform factor)</em></span>
+                    <input type="number" id="tf-scale" value="1" step="0.1" required title="Uniform scale factor" />
+                </label>
+                <button id="apply-transform" class="primary" title="Apply the translate / rotate / scale above (-t/-r/-s), writing a new edited .ply that auto-loads">Apply transform</button>
 
                 <div class="group">Measure → scale</div>
                 <label class="check" title="Click the splat to drop two points (A green, B orange) on the ends of a feature whose real-world size you know. Points snap to the splat surface and hide behind it as you orbit"><input type="checkbox" id="measure-toggle" /> Measure mode</label>
@@ -378,9 +352,15 @@
                 <label class="check" title="Click the splat at the point that should become the origin (0,0,0). The point snaps to the surface"><input type="checkbox" id="origin-toggle" /> Pick origin point</label>
                 <button id="apply-origin" class="primary" title="Recenter the splat so the marker sits at the origin (-t/--translate), writing a new splat that auto-loads">Set as origin</button>
 
-                <div class="group">Remove region (carve)</div>
-                <span class="hint">Enable a box or sphere, drag it in the viewport over the part to delete, then carve — the inverse of cropping. Writes a trimmed .ply that auto-loads (the source is untouched). PLY sources only.</span>
-                <label class="check" title="Carve out the gaussians inside an axis-aligned box. Drag the box in the viewport; leave a min/max field blank for no limit on that side."><input type="checkbox" id="carve-box-on" /> Box region</label>
+                <div class="group">Region (crop / carve)</div>
+                <span class="hint">Enable a box or sphere, drag it in the viewport over the part, then apply. Remove deletes the inside (carve); Keep deletes everything outside (crop). Writes a trimmed .ply that auto-loads (the source is untouched). Works on any splat — non-PLY inputs are decompressed to PLY first.</span>
+                <label class="field" title="What 'Apply to region' does: Remove deletes the gaussians inside the box/sphere (carve); Keep deletes everything outside, keeping only the inside (crop)."><span>Mode</span>
+                    <select id="region-mode">
+                        <option value="remove" selected>Remove inside (carve)</option>
+                        <option value="keep">Keep inside (crop)</option>
+                    </select>
+                </label>
+                <label class="check" title="Limit the region to an axis-aligned box. Drag the box in the viewport; leave a min/max field blank for no limit on that side."><input type="checkbox" id="carve-box-on" /> Box region</label>
                 <div class="field hidden" id="carve-box-rows" title="Box corners in splat-transform world units (same axes as the collision seed). Blank = unbounded on that side.">
                     <div class="label-row"><span>Box min <em>(x, y, z)</em></span></div>
                     <div class="field-row">
@@ -406,7 +386,7 @@
                     </div>
                 </div>
                 <div class="hint hidden" id="carve-count" title="How many gaussians the carve would remove, counted live in the viewport"></div>
-                <button id="carve-remove" title="Delete the gaussians inside the enabled box / sphere and write a trimmed .ply that loads into the viewport. The inverse of cropping — the CLI's -B/-S can only KEEP inside, so this runs a local trim to remove. PLY sources only.">✂ Carve out region (remove inside)</button>
+                <button id="carve-remove" title="Apply the region to the splat and write a trimmed .ply that loads into the viewport: Remove deletes inside (carve), Keep deletes outside (crop). Runs a local trim — non-PLY inputs are decompressed to PLY first.">✂ Apply to region</button>
             </section>
 
             <section class="panel" id="panel-collision">

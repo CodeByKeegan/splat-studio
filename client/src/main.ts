@@ -955,8 +955,6 @@ void updateInputRows();
 
 // reveal each optional filter's inputs only when its checkbox is on
 const ACTION_TOGGLES: [string, string][] = [
-    ['filter-box-on', 'filter-box-rows'],
-    ['filter-sphere-on', 'filter-sphere-rows'],
     ['filter-value-on', 'filter-value-rows'],
     ['filter-floaters-on', 'filter-floaters-rows'],
     ['region-box-on', 'region-box-rows'],
@@ -968,21 +966,26 @@ const syncActionRows = () => {
 for (const [cb] of ACTION_TOGGLES) $(cb).addEventListener('change', syncActionRows);
 syncActionRows();
 
-// ---------- live viewport preview (Convert transforms + crop gizmos) ----------
+// ---------- live viewport preview (Edit transforms + region gizmos) ----------
 const tfX = $<HTMLInputElement>('tf-translate-x'), tfY = $<HTMLInputElement>('tf-translate-y'), tfZ = $<HTMLInputElement>('tf-translate-z');
 const rfX = $<HTMLInputElement>('tf-rotate-x'), rfY = $<HTMLInputElement>('tf-rotate-y'), rfZ = $<HTMLInputElement>('tf-rotate-z');
 const tfScaleEl = $<HTMLInputElement>('tf-scale');
-const boxMinX = $<HTMLInputElement>('box-min-x'), boxMinY = $<HTMLInputElement>('box-min-y'), boxMinZ = $<HTMLInputElement>('box-min-z');
-const boxMaxX = $<HTMLInputElement>('box-max-x'), boxMaxY = $<HTMLInputElement>('box-max-y'), boxMaxZ = $<HTMLInputElement>('box-max-z');
-const sphX = $<HTMLInputElement>('sphere-x'), sphY = $<HTMLInputElement>('sphere-y'), sphZ = $<HTMLInputElement>('sphere-z'), sphR = $<HTMLInputElement>('sphere-r');
 
-// preview only while the displayed splat is the Convert input
-const previewingInput = () => currentSplatName !== null && currentSplatName === convertInput.value;
 const numOrNull = (el: HTMLInputElement) => el.value.trim() === '' ? null : Number(el.value);
 
+// ----- Edit-panel region fields (box/sphere) + transform preview live here -----
+const ecBoxMinX = $<HTMLInputElement>('carve-box-min-x'), ecBoxMinY = $<HTMLInputElement>('carve-box-min-y'), ecBoxMinZ = $<HTMLInputElement>('carve-box-min-z');
+const ecBoxMaxX = $<HTMLInputElement>('carve-box-max-x'), ecBoxMaxY = $<HTMLInputElement>('carve-box-max-y'), ecBoxMaxZ = $<HTMLInputElement>('carve-box-max-z');
+const ecSphX = $<HTMLInputElement>('carve-sphere-x'), ecSphY = $<HTMLInputElement>('carve-sphere-y'), ecSphZ = $<HTMLInputElement>('carve-sphere-z'), ecSphR = $<HTMLInputElement>('carve-sphere-r');
+const ecBoxOn = () => $<HTMLInputElement>('carve-box-on').checked;
+const ecSphOn = () => $<HTMLInputElement>('carve-sphere-on').checked;
+const previewingEdit = () => currentSplatName !== null && currentSplatName === editInput.value;
+
+// the transform preview shows only while the EDIT input splat is the displayed one,
+// so baked outputs aren't double-transformed
 const syncSplatXform = () => {
     if (!viewer) return;
-    if (!previewingInput()) { viewer.setSplatPreviewTransform(null, [0, 0, 0], 1); return; }
+    if (!previewingEdit()) { viewer.setSplatPreviewTransform(null, [0, 0, 0], 1); return; }
     viewer.setSplatPreviewTransform(
         [Number(tfX.value), Number(tfY.value), Number(tfZ.value)],
         [Number(rfX.value), Number(rfY.value), Number(rfZ.value)],
@@ -990,40 +993,19 @@ const syncSplatXform = () => {
     );
 };
 
-// ----- Edit-panel "Carve out region" fields (its own box/sphere, separate from the
-// Convert crop filter) -----
-const ecBoxMinX = $<HTMLInputElement>('carve-box-min-x'), ecBoxMinY = $<HTMLInputElement>('carve-box-min-y'), ecBoxMinZ = $<HTMLInputElement>('carve-box-min-z');
-const ecBoxMaxX = $<HTMLInputElement>('carve-box-max-x'), ecBoxMaxY = $<HTMLInputElement>('carve-box-max-y'), ecBoxMaxZ = $<HTMLInputElement>('carve-box-max-z');
-const ecSphX = $<HTMLInputElement>('carve-sphere-x'), ecSphY = $<HTMLInputElement>('carve-sphere-y'), ecSphZ = $<HTMLInputElement>('carve-sphere-z'), ecSphR = $<HTMLInputElement>('carve-sphere-r');
-const cvBoxOn = () => $<HTMLInputElement>('filter-box-on').checked;
-const cvSphOn = () => $<HTMLInputElement>('filter-sphere-on').checked;
-const ecBoxOn = () => $<HTMLInputElement>('carve-box-on').checked;
-const ecSphOn = () => $<HTMLInputElement>('carve-sphere-on').checked;
-const previewingEdit = () => currentSplatName !== null && currentSplatName === editInput.value;
-
-// The viewport crop box/sphere is shared by the Convert crop filter (keep inside)
-// and the Edit carve (remove inside). The active panel + its enabled region decides
-// who drives — and who the gizmo writes back to.
-type CropOwner = 'edit' | 'convert' | 'none';
-const cropOwner = (): CropOwner => {
-    if (editActive() && previewingEdit() && (ecBoxOn() || ecSphOn())) return 'edit';
-    if (previewingInput() && (cvBoxOn() || cvSphOn())) return 'convert';
-    return 'none';
-};
-const ownerBoxFields = (): HTMLInputElement[] => cropOwner() === 'edit'
-    ? [ecBoxMinX, ecBoxMinY, ecBoxMinZ, ecBoxMaxX, ecBoxMaxY, ecBoxMaxZ]
-    : [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ];
-const ownerSphFields = (): HTMLInputElement[] => cropOwner() === 'edit' ? [ecSphX, ecSphY, ecSphZ, ecSphR] : [sphX, sphY, sphZ, sphR];
+// The viewport region box/sphere belongs to the Edit panel (crop / carve). It's live
+// only while the Edit tab is shown, the Edit input splat is displayed, and a region is on.
+type CropOwner = 'edit' | 'none';
+const cropOwner = (): CropOwner =>
+    editActive() && previewingEdit() && (ecBoxOn() || ecSphOn()) ? 'edit' : 'none';
+const ownerBoxFields = (): HTMLInputElement[] => [ecBoxMinX, ecBoxMinY, ecBoxMinZ, ecBoxMaxX, ecBoxMaxY, ecBoxMaxZ];
+const ownerSphFields = (): HTMLInputElement[] => [ecSphX, ecSphY, ecSphZ, ecSphR];
 
 const syncCropViz = () => {
     if (!viewer) return;
-    const owner = cropOwner();
-    if (owner === 'edit') {
+    if (cropOwner() === 'edit') {
         viewer.setCropBox([numOrNull(ecBoxMinX), numOrNull(ecBoxMinY), numOrNull(ecBoxMinZ)], [numOrNull(ecBoxMaxX), numOrNull(ecBoxMaxY), numOrNull(ecBoxMaxZ)], ecBoxOn());
         viewer.setCropSphere([Number(ecSphX.value), Number(ecSphY.value), Number(ecSphZ.value)], Number(ecSphR.value), ecSphOn());
-    } else if (owner === 'convert') {
-        viewer.setCropBox([numOrNull(boxMinX), numOrNull(boxMinY), numOrNull(boxMinZ)], [numOrNull(boxMaxX), numOrNull(boxMaxY), numOrNull(boxMaxZ)], cvBoxOn());
-        viewer.setCropSphere([Number(sphX.value), Number(sphY.value), Number(sphZ.value)], Number(sphR.value), cvSphOn());
     } else {
         viewer.setCropBox([null, null, null], [null, null, null], false);
         viewer.setCropSphere([0, 0, 0], 0, false);
@@ -1034,21 +1016,21 @@ const syncCropViz = () => {
 const syncPreview = () => { syncSplatXform(); syncCropViz(); };
 
 for (const el of [tfX, tfY, tfZ, rfX, rfY, rfZ, tfScaleEl]) el.addEventListener('input', syncSplatXform);
-for (const el of [boxMinX, boxMinY, boxMinZ, boxMaxX, boxMaxY, boxMaxZ, sphX, sphY, sphZ, sphR,
-    ecBoxMinX, ecBoxMinY, ecBoxMinZ, ecBoxMaxX, ecBoxMaxY, ecBoxMaxZ, ecSphX, ecSphY, ecSphZ, ecSphR]) el.addEventListener('input', syncCropViz);
-for (const id of ['filter-box-on', 'filter-sphere-on', 'carve-box-on', 'carve-sphere-on']) $(id).addEventListener('change', syncCropViz);
-convertInput.addEventListener('change', syncPreview);
-convertFormat.addEventListener('change', syncPreview);
-editInput.addEventListener('change', syncCropViz);
+for (const el of [ecBoxMinX, ecBoxMinY, ecBoxMinZ, ecBoxMaxX, ecBoxMaxY, ecBoxMaxZ, ecSphX, ecSphY, ecSphZ, ecSphR]) el.addEventListener('input', syncCropViz);
+for (const id of ['carve-box-on', 'carve-sphere-on']) $(id).addEventListener('change', syncCropViz);
+editInput.addEventListener('change', syncPreview);
 // reveal each carve region's fields only when its checkbox is on
 for (const [cb, rows] of [['carve-box-on', 'carve-box-rows'], ['carve-sphere-on', 'carve-sphere-rows']] as const) {
     $(cb).addEventListener('change', () => $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked));
 }
 
-// ----- carve out a region (Edit panel) → a trimmed .ply -----
-// The CLI's -B/-S only KEEP inside, so removal runs a local Node trim (server/ply-trim.mjs).
+// ----- apply a region (Edit panel) → a trimmed .ply -----
+// remove (carve) deletes inside; keep (crop) deletes outside. The CLI's -B/-S only
+// KEEP inside, so both run a local Node trim (server/ply-trim.mjs) that supports either mode.
 const carveRemoveBtn = $<HTMLButtonElement>('carve-remove');
 const carveCount = $<HTMLDivElement>('carve-count');
+const regionModeEl = $<HTMLSelectElement>('region-mode');
+const regionMode = (): 'remove' | 'keep' => regionModeEl.value === 'keep' ? 'keep' : 'remove';
 const carveRegion = (): { box?: string[]; sphere?: [number, number, number, number] } | null => {
     const box = ecBoxOn() ? [ecBoxMinX.value, ecBoxMinY.value, ecBoxMinZ.value, ecBoxMaxX.value, ecBoxMaxY.value, ecBoxMaxZ.value] : undefined;
     const sphere = ecSphOn() ? [Number(ecSphX.value), Number(ecSphY.value), Number(ecSphZ.value), Number(ecSphR.value)] as [number, number, number, number] : undefined;
@@ -1057,24 +1039,31 @@ const carveRegion = (): { box?: string[]; sphere?: [number, number, number, numb
 const syncCarveBtn = (): void => { carveRemoveBtn.disabled = !carveRegion(); };
 function updateCarveCount(): void {
     if (!viewer || cropOwner() !== 'edit') { carveCount.classList.add('hidden'); return; }
-    const n = viewer.trimInsideCount();
+    const n = viewer.trimInsideCount(); // gaussians inside the region
     const total = viewer.splatGaussianCount;
-    carveCount.textContent = `Carve removes ~${n.toLocaleString()} gaussians inside the region${total ? ` (${Math.round(100 * n / total)}%)` : ''}.`;
+    const pct = total ? ` (${Math.round(100 * n / total)}%)` : '';
+    carveCount.textContent = regionMode() === 'keep'
+        ? `Crop keeps ~${n.toLocaleString()} gaussians inside the region${pct}.`
+        : `Carve removes ~${n.toLocaleString()} gaussians inside the region${pct}.`;
     carveCount.classList.remove('hidden');
 }
 let carveCountTimer = 0;
 function updateCarveCountDebounced(): void { clearTimeout(carveCountTimer); carveCountTimer = window.setTimeout(updateCarveCount, 150); }
-for (const id of ['carve-box-on', 'carve-sphere-on']) $(id).addEventListener('change', syncCarveBtn);
+for (const id of ['carve-box-on', 'carve-sphere-on']) $(id).addEventListener('change', () => { syncCarveBtn(); updateGroupApply(); });
+regionModeEl.addEventListener('change', () => { syncCarveBtn(); updateCarveCount(); });
 syncCarveBtn();
 carveRemoveBtn.onclick = () => {
     const input = editInput.value;
     if (!input) return showToast('Pick a splat to edit first', true);
-    if (!/\.ply$/i.test(input)) return showToast('Carve works on .ply sources — convert to PLY first', true);
     const region = carveRegion();
-    if (!region) return showToast('Enable a Box or Sphere region to carve out', true);
+    if (!region) return showToast('Enable a Box or Sphere region first', true);
     if (jobBusy) return showToast('A job is running — wait for it to finish', true);
-    if (!confirm(`Remove the gaussians inside the region from ${input}? This writes a new trimmed .ply — the source is left untouched.`)) return;
-    void runJob(() => api.startTrim({ input, options: { mode: 'remove', ...region } }), carveRemoveBtn);
+    const mode = regionMode();
+    const ask = mode === 'keep'
+        ? `Keep only the gaussians inside the region from ${input} (crop)? This writes a new trimmed .ply — the source is left untouched.`
+        : `Remove the gaussians inside the region from ${input} (carve)? This writes a new trimmed .ply — the source is left untouched.`;
+    if (!confirm(ask)) return;
+    void runJob(() => api.startTrim({ input, options: { mode, ...region } }), carveRemoveBtn);
 };
 
 // ---------- collision region box (viewport <-> Collision-panel fields) ----------
@@ -1163,19 +1152,17 @@ $('region-shrink-seed').onclick = () => {
     showToast('Region shrunk to a 12 m box around the seed');
 };
 
-// the Convert-panel transform + filter fields, shared by the Convert run and the
-// linked-group apply (so a group edit replays exactly what a single convert would)
-const transformFilterOptions = () => ({
+// the Edit-panel transform fields (-t/-r/-s), fanned by the Apply transform button
+// and the linked-group apply (so a group edit replays the same transform on each member)
+const editTransformOptions = () => ({
     translate: [Number(tfX.value), Number(tfY.value), Number(tfZ.value)] as [number, number, number],
     rotate: [Number(rfX.value), Number(rfY.value), Number(rfZ.value)] as [number, number, number],
-    scale: Number(tfScaleEl.value),
+    scale: Number(tfScaleEl.value)
+});
+
+// the Convert-panel encode-time filter fields, applied on the Convert run
+const convertFilterOptions = () => ({
     filterHarmonics: $<HTMLSelectElement>('convert-harmonics').value,
-    filterBox: $<HTMLInputElement>('filter-box-on').checked
-        ? [boxMinX.value, boxMinY.value, boxMinZ.value, boxMaxX.value, boxMaxY.value, boxMaxZ.value]
-        : undefined,
-    filterSphere: $<HTMLInputElement>('filter-sphere-on').checked
-        ? [Number(sphX.value), Number(sphY.value), Number(sphZ.value), Number(sphR.value)] as [number, number, number, number]
-        : undefined,
     filterValue: $<HTMLInputElement>('filter-value-on').checked
         ? { column: $<HTMLSelectElement>('fv-column').value, comparator: $<HTMLSelectElement>('fv-cmp').value, value: Number($<HTMLInputElement>('fv-value').value) }
         : undefined,
@@ -1203,7 +1190,7 @@ convertRun.onclick = () => {
             unbundled: $<HTMLInputElement>('convert-unbundled').checked,
             viewerSettings: $<HTMLInputElement>('convert-viewer-settings').value.trim(),
             lodSelect: $<HTMLInputElement>('convert-lod-select').value.trim(),
-            ...transformFilterOptions(),
+            ...convertFilterOptions(),
             params: currentGenParams()
         }
     }), convertRun, $<HTMLInputElement>('convert-autoload').checked);
@@ -1274,6 +1261,7 @@ renderRun.onclick = () => {
 // filter ops out to every ticked member — the LODs of one location stay consistent.
 const groupMembersEl = $<HTMLDivElement>('group-members');
 const groupApplyBtn = $<HTMLButtonElement>('group-apply');
+const groupApplyRegionBtn = $<HTMLButtonElement>('group-apply-region');
 const groupWarn = $<HTMLDivElement>('group-warn');
 
 const checkedMembers = (): string[] =>
@@ -1281,8 +1269,11 @@ const checkedMembers = (): string[] =>
 
 const updateGroupApply = (): void => {
     const n = checkedMembers().length;
-    groupApplyBtn.textContent = n ? `Apply transforms to ${n} member${n > 1 ? 's' : ''}` : 'Apply transforms to members';
+    const suffix = n ? `to ${n} member${n > 1 ? 's' : ''}` : 'to members';
+    groupApplyBtn.textContent = `Apply transforms ${suffix}`;
     groupApplyBtn.disabled = n === 0;
+    groupApplyRegionBtn.textContent = `Apply region ${suffix}`;
+    groupApplyRegionBtn.disabled = n === 0 || !carveRegion(); // needs a box/sphere set in Edit
 };
 
 const persistGroup = (): void => {
@@ -1338,11 +1329,9 @@ groupApplyBtn.onclick = async () => {
                 if (!confirm('These members have quite different extents and may not be the same location. Apply the transforms to all of them anyway?')) return;
             }
         }
-        // fan out one edited copy per member, sequentially (jobBusy + runJob serialize)
+        // fan the Edit transform out to each member, sequentially (jobBusy + runJob serialize)
         const options = {
-            ...transformFilterOptions(),
-            filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
-            decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            ...editTransformOptions(),
             device: $<HTMLSelectElement>('convert-device').value
         };
         const outputs: string[] = [];
@@ -1354,6 +1343,34 @@ groupApplyBtn.onclick = async () => {
         if (outputs.length) showToast(`Applied to ${outputs.length} member${outputs.length > 1 ? 's' : ''}: ${outputs.join(', ')}`);
     } finally {
         updateGroupApply(); // restore the enabled state + count label
+    }
+};
+
+// fan the Edit-panel Region (carve / crop) out to every ticked member — a removal or
+// crop on the proxy propagates to all its LODs. Any-format members work (non-PLY ones
+// are decompressed to PLY by the trim worker); each writes a trimmed .ply.
+groupApplyRegionBtn.onclick = async () => {
+    const members = checkedMembers();
+    if (!members.length) return showToast('Tick at least one member', true);
+    const region = carveRegion();
+    if (!region) return showToast('Enable a Box or Sphere region in the Edit panel first', true);
+    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
+    const mode = regionMode();
+    const verb = mode === 'keep' ? 'Crop (keep only inside the region)' : 'Carve (remove inside the region)';
+    if (!confirm(`${verb} on ${members.length} member${members.length > 1 ? 's' : ''}? Each writes a new trimmed .ply — the sources are left untouched.`)) return;
+    groupWarn.classList.add('hidden');
+    groupApplyBtn.disabled = true;
+    groupApplyRegionBtn.disabled = true; // claim both buttons for the run
+    try {
+        const outputs: string[] = [];
+        for (const member of members) {
+            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), groupApplyRegionBtn, false);
+            if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
+            outputs.push(...job.outputs);
+        }
+        if (outputs.length) showToast(`Region applied to ${outputs.length} member${outputs.length > 1 ? 's' : ''}: ${outputs.join(', ')}`);
+    } finally {
+        updateGroupApply();
     }
 };
 
@@ -1503,13 +1520,14 @@ const setActiveMarker = (which: 'a' | 'b'): void => {
 editAbtn.onclick = () => setActiveMarker('a');
 editBbtn.onclick = () => setActiveMarker('b');
 
-$<HTMLButtonElement>('apply-direct-scale').onclick = () => {
+const applyTransformBtn = $<HTMLButtonElement>('apply-transform');
+applyTransformBtn.onclick = () => {
     const input = editInput.value;
     if (!input) return showToast('Pick a splat to edit', true);
-    const factor = Number($<HTMLInputElement>('direct-scale').value);
-    if (!(factor > 0)) return showToast('Enter a positive scale factor', true);
-    if (factor === 1) return showToast('Scale factor 1 leaves the splat unchanged', true);
-    void runJob(() => api.startConvert({ input, format: 'ply', options: { transform: { scale: factor } } }), $<HTMLButtonElement>('apply-direct-scale'));
+    const { translate, rotate, scale } = editTransformOptions();
+    const noop = translate.every((v) => v === 0) && rotate.every((v) => v === 0) && scale === 1;
+    if (noop) return showToast('Set a non-zero translate / rotate or a scale ≠ 1 first', true);
+    void runJob(() => api.startConvert({ input, format: 'ply', options: { translate, rotate, scale } }), applyTransformBtn);
 };
 
 $<HTMLButtonElement>('apply-scale').onclick = () => {
