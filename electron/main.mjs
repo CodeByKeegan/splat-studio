@@ -240,7 +240,9 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', (e) => {
-    if (!serverProc) return;
+    if (!serverProc) return; // second pass: server down, let the graceful quit proceed
     e.preventDefault();
-    stopServer().then(() => app.exit(0));
+    // re-quit via app.quit() (not app.exit) so the 'quit' event fires and
+    // electron-updater can install a pending update on quit
+    stopServer().then(() => app.quit());
 });

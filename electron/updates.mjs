@@ -17,6 +17,7 @@ let getWin = () => null;
 let manualCheck = false; // the current check was user-initiated → show up-to-date / errors
 let lastPromptedVersion = null; // don't re-nag for the same version on periodic checks
 let wired = false;
+let checking = false; // a check is in flight — periodic ticks skip so they don't clobber manualCheck
 
 const clearBar = () => { const w = getWin(); if (w && !w.isDestroyed()) w.setProgressBar(-1); };
 
@@ -81,9 +82,10 @@ const wire = () => {
 
     // periodic silent re-check so a long-running session still notices new releases
     setInterval(() => {
-        if (!app.isPackaged) return;
+        if (!app.isPackaged || checking) return;
         manualCheck = false;
-        autoUpdater.checkForUpdates().catch(() => {});
+        checking = true;
+        autoUpdater.checkForUpdates().catch(() => {}).finally(() => { checking = false; });
     }, 3 * 60 * 60 * 1000);
 };
 
@@ -101,6 +103,8 @@ export async function checkForUpdates(win, { silent = true } = {}) {
         return;
     }
     wire();
+    checking = true;
     try { await autoUpdater.checkForUpdates(); }
     catch { /* 'error' event handles it */ }
+    finally { checking = false; }
 }

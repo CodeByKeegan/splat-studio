@@ -2041,12 +2041,13 @@ const applySnap = async (snap: UndoSnap): Promise<void> => {
             el.dispatchEvent(new Event('change', { bubbles: true })); // re-sync gizmos/preview/persistence
         }
         localStorage.setItem(FORM_KEY, JSON.stringify(formState));
-        for (const id of Object.keys(layerVisible) as LayerId[]) {
-            if (layerVisible[id] !== snap.layers[id]) toggleLayer(id);
-        }
+        // reload the splat FIRST — viewFile force-shows it, so restore layer visibility after
         if (snap.splat !== currentSplatName) {
             if (snap.splat == null) removeSplat();
             else await viewFile(snap.splat, 'splat');
+        }
+        for (const id of Object.keys(layerVisible) as LayerId[]) {
+            if (layerVisible[id] !== snap.layers[id]) toggleLayer(id);
         }
     } finally {
         undoApplying = false;
@@ -2055,20 +2056,20 @@ const applySnap = async (snap: UndoSnap): Promise<void> => {
 };
 
 const doUndo = (): void => {
-    if (!canUndo()) return;
+    if (undoApplying || !canUndo()) return;
     redoStack.push(undoCurrent);
     undoCurrent = undoStack.pop()!;
     void applySnap(undoCurrent);
 };
 const doRedo = (): void => {
-    if (!canRedo()) return;
+    if (undoApplying || !canRedo()) return;
     undoStack.push(undoCurrent);
     undoCurrent = redoStack.pop()!;
     void applySnap(undoCurrent);
 };
 
 document.addEventListener('keydown', (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.repeat || !(e.ctrlKey || e.metaKey)) return;
     const k = e.key.toLowerCase();
     if (k !== 'z' && k !== 'y') return;
     // keep native undo/redo inside a text field the user is editing
