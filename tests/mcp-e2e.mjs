@@ -78,7 +78,7 @@ try {
         const g = data(await call('workspace', { action: 'get' }));
         assert(g.path && Array.isArray(g.projects), `get: ${JSON.stringify(g)}`);
         const bad = await call('workspace', { action: 'set', path: `${g.path}__nope__` });
-        assert(bad.isError && data(bad).error === 'bad-input', `bad path: ${text(bad)}`);
+        assert(bad.isError && data(bad).error === 'not-found', `bad path: ${text(bad)}`);
         const s = data(await call('workspace', { action: 'set', path: `${g.path}/mcp_ws_test`, create: true }));
         assert(s.path && s.projects.length === 0, `set+create: ${JSON.stringify(s)}`);
         const back = data(await call('workspace', { action: 'set', path: g.path }));

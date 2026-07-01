@@ -191,7 +191,22 @@ app.get('/api/versions', async (req, res) => {
 
 // re-point the whole app at a different workspace folder, live (no restart) — the
 // derived layout/static paths recompute here so every subsequent request sees it
+// persist the chosen workspace to the app config the packaged main process reads at
+// launch (SPLAT_CONFIG_FILE) — so a switch survives a restart even if no renderer was
+// connected to relay it back to Electron. Best-effort; dev/headless sets no file.
+async function persistWorkspaceToConfig(dir) {
+    const file = process.env.SPLAT_CONFIG_FILE;
+    if (!file) return;
+    try {
+        let cfg = {};
+        try { cfg = JSON.parse(await fs.readFile(file, 'utf8')); } catch { /* new/absent */ }
+        cfg.workspace = dir;
+        await fs.writeFile(file, JSON.stringify(cfg, null, 2));
+    } catch { /* best-effort */ }
+}
+
 async function setWorkspaceDir(next, { create = false } = {}) {
+    if (!path.isAbsolute(String(next))) throw new Error(`Not an absolute path: ${next}`);
     const resolved = path.resolve(String(next));
     let stat = null;
     try { stat = await fs.stat(resolved); } catch { /* missing */ }
@@ -204,6 +219,7 @@ async function setWorkspaceDir(next, { create = false } = {}) {
     workspaceDir = resolved;
     layoutFile = path.join(workspaceDir, '.splat-studio-layout.json');
     filesStatic = express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' });
+    await persistWorkspaceToConfig(workspaceDir);
     return workspaceDir;
 }
 
@@ -218,14 +234,17 @@ app.get('/api/workspace', async (req, res) => {
 app.post('/api/workspace', json, async (req, res) => {
     const next = req.body?.path;
     if (!next || typeof next !== 'string') {
-        return res.status(400).json({ error: 'bad-input', message: 'path is required' });
+        return res.status(400).json({ error: 'path is required' });
     }
     try {
         const dir = await setWorkspaceDir(next, { create: !!req.body?.create });
+        // fail-closed: a switch never silently carries over / adopts editor-control
+        // consent (it's stored per-workspace) — the user must re-enable it deliberately
+        await setControlEnabled(dir, false).catch(() => {});
         relay?.broadcast('workspace-switched', { path: dir });
         res.json({ path: dir, projects: await listProjects() });
     } catch (err) {
-        res.status(400).json({ error: 'bad-input', message: err.message });
+        res.status(400).json({ error: err.message });
     }
 });
 

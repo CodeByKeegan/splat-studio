@@ -2201,6 +2201,14 @@ const loadProjects = async (preferred?: string) => {
     }
     if (projects.length === 0) {
         api.setProject('');
+        // clear anything from the workspace we just left (no project to refreshFiles)
+        viewer?.clearAll();
+        hideChip(hudSplat);
+        hideChip(hudCollision);
+        hideChip(hudVoxel);
+        currentSplatName = null;
+        syncPreview();
+        fileList.innerHTML = '';
         showToast('No projects yet — click "+ New" to create one', true);
         return;
     }
@@ -2480,6 +2488,7 @@ const applyWorkspace = async (target: string): Promise<void> => {
         await desktop?.persistWorkspace(ws.path);
         showWorkspace(ws.path);
         await loadProjects();
+        void syncEditorStatus(); // consent reset on switch — reflect it
         showToast(`Workspace set to ${ws.path}`);
     } finally {
         wsSwitching = false;
@@ -2504,6 +2513,7 @@ const onWorkspaceSwitched = async (): Promise<void> => {
         await desktop?.persistWorkspace(ws.path);
         showWorkspace(ws.path);
         await loadProjects();
+        void syncEditorStatus(); // consent reset on switch — reflect it
         showToast(`Workspace set to ${ws.path}`);
     } catch { /* server momentarily unavailable */ }
 };
@@ -2527,7 +2537,11 @@ mcpControl.onchange = () => {
         .then(() => updateMcpStatus(mcpConnected)) // re-render the label; keep the real connection state
         .catch(() => showToast('Failed to update MCP consent', true));
 };
-void fetch('/api/editor/status').then((r) => r.json()).then((s) => { mcpControl.checked = !!s.controlEnabled; updateMcpStatus(!!s.connected); }).catch(() => { /* server not up yet */ });
+// reconcile the consent checkbox + label with the server's enforced state — also
+// re-run after a workspace switch (consent is per-workspace and resets on switch)
+const syncEditorStatus = (): Promise<void> =>
+    fetch('/api/editor/status').then((r) => r.json()).then((s) => { mcpControl.checked = !!s.controlEnabled; updateMcpStatus(!!s.connected); }).catch(() => { /* server not up yet */ });
+void syncEditorStatus();
 
 startMcpBridge({
     handlers: mcpHandlers,
