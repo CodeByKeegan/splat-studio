@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, shell, ipcMain } from 'electron';
 import { checkForUpdates } from './updates.mjs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -133,7 +133,11 @@ const createWindow = () => {
         title: 'Splat Studio',
         icon: process.platform === 'win32' ? path.join(appRoot, 'build', 'icon.ico') : undefined,
         show: false,
-        webPreferences: { contextIsolation: true, nodeIntegration: false }
+        webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            preload: path.join(__dirname, 'preload.cjs')
+        }
     });
     // external links (the Settings version repo links, etc.) open in the OS browser
     win.webContents.setWindowOpenHandler(({ url }) => {
@@ -150,23 +154,29 @@ const createWindow = () => {
 };
 
 // ---------- workspace switching ----------
-const setWorkspace = async (next) => {
-    workspace = next;
-    writeConfig({ ...readConfig(), workspace });
-    await stopServer();
-    await startServer();
-    if (win) win.loadURL(appUrl());
-};
-
-const chooseWorkspace = async () => {
+// The renderer owns the switch flow: pick a folder (native dialog via IPC) ->
+// POST /api/workspace (live re-point, no restart) -> persist for the next launch.
+ipcMain.handle('workspace:pick', async (_e, defaultPath) => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
         title: 'Choose workspace folder',
-        defaultPath: workspace,
+        defaultPath: defaultPath || workspace,
         properties: ['openDirectory', 'createDirectory'],
         message: 'Each subfolder of this folder is a project.'
     });
-    if (!canceled && filePaths[0]) await setWorkspace(filePaths[0]);
-};
+    return canceled ? null : (filePaths[0] ?? null);
+});
+
+ipcMain.handle('workspace:persist', (_e, next) => {
+    if (typeof next === 'string' && next) {
+        workspace = next;
+        writeConfig({ ...readConfig(), workspace });
+    }
+});
+
+ipcMain.handle('workspace:open', () => shell.openPath(workspace));
+
+// File > Change Workspace Folder… delegates to the renderer's single flow
+const chooseWorkspace = () => win?.webContents.send('menu:choose-workspace');
 
 // ---------- menu ----------
 const buildMenu = () => {

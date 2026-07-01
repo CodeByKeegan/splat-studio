@@ -7,6 +7,23 @@ import { headless } from './_wrap.mjs';
 const SEG = 'letters, digits, spaces, and ( ) . _ -';
 
 export function register(server) {
+    server.registerTool('workspace', {
+        title: 'Workspace',
+        description:
+            'Get or change the workspace folder — the parent folder whose subfolders are projects. action="get" returns {path, projects:[...]}. action="set" re-points the whole app at `path` (live, no restart) and returns the new {path, projects}; the folder must already exist unless create=true.',
+        inputSchema: {
+            action: z.enum(['get', 'set']).describe('get = current workspace path + projects; set = switch to a different folder'),
+            path: z.string().optional().describe('Absolute folder path to switch to (required when action="set").'),
+            create: z.boolean().optional().describe('When action="set" and the folder does not exist, create it (default false).')
+        }
+    }, headless(async ({ action, path: p, create }) => {
+        if (action === 'set') {
+            if (!p) throw new Error('path is required when action="set"');
+            return await apiPost('/api/workspace', { path: p, create: !!create });
+        }
+        return await apiGet('/api/workspace');
+    }));
+
     server.registerTool('projects', {
         title: 'Projects',
         description:

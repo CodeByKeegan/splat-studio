@@ -20,13 +20,15 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 // (dev.cmd) and the packaged Electron app both set SPLAT_WORKSPACE to a real
 // folder of projects; the ./workspace fallback only applies to a bare
 // `node server/index.mjs`.
-const workspaceDir = process.env.SPLAT_WORKSPACE
+// runtime-switchable (POST /api/workspace) so the whole app can be re-pointed at a
+// different folder without restarting — derived paths recompute in setWorkspaceDir
+let workspaceDir = process.env.SPLAT_WORKSPACE
     ? path.resolve(process.env.SPLAT_WORKSPACE)
     : path.join(rootDir, 'workspace');
 const distDir = path.join(rootDir, 'dist');
 // per-workspace UI layout (dockable-editor arrangement). A root dotfile: it's a
 // FILE so listProjects (which filters on isDirectory) never surfaces it.
-const layoutFile = path.join(workspaceDir, '.splat-studio-layout.json');
+let layoutFile = path.join(workspaceDir, '.splat-studio-layout.json');
 await fs.mkdir(workspaceDir, { recursive: true });
 
 // deliberately not PORT: dev harnesses set that for the frontend (vite on 5173)
@@ -185,6 +187,46 @@ app.get('/api/versions', async (req, res) => {
         app: await ver('package.json'),
         splatTransform: await ver('node_modules/@playcanvas/splat-transform/package.json')
     });
+});
+
+// re-point the whole app at a different workspace folder, live (no restart) — the
+// derived layout/static paths recompute here so every subsequent request sees it
+async function setWorkspaceDir(next, { create = false } = {}) {
+    const resolved = path.resolve(String(next));
+    let stat = null;
+    try { stat = await fs.stat(resolved); } catch { /* missing */ }
+    if (!stat) {
+        if (!create) throw new Error(`No such folder: ${resolved}`);
+        await fs.mkdir(resolved, { recursive: true });
+    } else if (!stat.isDirectory()) {
+        throw new Error(`Not a folder: ${resolved}`);
+    }
+    workspaceDir = resolved;
+    layoutFile = path.join(workspaceDir, '.splat-studio-layout.json');
+    filesStatic = express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' });
+    return workspaceDir;
+}
+
+app.get('/api/workspace', async (req, res) => {
+    try {
+        res.json({ path: workspaceDir, projects: await listProjects() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/workspace', json, async (req, res) => {
+    const next = req.body?.path;
+    if (!next || typeof next !== 'string') {
+        return res.status(400).json({ error: 'bad-input', message: 'path is required' });
+    }
+    try {
+        const dir = await setWorkspaceDir(next, { create: !!req.body?.create });
+        relay?.broadcast('workspace-switched', { path: dir });
+        res.json({ path: dir, projects: await listProjects() });
+    } catch (err) {
+        res.status(400).json({ error: 'bad-input', message: err.message });
+    }
 });
 
 app.get('/api/projects', async (req, res) => {
@@ -505,7 +547,8 @@ app.post('/api/editor/control', json, async (req, res) => {
 // own traversal protection). The engine fetches bundle siblings (LOD chunks,
 // unbundled-SOG textures) by relative URL, so project must be a path prefix.
 // dotfiles:'deny' keeps the layout dotfile from being served over /files.
-app.use('/files', express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' }));
+let filesStatic = express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' });
+app.use('/files', (req, res, next) => filesStatic(req, res, next));
 
 if (existsSync(distDir)) {
     app.use(express.static(distDir));

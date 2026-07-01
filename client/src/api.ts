@@ -170,6 +170,19 @@ export interface Versions { app: string | null; splatTransform: string | null; }
 export const getVersions = async (): Promise<Versions> =>
     jsonOrThrow(await fetch('/api/versions'));
 
+/** The workspace folder whose subfolders are projects. */
+export interface Workspace { path: string; projects: string[]; }
+export const getWorkspace = async (): Promise<Workspace> =>
+    jsonOrThrow(await fetch('/api/workspace'));
+
+/** Re-point the app at a different workspace folder (live, no restart). */
+export const setWorkspace = async (path: string, create = false): Promise<Workspace> =>
+    jsonOrThrow(await fetch('/api/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, create })
+    }));
+
 export const createProject = async (name: string): Promise<void> => {
     await jsonOrThrow(await fetch('/api/projects', {
         method: 'POST',

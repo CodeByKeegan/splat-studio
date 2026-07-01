@@ -121,6 +121,25 @@ try {
         assert(json.projects.includes(PROJECT), `projects: ${JSON.stringify(json.projects)}`);
     });
 
+    await check('workspace: get, live-switch (create), validation, restore', async () => {
+        const cur = await api('GET', '/api/workspace');
+        assert(cur.json.path && cur.json.projects.includes(PROJECT), `get: ${JSON.stringify(cur.json)}`);
+        const alt = await fsp.mkdtemp(path.join(os.tmpdir(), 'splat-studio-e2e-alt-'));
+        await fsp.mkdir(path.join(alt, 'AltProject'));
+        const sw = await api('POST', '/api/workspace', { path: alt });
+        assert(sw.status === 200 && sw.json.projects.includes('AltProject') && !sw.json.projects.includes(PROJECT), `switch: ${JSON.stringify(sw.json)}`);
+        const bad = await api('POST', '/api/workspace', { path: path.join(alt, 'nope') });
+        assert(bad.status === 400, `missing folder should 400, got ${bad.status}`);
+        const missing = await api('POST', '/api/workspace', {});
+        assert(missing.status === 400, `missing path should 400, got ${missing.status}`);
+        const made = path.join(alt, 'made');
+        const cr = await api('POST', '/api/workspace', { path: made, create: true });
+        assert(cr.status === 200 && cr.json.path === made, `create: ${JSON.stringify(cr.json)}`);
+        const back = await api('POST', '/api/workspace', { path: cur.json.path });
+        assert(back.status === 200 && back.json.projects.includes(PROJECT), `restore: ${JSON.stringify(back.json)}`);
+        await fsp.rm(alt, { recursive: true, force: true });
+    });
+
     await check('per-workspace layout round-trips (empty → save → read)', async () => {
         const fresh = await api('GET', '/api/layout');
         assert(fresh.status === 200 && JSON.stringify(fresh.json) === '{}', `fresh: ${fresh.status} ${JSON.stringify(fresh.json)}`);
