@@ -2201,6 +2201,14 @@ const loadProjects = async (preferred?: string) => {
     }
     if (projects.length === 0) {
         api.setProject('');
+        // clear anything from the workspace we just left (no project to refreshFiles)
+        viewer?.clearAll();
+        hideChip(hudSplat);
+        hideChip(hudCollision);
+        hideChip(hudVoxel);
+        currentSplatName = null;
+        syncPreview();
+        fileList.innerHTML = '';
         showToast('No projects yet — click "+ New" to create one', true);
         return;
     }
@@ -2453,6 +2461,69 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     }
 };
 
+// ---------- workspace folder (Settings) ----------
+// The native folder picker lives in Electron (preload -> main); the actual switch
+// goes through POST /api/workspace so it works headlessly (MCP) and in the browser.
+interface DesktopApi {
+    pickFolder(defaultPath?: string): Promise<string | null>;
+    persistWorkspace(path: string): Promise<void>;
+    openWorkspace(): Promise<void>;
+    onChooseWorkspace(cb: () => void): void;
+}
+const desktop = (window as unknown as { desktop?: DesktopApi }).desktop;
+let currentWorkspace = '';
+let wsSwitching = false;
+const wsPathEl = $<HTMLInputElement>('ws-path');
+
+const showWorkspace = (p: string): void => {
+    currentWorkspace = p;
+    wsPathEl.value = p;
+    wsPathEl.title = p;
+};
+
+const applyWorkspace = async (target: string): Promise<void> => {
+    wsSwitching = true;
+    try {
+        const ws = await api.setWorkspace(target);
+        await desktop?.persistWorkspace(ws.path);
+        showWorkspace(ws.path);
+        await loadProjects();
+        void syncEditorStatus(); // consent reset on switch — reflect it
+        showToast(`Workspace set to ${ws.path}`);
+    } finally {
+        wsSwitching = false;
+    }
+};
+
+const chooseWorkspaceFolder = async (): Promise<void> => {
+    const target = desktop?.pickFolder
+        ? await desktop.pickFolder(currentWorkspace)
+        : await promptText('Workspace folder (absolute path)', { value: currentWorkspace, okLabel: 'Set' });
+    if (!target) return;
+    try { await applyWorkspace(target); }
+    catch (err) { showToast(`Couldn't set workspace: ${err}`, true); }
+};
+
+// a workspace switch initiated elsewhere (an MCP agent) — reflect it live
+const onWorkspaceSwitched = async (): Promise<void> => {
+    if (wsSwitching) return; // our own switch already handles the UI
+    try {
+        const ws = await api.getWorkspace();
+        if (ws.path === currentWorkspace) return;
+        await desktop?.persistWorkspace(ws.path);
+        showWorkspace(ws.path);
+        await loadProjects();
+        void syncEditorStatus(); // consent reset on switch — reflect it
+        showToast(`Workspace set to ${ws.path}`);
+    } catch { /* server momentarily unavailable */ }
+};
+
+$<HTMLButtonElement>('ws-change').onclick = () => void chooseWorkspaceFolder();
+const wsOpenBtn = $<HTMLButtonElement>('ws-open');
+if (desktop?.openWorkspace) { wsOpenBtn.hidden = false; wsOpenBtn.onclick = () => void desktop.openWorkspace(); }
+desktop?.onChooseWorkspace(() => void chooseWorkspaceFolder());
+void api.getWorkspace().then((ws) => showWorkspace(ws.path)).catch(() => { /* server not up yet */ });
+
 // ---------- MCP consent toggle (Settings) + bridge startup ----------
 const mcpControl = $<HTMLInputElement>('mcp-control');
 const mcpStatusEl = $('mcp-status');
@@ -2466,12 +2537,19 @@ mcpControl.onchange = () => {
         .then(() => updateMcpStatus(mcpConnected)) // re-render the label; keep the real connection state
         .catch(() => showToast('Failed to update MCP consent', true));
 };
-void fetch('/api/editor/status').then((r) => r.json()).then((s) => { mcpControl.checked = !!s.controlEnabled; updateMcpStatus(!!s.connected); }).catch(() => { /* server not up yet */ });
+// reconcile the consent checkbox + label with the server's enforced state — also
+// re-run after a workspace switch (consent is per-workspace and resets on switch)
+const syncEditorStatus = (): Promise<void> =>
+    fetch('/api/editor/status').then((r) => r.json()).then((s) => { mcpControl.checked = !!s.controlEnabled; updateMcpStatus(!!s.connected); }).catch(() => { /* server not up yet */ });
+void syncEditorStatus();
 
 startMcpBridge({
     handlers: mcpHandlers,
     appVersion: '0.1.0',
     project: () => projectSelect.value || null,
-    onEvent: (name) => { if (name === 'workspace-changed') void refreshFiles(); },
+    onEvent: (name) => {
+        if (name === 'workspace-changed') void refreshFiles();
+        else if (name === 'workspace-switched') void onWorkspaceSwitched();
+    },
     onStatus: updateMcpStatus
 });

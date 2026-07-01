@@ -60,8 +60,8 @@ try {
 
     console.log('Splat Studio MCP e2e\n');
 
-    await check('catalog registers the full 26-tool set + resources', async () => {
-        const want = ['projects', 'files', 'import_file', 'inspect', 'get_summary', 'jobs', 'convert', 'build_lod', 'render_image', 'generate_collision', 'trim_region',
+    await check('catalog registers the full 27-tool set + resources', async () => {
+        const want = ['workspace', 'projects', 'files', 'import_file', 'inspect', 'get_summary', 'jobs', 'convert', 'build_lod', 'render_image', 'generate_collision', 'trim_region',
             'camera', 'viewport_screenshot', 'viewport_click', 'load_into_viewport', 'set_view_option', 'select_item', 'get_editor_state', 'measure', 'set_origin', 'set_region', 'render_pose', 'set_collision_gizmo', 'panel', 'layout', 'suggest_lod_settings'];
         const missing = want.filter((n) => !tools.includes(n));
         assert(missing.length === 0, `missing tools: ${missing.join(',')}`);
@@ -72,6 +72,17 @@ try {
     await check('inspect health + projects list', async () => {
         assert(data(await call('inspect', { target: 'health' })).ok === true, 'health not ok');
         assert(data(await call('projects', { action: 'list' })).projects?.includes('Demo'), 'Demo project missing');
+    });
+
+    await check('workspace get + live switch + restore', async () => {
+        const g = data(await call('workspace', { action: 'get' }));
+        assert(g.path && Array.isArray(g.projects), `get: ${JSON.stringify(g)}`);
+        const bad = await call('workspace', { action: 'set', path: `${g.path}__nope__` });
+        assert(bad.isError && data(bad).error === 'not-found', `bad path: ${text(bad)}`);
+        const s = data(await call('workspace', { action: 'set', path: `${g.path}/mcp_ws_test`, create: true }));
+        assert(s.path && s.projects.length === 0, `set+create: ${JSON.stringify(s)}`);
+        const back = data(await call('workspace', { action: 'set', path: g.path }));
+        assert(back.projects.includes('Demo'), `restore: ${JSON.stringify(back)}`);
     });
 
     await check('inspect stats returns count + extents', async () => {
