@@ -538,6 +538,11 @@
                 <label class="field" title="Interface language (coming soon)"><span>Language</span><select id="ui-language" disabled><option>English</option></select></label>
                 <span class="hint">Theme, font size and language are placeholders for a future update.</span>
 
+                <div class="group">Agent control (MCP)</div>
+                <label class="check" title="Let a connected MCP agent drive the LIVE editor (camera, panels, gizmos, tools). Off by default. The headless pipeline tools (convert, collision, render, trim) work regardless of this toggle."><input type="checkbox" id="mcp-control" /> Allow agent (MCP) control of the editor</label>
+                <span class="hint" id="mcp-status">Editor bridge: connecting…</span>
+                <span class="hint">When on, an MCP client on this machine can observe and drive the editor. Loopback-only; turn it off to revoke access instantly.</span>
+
                 <div class="group">About</div>
                 <div class="about-list">
                     <div class="about-row"><a href="https://github.com/CodeByKeegan/splat-studio/releases" target="_blank" rel="noopener" title="Splat Studio releases on GitHub">Splat Studio</a><span id="ver-app">—</span></div>

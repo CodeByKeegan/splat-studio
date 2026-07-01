@@ -279,6 +279,34 @@ Both write a new splat and load it straight into the viewer.
 | `POST /api/jobs/:id/cancel` | kill a running job |
 | `GET /files/*` | static workspace files |
 
+## MCP server (AI agent control)
+
+Splat Studio ships an [MCP](https://modelcontextprotocol.io) server (`mcp-server/`) that lets an AI
+agent drive **the headless splat-transform pipeline** (convert, LOD, render, collision, trim, analyze —
+always available) and, with your consent, **the live editor** (camera, panels, gizmos, tools). It connects
+to the running app over loopback and never launches it.
+
+Point an MCP client (Claude Desktop, Claude Code, etc.) at the server:
+
+```json
+{
+  "mcpServers": {
+    "splat-studio": {
+      "command": "node",
+      "args": ["<path-to>/splat-studio/mcp-server/index.mjs"]
+    }
+  }
+}
+```
+
+Start Splat Studio first. Headless tools work immediately. To let an agent control the **live** editor,
+turn on **Settings → Agent control (MCP)** — it's off by default, loopback-only, and revocable instantly.
+26 tools total.
+
+📖 **Step-by-step install + client setup (Claude Desktop / Claude Code), the full tool list, and
+troubleshooting: [docs/MCP_SETUP.md](docs/MCP_SETUP.md).** For the agent-facing playbook, see the
+`splat-studio-mcp` skill.
+
 ## Built with
 
 - **[PlayCanvas engine](https://github.com/playcanvas/engine)** ([playcanvas.com](https://playcanvas.com)) — WebGL/WebGPU rendering and Gaussian-splat support.

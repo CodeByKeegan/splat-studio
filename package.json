@@ -21,6 +21,7 @@
     "start": "node server/index.mjs",
     "demo": "node scripts/make-test-splat.mjs",
     "test": "node tests/e2e.mjs",
+    "test:mcp": "node tests/mcp-e2e.mjs",
     "typecheck": "tsc --noEmit",
     "make-icon": "node scripts/make-icon.mjs",
     "fetch-node": "node scripts/fetch-node.mjs",
@@ -34,7 +35,8 @@
   "dependencies": {
     "@playcanvas/splat-transform": "^2.7.1",
     "dockview-core": "^7.0.2",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
@@ -60,6 +62,7 @@
       "electron/**/*",
       "server/**/*",
       "dist/**/*",
+      "mcp-server/**/*",
       "package.json"
     ],
     "extraResources": [
