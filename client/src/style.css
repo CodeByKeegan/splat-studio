@@ -441,6 +441,27 @@ body.dropping #viewport::after {
 .ctx-item:disabled { color: var(--text-dim); opacity: 0.5; cursor: default; }
 .ctx-item.danger { color: var(--error); }
 .ctx-item.danger:hover:not(:disabled) { background: rgba(255, 93, 93, 0.12); }
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100001;
+    background: rgba(0, 0, 0, 0.5);
+    display: grid;
+    place-items: center;
+}
+.modal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    padding: 18px;
+    width: 320px;
+    max-width: calc(100vw - 32px);
+}
+.modal-title { font-size: var(--fs-md); margin-bottom: 10px; }
+.modal-row { display: flex; gap: 8px; margin-top: 14px; }
+.modal-row button { flex: 1; margin-top: 0; }
 .ctx-sep { height: 1px; background: var(--border); margin: 4px 2px; }
 
 .badge {

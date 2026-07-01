@@ -44,6 +44,56 @@ const showToast = (message: string, isError = false) => {
     setTimeout(() => el.remove(), isError ? 8000 : 4000);
 };
 
+// In-app text prompt — Electron's renderer has no window.prompt(). Resolves the
+// trimmed value, or null if cancelled.
+const promptText = (title: string, opts: { value?: string; okLabel?: string; placeholder?: string } = {}): Promise<string | null> =>
+    new Promise((resolve) => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop';
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        const h = document.createElement('div');
+        h.className = 'modal-title';
+        h.textContent = title;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = opts.value ?? '';
+        if (opts.placeholder) input.placeholder = opts.placeholder;
+        const row = document.createElement('div');
+        row.className = 'modal-row';
+        const cancel = document.createElement('button');
+        cancel.textContent = 'Cancel';
+        const ok = document.createElement('button');
+        ok.className = 'primary';
+        ok.textContent = opts.okLabel ?? 'OK';
+        row.append(cancel, ok);
+        modal.append(h, input, row);
+        backdrop.appendChild(modal);
+        document.body.appendChild(backdrop);
+        input.focus();
+        input.select();
+
+        let done = false;
+        const close = (value: string | null): void => {
+            if (done) return;
+            done = true;
+            document.removeEventListener('keydown', onKey, true);
+            backdrop.remove();
+            resolve(value);
+        };
+        const submit = (): void => close(input.value.trim() || null);
+        const onKey = (e: KeyboardEvent): void => {
+            if (e.key !== 'Enter' && e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            close(e.key === 'Enter' ? (input.value.trim() || null) : null);
+        };
+        document.addEventListener('keydown', onKey, true);
+        backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) close(null); });
+        cancel.onclick = () => close(null);
+        ok.onclick = submit;
+    });
+
 const fmtSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -2160,7 +2210,7 @@ const loadProjects = async (preferred?: string) => {
 projectSelect.onchange = () => void switchProject(projectSelect.value);
 
 $<HTMLButtonElement>('project-new').onclick = async () => {
-    const name = window.prompt('New project name:')?.trim();
+    const name = await promptText('New project name', { okLabel: 'Create', placeholder: 'my-scene' });
     if (!name) return;
     try {
         await api.createProject(name);
