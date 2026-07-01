@@ -1,6 +1,7 @@
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
+import { startMcpBridge, editorError } from './mcp-bridge';
 import { createDockview, markDockviewPackageLoaded } from 'dockview-core';
 import type { DockviewApi, IContentRenderer, ITabRenderer, TabPartInitParameters } from 'dockview-core';
 import 'dockview-core/dist/styles/dockview.css';
@@ -270,15 +271,15 @@ const hideChip = (chip: HTMLSpanElement) => {
     if (label) label.textContent = '';
 };
 
-const viewFile = async (name: string, as: api.ViewKind) => {
+const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
     const v = viewer;
-    if (!v) return showToast('Viewer is still starting up', true);
+    if (!v) { showToast('Viewer is still starting up', true); return false; }
     try {
         const url = api.fileUrl(name);
         const filename = name.split('/').pop()!;
         showToast(`Loading ${name}…`);
         if (as === 'splat') {
-            if (!(await v.loadSplat(url, filename))) return; // superseded by a newer load / remove
+            if (!(await v.loadSplat(url, filename))) return false; // superseded by a newer load / remove
             setChip(hudSplat, `splat: ${name}`);
             layerVisible.splat = true;
             v.setSplatVisible(true);
@@ -286,7 +287,7 @@ const viewFile = async (name: string, as: api.ViewKind) => {
             syncPreview(); // apply the live Convert preview if this is the input
             syncRegionViz(); updateRegionEstimate(); // re-fit/recompute the region box for the new splat
         } else if (as === 'collision') {
-            if (!(await v.loadCollision(url, filename))) return;
+            if (!(await v.loadCollision(url, filename))) return false;
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
             layerVisible.collision = true;
             v.setCollisionVisible(true);
@@ -299,7 +300,7 @@ const viewFile = async (name: string, as: api.ViewKind) => {
             }
         } else {
             const { count, truncated, applied } = await v.loadVoxels(url);
-            if (!applied) return;
+            if (!applied) return false;
             setChip(hudVoxel, `voxels: ${name} (${count.toLocaleString()} boxes)`);
             layerVisible.voxels = true;
             v.setVoxelsVisible(true);
@@ -309,8 +310,10 @@ const viewFile = async (name: string, as: api.ViewKind) => {
         }
         rebuildSceneList();
         scheduleUndoCapture(); // loading a splat is an undo step
+        return true;
     } catch (err) {
         showToast(`Failed to load ${name}: ${err}`, true);
+        return false;
     }
 };
 
@@ -2245,3 +2248,180 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         showToast(`Failed to start viewer: ${err}`, true);
         console.error(err);
     });
+
+// ---------- MCP editor bridge: dispatch commands through the real GUI actions ----------
+// Handlers set form fields + dispatch input/change (or drive the real click path), so
+// the gizmo, the panel form fields, and the persisted form state all update together.
+const r4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+const setField = (id: string, value: string | number): boolean => {
+    const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+    if (!el) return false;
+    el.value = String(value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+};
+const setCheck = (id: string, on: boolean): void => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (el && el.checked !== on) { el.checked = on; el.dispatchEvent(new Event('change', { bubbles: true })); }
+};
+const setBoxFields = (prefix: string, box: Array<number | string>): void => {
+    const ax = ['min-x', 'min-y', 'min-z', 'max-x', 'max-y', 'max-z'];
+    box.forEach((v, i) => setField(`${prefix}-${ax[i]}`, v === '-' || v === '' ? '' : (v as number)));
+};
+const need = <T>(v: T | null | undefined, msg: string): T => { if (v == null) editorError('bad-input', msg); return v as T; };
+
+const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
+    panel: ({ action, id }) => {
+        const w = winById(String(id));
+        if (!w) return editorError('not-found', `no panel "${id}"`);
+        if (action === 'close') { if (w.closable) closeWindow(w); else editorError('bad-input', `panel "${id}" can't be closed`); }
+        else openWindow(w);
+        return { id, action };
+    },
+    layout: ({ action, layout }) => {
+        if (action === 'get') return { layout: dock.toJSON() };
+        if (action === 'reset') { applyDefaultLayout(); persistNow(); return { ok: true }; }
+        if (action === 'set') {
+            try { dock.fromJSON(layout as Parameters<DockviewApi['fromJSON']>[0]); persistNow(); }
+            catch (e) { return editorError('bad-input', `invalid layout: ${(e as Error).message}`); }
+            return { ok: true };
+        }
+        return editorError('bad-input', `unknown layout action "${action}"`);
+    },
+    load_into_viewport: async ({ action, file }) => {
+        if (action === 'clear') { removeSplat(); removeCollision(); removeVoxels(); return { cleared: true }; }
+        const name = need(file as string, 'load needs file');
+        const as: api.ViewKind = /\.voxel\.json$/i.test(name) ? 'voxel' : /collision\.glb$/i.test(name) ? 'collision' : 'splat';
+        const ok = await viewFile(name, as);
+        if (!ok) editorError('not-found', `couldn't load "${name}" — missing, not a viewable ${as}, or superseded`);
+        return { loaded: name, as };
+    },
+    camera: ({ action, eye, target, mode }) => {
+        const v = need(viewer, 'viewer not ready');
+        if (action === 'get') return v.getCamera();
+        if (action === 'frame') { v.frame(); return v.getCamera(); }
+        if (action === 'mode') {
+            if (mode === 'fly' || mode === 'orbit') setField('camera-mode', mode);
+            else return editorError('bad-input', 'mode must be fly or orbit');
+            return { mode };
+        }
+        if (action === 'set') { v.setCamera(need(eye as number[], 'set needs eye'), need(target as number[], 'set needs target')); return v.getCamera(); }
+        return editorError('bad-input', `unknown camera action "${action}"`);
+    },
+    viewport_screenshot: async () => await need(viewer, 'viewer not ready').captureScreenshot(),
+    viewport_click: ({ x, y }) => {
+        const v = need(viewer, 'viewer not ready');
+        const canvas = v.canvas;
+        const rect = canvas.getBoundingClientRect();
+        const px = Number(x) * rect.width, py = Number(y) * rect.height;
+        const hit = v.pickSurfacePoint(px, py);
+        // drive the real click path so the active marker + readouts update for the current tool
+        const ev = (type: string) => canvas.dispatchEvent(new PointerEvent(type, { clientX: rect.left + px, clientY: rect.top + py, button: 0, bubbles: true }));
+        ev('pointerdown'); ev('pointerup');
+        return hit ? { hit: true, point: [r4(hit.x), r4(hit.y), r4(hit.z)] } : { hit: false };
+    },
+    select_item: ({ id }) => { selectScene((id == null ? 'none' : String(id)) as SelId); return { selection: viewer?.selection ?? 'none' }; },
+    get_editor_state: () => {
+        const activePanels = WINDOWS.map((w) => w.id).filter((id) => { const p = dock.getPanel(id); return !!p && p.group.activePanel?.id === id; });
+        return {
+            project: projectSelect.value || null,
+            loadedSplat: currentSplatName,
+            activePanels,
+            selection: viewer?.selection ?? 'none',
+            layers: { ...layerVisible },
+            camera: viewer?.getCamera() ?? null
+        };
+    },
+    set_view_option: ({ option, value, target }) => {
+        const v = need(viewer, 'viewer not ready');
+        if (option === 'bounds') { setCheck('show-bounds', !!value); return { bounds: !!value }; }
+        if (option === 'collision_style') {
+            if (!['xray', 'hidden', 'solid'].includes(String(value))) return editorError('bad-input', 'collision_style must be xray, hidden, or solid');
+            setField('collision-style', String(value));
+            return { style: value };
+        }
+        if (option === 'layer') {
+            const id = String(target) as LayerId;
+            if (!(id in layerVisible)) return editorError('bad-input', `unknown layer "${target}"`);
+            if (layerVisible[id] !== !!value) toggleLayer(id);
+            return { layer: id, visible: layerVisible[id] };
+        }
+        if (option === 'skybox') {
+            if (value == null) { v.clearSkybox(); return { skybox: null }; }
+            return v.setSkybox(api.fileUrl(String(value)), String(value).split('/').pop() ?? String(value))
+                .then((ok) => { if (!ok) editorError('not-found', `couldn't load skybox image "${value}"`); return { skybox: value }; });
+        }
+        return editorError('bad-input', `unknown option "${option}"`);
+    },
+    set_region: ({ target, box, sphere, enabled, gizmoMode }) => {
+        if (target === 'crop_box') {
+            setCheck('carve-box-on', enabled == null ? true : !!enabled);
+            if (Array.isArray(box)) setBoxFields('carve-box', box as Array<number | string>);
+            return { region: 'crop_box' };
+        }
+        if (target === 'crop_sphere') {
+            setCheck('carve-sphere-on', enabled == null ? true : !!enabled);
+            if (Array.isArray(sphere)) { const s = sphere as number[]; setField('carve-sphere-x', s[0]); setField('carve-sphere-y', s[1]); setField('carve-sphere-z', s[2]); setField('carve-sphere-r', s[3]); }
+            return { region: 'crop_sphere' };
+        }
+        if (target === 'collision_region') {
+            setCheck('region-box-on', enabled == null ? true : !!enabled);
+            if (Array.isArray(box)) setBoxFields('region', box as Array<number | string>);
+            if (gizmoMode === 'move' || gizmoMode === 'resize') document.getElementById(gizmoMode === 'resize' ? 'region-resize' : 'region-move')?.click();
+            return { region: 'collision_region' };
+        }
+        return editorError('bad-input', `unknown region target "${target}"`);
+    },
+    set_origin: ({ point }) => {
+        need(viewer, 'viewer not ready');
+        setCheck('origin-toggle', true);
+        void point;
+        return { ok: true, note: 'origin mode on — place the point with viewport_click' };
+    },
+    measure: ({ action, length }) => {
+        if (action === 'set_length') {
+            if (!(Number(length) > 0)) return editorError('bad-input', 'length must be > 0');
+            setField('measure-length', Number(length));
+            return { length };
+        }
+        return { note: 'enable Measure mode + place A/B with viewport_click while the Edit panel is active' };
+    },
+    render_pose: ({ action, camera, lookAt }) => {
+        if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');
+        if (action === 'set') {
+            if (Array.isArray(camera)) setField('webp-camera', (camera as number[]).join(','));
+            if (Array.isArray(lookAt)) setField('webp-lookat', (lookAt as number[]).join(','));
+            return { ok: true };
+        }
+        return editorError('bad-input', `unknown render_pose action "${action}"`);
+    },
+    set_collision_gizmo: ({ target, seed, height, radius }) => {
+        if (target === 'seed') { const s = need(seed as number[], 'seed needs [x,y,z]'); setField('seed-x', s[0]); setField('seed-y', s[1]); setField('seed-z', s[2]); return { seed: s }; }
+        if (target === 'capsule') { setCheck('carve', true); if (height != null) setField('carve-height', Number(height)); if (radius != null) setField('carve-radius', Number(radius)); return { height, radius }; }
+        return editorError('bad-input', `unknown gizmo target "${target}"`);
+    }
+};
+
+// ---------- MCP consent toggle (Settings) + bridge startup ----------
+const mcpControl = $<HTMLInputElement>('mcp-control');
+const mcpStatusEl = $('mcp-status');
+let mcpConnected = false; // last real bridge state, from onStatus
+const updateMcpStatus = (connected: boolean): void => {
+    mcpConnected = connected;
+    mcpStatusEl.textContent = `Editor bridge: ${connected ? 'connected' : 'disconnected'} · control ${mcpControl.checked ? 'ON' : 'off'}`;
+};
+mcpControl.onchange = () => {
+    void fetch('/api/editor/control', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: mcpControl.checked }) })
+        .then(() => updateMcpStatus(mcpConnected)) // re-render the label; keep the real connection state
+        .catch(() => showToast('Failed to update MCP consent', true));
+};
+void fetch('/api/editor/status').then((r) => r.json()).then((s) => { mcpControl.checked = !!s.controlEnabled; updateMcpStatus(!!s.connected); }).catch(() => { /* server not up yet */ });
+
+startMcpBridge({
+    handlers: mcpHandlers,
+    appVersion: '0.1.0',
+    project: () => projectSelect.value || null,
+    onEvent: (name) => { if (name === 'workspace-changed') void refreshFiles(); },
+    onStatus: updateMcpStatus
+});

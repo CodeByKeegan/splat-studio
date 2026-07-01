@@ -9,6 +9,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createJob, getJob, cancelJob, listJobs } from './jobs.mjs';
 import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, buildTrimCommand, recordOutputs, cliPath } from './commands.mjs';
+import { createRelay } from './editor-relay.mjs';
+import { isControlEnabled, setControlEnabled } from './mcp-config.mjs';
+
+// the MCP editor-control relay (created once the http.Server is listening below)
+let relay = null;
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Each top-level subfolder of the workspace is a "project". The launcher
@@ -285,7 +290,17 @@ const startJob = async (res, build, payload) => {
                 await fs.rm(toAbs(projectDir, dir), { recursive: true, force: true });
             }
         }
-        const job = createJob({ ...cmd, cwd: projectDir, onOutputs: recordOutputs });
+        const job = createJob({
+            ...cmd,
+            cwd: projectDir,
+            onOutputs: recordOutputs,
+            // live reflection: tell the editor when a job moves, and that the
+            // workspace changed once outputs land (so the GUI refreshes its files)
+            onStatus: (j) => {
+                relay?.broadcast('job-updated', { id: j.id, status: j.status });
+                if (j.status === 'done') relay?.broadcast('workspace-changed', { project: payload.project });
+            }
+        });
         res.json({ jobId: job.id });
     } catch (err) {
         res.status(400).json({ error: err.message });
@@ -450,6 +465,41 @@ app.post('/api/groups', json, async (req, res) => {
     }
 });
 
+// ---------- MCP editor control channel ----------
+// POST /api/editor/command forwards a command to the registered editor over the WS,
+// gated by the consent toggle. GET /api/editor/status reports the binding; POST
+// /api/editor/control flips the consent toggle (persisted per workspace).
+app.post('/api/editor/command', json, async (req, res) => {
+    const { name, params } = req.body ?? {};
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'command name is required' });
+    if (!relay?.isConnected()) return res.status(409).json({ error: 'No editor is connected to Splat Studio' });
+    if (!(await isControlEnabled(workspaceDir))) {
+        return res.status(403).json({ error: 'Editor control is off — enable it in the app\'s MCP settings tab' });
+    }
+    const result = await relay.sendCommand(name, params ?? {});
+    if (result.ok) return res.json({ ok: true, data: result.data });
+    if (result.kind === 'no-editor') return res.status(409).json({ error: 'No editor is connected to Splat Studio' });
+    if (result.kind === 'timeout') return res.status(504).json({ error: 'The editor did not respond in time' });
+    if (result.kind) return res.status(400).json({ error: result.message || `editor command failed (${result.kind})` });
+    // a tool-level ok:false from the editor handler -> 200 with the {error,message} body
+    return res.status(200).json({ error: result.error, message: result.message });
+});
+
+app.get('/api/editor/status', async (req, res) => {
+    const base = relay?.status() ?? { connected: false, editorProject: null, appVersion: null, lastSeenMs: null, port: PORT };
+    res.json({ ...base, controlEnabled: await isControlEnabled(workspaceDir) });
+});
+
+app.post('/api/editor/control', json, async (req, res) => {
+    const enabled = req.body?.enabled === true;
+    try {
+        await setControlEnabled(workspaceDir, enabled);
+        res.json({ ok: true, controlEnabled: enabled });
+    } catch (err) {
+        res.status(500).json({ error: `Failed to persist consent: ${err.message}` });
+    }
+});
+
 // files are served with the project as the first path segment; since projects
 // are subfolders of workspaceDir, static resolves them directly (and brings its
 // own traversal protection). The engine fetches bundle siblings (LOD chunks,
@@ -462,7 +512,7 @@ if (existsSync(distDir)) {
 }
 
 // loopback only: the API can write/delete files and spawn jobs — keep it off the LAN
-app.listen(PORT, '127.0.0.1', () => {
+const httpServer = app.listen(PORT, '127.0.0.1', () => {
     console.log(`splat-studio server listening on http://localhost:${PORT}`);
     console.log(`workspace: ${workspaceDir}`);
     listProjects().then((p) => console.log(`projects: ${p.join(', ') || '(none — create one in the UI)'}`));
@@ -470,3 +520,7 @@ app.listen(PORT, '127.0.0.1', () => {
         console.warn('WARNING: splat-transform CLI not found — run npm install');
     }
 });
+
+// MCP editor-control relay shares the loopback http.Server (path /editor-ws), so
+// it is never exposed on the LAN. The running GUI registers as the editor.
+relay = createRelay(httpServer, { port: PORT });

@@ -1141,6 +1141,61 @@ export class SplatViewer {
         this.controls.enableOrbit = mode === 'orbit';
     }
 
+    /** Place the camera at eye looking at target (viewer-world). */
+    setCamera(eye: number[], target: number[]): void {
+        const e = new pc.Vec3(eye[0], eye[1], eye[2]);
+        const t = new pc.Vec3(target[0], target[1], target[2]);
+        if (this.controls?.reset) this.controls.reset(t, e);
+        else { this.camera.setPosition(e); this.camera.lookAt(t); }
+    }
+
+    /** Current camera pose in viewer-world: eye, the look target, fov, mode. */
+    getCamera(): { eye: number[]; target: number[]; fov: number; mode: 'fly' | 'orbit' } {
+        const pos = this.camera.getPosition();
+        const b = this.sceneBounds();
+        const dist = b ? Math.max(pos.distance(b.center), 0.5) : 5;
+        const tgt = pos.clone().add(this.camera.forward.clone().mulScalar(dist));
+        return {
+            eye: [round(pos.x), round(pos.y), round(pos.z)],
+            target: [round(tgt.x), round(tgt.y), round(tgt.z)],
+            fov: (this.camera.camera as pc.CameraComponent).fov,
+            mode: this.controls?.enableOrbit ? 'orbit' : 'fly'
+        };
+    }
+
+    /** One-shot PNG of the main camera (base64, no data: prefix) via an offscreen RT. */
+    async captureScreenshot(): Promise<{ png: string; width: number; height: number }> {
+        const device = this.app.graphicsDevice;
+        const w = Math.min(device.width || 1280, 1920);
+        const h = Math.min(device.height || 720, 1080);
+        // allocate inside the try so a throw mid-setup still hits the cleanup path
+        let tex: pc.Texture | null = null, rt: pc.RenderTarget | null = null, cam: pc.Entity | null = null;
+        try {
+            tex = new pc.Texture(device, { name: 'mcp-shot', width: w, height: h, format: pc.PIXELFORMAT_RGBA8, mipmaps: false });
+            rt = new pc.RenderTarget({ colorBuffer: tex, depth: true, samples: 1 });
+            const src = this.camera.camera as pc.CameraComponent;
+            cam = new pc.Entity('mcp-shot-cam');
+            cam.addComponent('camera', { clearColor: src.clearColor, fov: src.fov, layers: src.layers.slice(), renderTarget: rt });
+            cam.setPosition(this.camera.getPosition());
+            cam.setRotation(this.camera.getRotation());
+            (cam.camera as pc.CameraComponent).aspectRatio = w / h;
+            this.app.root.addChild(cam);
+            this.app.render();
+            const data = await tex.read(0, 0, w, h, { renderTarget: rt });
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx || !data) throw new Error('screenshot readback failed');
+            const img = ctx.createImageData(w, h);
+            const row = w * 4;
+            for (let y = 0; y < h; y++) img.data.set(data.subarray((h - 1 - y) * row, (h - y) * row), y * row); // RT is bottom-up
+            ctx.putImageData(img, 0, 0);
+            return { png: canvas.toDataURL('image/png').split(',')[1], width: w, height: h };
+        } finally {
+            cam?.destroy(); rt?.destroy(); tex?.destroy();
+        }
+    }
+
     /** Select a scene object — shows its gizmo (capsule/render-camera) or nothing. */
     selectObject(id: SelId): void {
         this.selected = id;
@@ -1155,6 +1210,9 @@ export class SplatViewer {
     }
 
     get selection(): SelId { return this.selected; }
+
+    /** The WebGPU canvas (for viewport-coordinate picks from the MCP bridge). */
+    get canvas(): HTMLCanvasElement { return this.app.graphicsDevice.canvas as HTMLCanvasElement; }
 
     private applySelection(): void {
         const sel = this.selected;

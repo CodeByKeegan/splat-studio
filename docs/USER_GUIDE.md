@@ -390,6 +390,11 @@ buttons in the [Scene panel](#scene-hierarchy)**.
 The **Settings** window holds the **wire / voxel colors & opacity** for the overlays.
 Appearance options (theme, font size, language) are placeholders for a future update.
 
+It also has **Agent control (MCP)** — a single toggle that lets a connected AI agent drive the live
+editor through Splat Studio's [MCP server](../README.md#mcp-server-ai-agent-control). It's **off by
+default**, loopback-only, and revocable instantly; the headless pipeline tools work regardless. See
+[docs/MCP_SETUP.md](MCP_SETUP.md) for the full setup.
+
 ---
 
 ## Scene hierarchy

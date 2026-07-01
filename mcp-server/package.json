@@ -1,0 +1,18 @@
+{
+  "name": "splat-studio-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing Splat Studio (headless splat-transform pipeline + live PlayCanvas editor) to AI agents over stdio.",
+  "main": "index.mjs",
+  "bin": {
+    "splat-studio-mcp": "index.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^4.4.3"
+  }
+}

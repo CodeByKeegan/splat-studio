@@ -86,6 +86,9 @@ const waitForHealth = (port, timeoutMs = 30000) => new Promise((resolve, reject)
 const startServer = async () => {
     serverPort = await freePort();
     fs.mkdirSync(workspace, { recursive: true });
+    // MCP port hint: the standalone MCP server reads userData/port.json to find our
+    // dynamically-chosen API port (env SPLAT_API_PORT overrides; falls back to 5174).
+    try { fs.writeFileSync(path.join(app.getPath('userData'), 'port.json'), JSON.stringify({ port: serverPort })); } catch { /* best-effort */ }
     const entry = path.join(appRoot, 'server', 'index.mjs');
     const env = { ...process.env, API_PORT: String(serverPort), SPLAT_WORKSPACE: workspace };
     // strip any inherited ELECTRON_RUN_AS_NODE so the child node.exe behaves normally

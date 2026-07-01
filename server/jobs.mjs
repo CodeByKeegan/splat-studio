@@ -20,7 +20,7 @@ const pruneFinished = () => {
     }
 };
 
-export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], onOutputs }) => {
+export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], onOutputs, onStatus }) => {
     pruneFinished();
     const id = String(nextId++);
     const job = {
@@ -73,6 +73,7 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         job.status = 'error';
         job.log += `\nFailed to launch: ${err.message}\n`;
         job.endedAt = Date.now();
+        onStatus?.(job);
     });
     child.on('close', (code) => {
         clearTimeout(idleTimer);
@@ -85,6 +86,7 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         if (code !== 0) job.log += `\nProcess exited with code ${code}\n`;
         job.endedAt = Date.now();
         if (job.status === 'done') onOutputs?.(job.outputs);
+        onStatus?.(job);
     });
 
     return job;
