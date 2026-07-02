@@ -114,6 +114,7 @@ window.__doc = {
   // focus a panel's dock tab (replaces the old icon rail). panel = the dock id.
   rail(panel) {
     document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); // close any open menu
+    window.__settings && window.__settings.close(); // navigating away dismisses the settings dialog
     const dock = window.__dock;
     if (!dock) return;
     if (!dock.getPanel(panel)) {
