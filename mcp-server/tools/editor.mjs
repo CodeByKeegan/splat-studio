@@ -124,13 +124,13 @@ export function register(server) {
     server.registerTool('set_region', {
         title: 'Set region',
         description:
-            'Set a viewport region gizmo. target="crop_box"/"crop_sphere" drive the Edit-panel crop/carve region (-B/-S action space); target="collision_region" drives the Collision-panel region (R_y(180) CLI space). gizmoMode switches move/resize on the collision region.',
+            'Set a viewport region gizmo. target="crop_box"/"crop_sphere" drive the Edit-panel crop/carve region (-B/-S action space); target="collision_region"/"collision_sphere" drive the Collision-panel region filters (R_y(180) CLI space).',
         inputSchema: {
-            target: z.enum(['crop_box', 'crop_sphere', 'collision_region']),
+            target: z.enum(['crop_box', 'crop_sphere', 'collision_region', 'collision_sphere']),
             box: boxArr.optional().describe('[minX,minY,minZ,maxX,maxY,maxZ]; "" or "-" = unbounded side.'),
             sphere: sphereArr.optional().describe('[x,y,z,radius].'),
             enabled: z.boolean().optional().describe('show/hide the region.'),
-            gizmoMode: z.enum(['move', 'resize']).optional().describe('collision_region only.')
+            gizmoMode: z.enum(['move', 'resize']).optional().describe('deprecated — accepted and ignored (move + resize handles are always active).')
         }
     }, editor(async (args) => await callEditor('set_region', args)));
 

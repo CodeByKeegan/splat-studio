@@ -448,6 +448,7 @@
                         <label class="axis"><span>y</span><input type="number" id="region-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
                         <label class="axis"><span>z</span><input type="number" id="region-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
                     </div>
+                    <span class="hint">Or drag it in the viewport: square handles resize a face, arrows move the box.</span>
                 </div>
                 <label class="check" title="Limit collision to a sphere (-S/--filter-sphere)."><input type="checkbox" id="region-sphere-on" /> Limit to sphere</label>
                 <div class="field hidden" id="region-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the seed).">
@@ -458,8 +459,12 @@
                         <label class="axis"><span>z</span><input type="number" id="region-sphere-z" value="0" step="0.1" title="Sphere centre Z" /></label>
                         <label class="axis"><span>r</span><input type="number" id="region-sphere-r" value="1" step="0.1" min="0" title="Sphere radius" /></label>
                     </div>
-                    <span class="hint">Typed XYZ use CLI axes (same as the seed) — a draggable viewport box is coming.</span>
+                    <span class="hint">Or drag it in the viewport: the round knob on the edge sets the radius, arrows move the centre.</span>
                 </div>
+                <label class="field hidden" id="region-shade-row" title="Tint the region's faces so you can see where it cuts through the splat. 0 = wireframe only.">
+                    <span>Region face shading</span>
+                    <input type="range" id="region-shade" min="0" max="0.6" step="0.05" value="0.15" />
+                </label>
 
                 <div class="hint hidden" id="region-estimate" title="Rough marching-cubes overflow risk. Cropping the region or raising the voxel size both reduce it — the mesh fails above ~16.7M vertices."></div>
                 <div class="field-row hidden" id="region-estimate-actions">
@@ -515,10 +520,6 @@
                 <div class="field-row hidden" id="cam-gizmo-mode" title="What the render-camera gizmo does">
                     <button id="cam-move" class="active" title="Drag the gizmo to move the render camera (updates the WebP Camera position)">Move</button>
                     <button id="cam-rotate" title="Drag the gizmo to rotate the render camera (updates the WebP Look-at)">Rotate</button>
-                </div>
-                <div class="field-row hidden" id="region-gizmo-mode" title="How the collision region gizmo behaves">
-                    <button id="region-move" class="active" title="Drag the gizmo to move the whole region box">Move</button>
-                    <button id="region-resize" title="Drag a face handle to resize the region — the opposite face stays put">Resize</button>
                 </div>
                 <span class="hint" id="scene-hint">Select an object to move it. Click it again to deselect.</span>
 
