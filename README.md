@@ -351,5 +351,4 @@ Released under the [Apache License 2.0](LICENSE) © 2026 CodeByKeegan — see al
 
 If Splat Studio is useful to you, you can support its development:
 
-<!-- TODO(CodeByKeegan): create a Ko-fi account, then replace YOUR_KOFI_HANDLE below with the real handle. -->
-☕ **[Buy me a coffee on Ko-fi](https://ko-fi.com/YOUR_KOFI_HANDLE)** — *placeholder link; the Ko-fi account isn't set up yet.*
+☕ **[Buy me a coffee on Ko-fi](https://ko-fi.com/codebykeegan)**

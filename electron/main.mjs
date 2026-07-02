@@ -208,6 +208,7 @@ const buildMenu = () => {
             submenu: [
                 { label: 'Check for Updates…', click: () => checkForUpdates(win, { silent: false }) },
                 { label: 'Project on GitHub', click: () => shell.openExternal('https://github.com/CodeByKeegan/splat-studio') },
+                { label: 'Support on Ko-fi ☕', click: () => shell.openExternal('https://ko-fi.com/codebykeegan') },
                 {
                     label: 'About Splat Studio',
                     click: () => dialog.showMessageBox(win, {
