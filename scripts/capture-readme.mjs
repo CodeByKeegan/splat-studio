@@ -1,7 +1,7 @@
 // Captures README "in action" screenshots from the real workspace: the dockable
 // editor with the Acropolis and HOTP scans loaded. Run via `npm run docs:readme`
-// (needs SPLAT_WORKSPACE to point at a folder containing those projects, or set it
-// below). Reuses the production boot in a real Electron window, like capture-docs.
+// (needs SPLAT_WORKSPACE to point at a folder containing those projects).
+// Reuses the production boot in a real Electron window, like capture-docs.
 import { app, BrowserWindow } from 'electron';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -13,7 +13,11 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const shotsDir = path.join(repoRoot, 'docs', 'screenshots');
-const WORKSPACE = process.env.SPLAT_WORKSPACE || 'C:/Users/user/Documents/ClaudeWorkbench/splats';
+const WORKSPACE = process.env.SPLAT_WORKSPACE;
+if (!WORKSPACE) {
+    console.error('Set SPLAT_WORKSPACE to a folder containing the Acropolis and HOTP projects.');
+    process.exit(1);
+}
 const W = 1500, H = 950;
 
 // project, a substring of the splat's file-row text, and the output name

@@ -8,3 +8,5 @@ docs/.capture-workspace/
 *.log
 *.tsbuildinfo
 .editor-design.md
+.env
+.env.*

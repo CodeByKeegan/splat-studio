@@ -5,16 +5,15 @@ format conversion, collision generation) with a PlayCanvas viewer. Express loopb
 (`server/`) spawns the CLI as polled subprocess jobs; Vite/TS/PlayCanvas frontend (`client/`);
 packaged as an Electron app. Repo: `github.com/CodeByKeegan/splat-studio`.
 
-## Source of truth: Asana — not markdown
+## Source of truth: task tracker — not markdown
 
-**Project planning, design specs, scoping, and task tracking live in Asana — not in markdown
-files.** When designing a feature, scoping work, or recording a plan, write it into the Asana
-board as tasks/subtasks (rich notes).
-
-- Board: **"Splat Studio — splat-transform GUI coverage"** — [internal board]
+**Project planning, design specs, scoping, and task tracking live on the internal coverage
+board (one task per CLI flag) — not in markdown files.** When designing a feature, scoping
+work, or recording a plan, write it there as tasks/subtasks, not into the repo.
 
 User-facing product docs (`README.md`, `docs/USER_GUIDE.md`, `docs/AUTOMATION.md`) remain
-markdown — the rule above is about internal planning/design/spec content.
+markdown — the rule above is about internal planning/design/spec content. External
+contributors: open a GitHub issue to propose or discuss changes.
 
 ## Git & commits
 
