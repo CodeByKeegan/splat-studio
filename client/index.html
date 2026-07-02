@@ -256,11 +256,22 @@
                     <select id="render-input"></select>
                 </label>
                 <div class="group">Render camera</div>
-                <label class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera">
-                    <div class="label-row"><span>Camera (x,y,z)</span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
-                    <input type="text" id="webp-camera" value="2,1,-2" />
-                </label>
-                <label class="field" title="Camera target point (--look-at)"><span>Look at (x,y,z)</span><input type="text" id="webp-lookat" value="0,0,0" /></label>
+                <div class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera; drag the Render camera gizmo in the viewport to adjust">
+                    <div class="label-row"><span>Camera <em>(x, y, z)</em></span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="webp-camera-x" value="2" step="0.1" required title="Camera X" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="webp-camera-y" value="1" step="0.1" required title="Camera Y" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="webp-camera-z" value="-2" step="0.1" required title="Camera Z" /></label>
+                    </div>
+                </div>
+                <div class="field" title="Camera target point (--look-at)">
+                    <div class="label-row"><span>Look at <em>(x, y, z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="webp-lookat-x" value="0" step="0.1" required title="Look-at X" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="webp-lookat-y" value="0" step="0.1" required title="Look-at Y" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="webp-lookat-z" value="0" step="0.1" required title="Look-at Z" /></label>
+                    </div>
+                </div>
                 <div class="field-row">
                     <label class="field half" title="Vertical field of view in degrees (--fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
                     <label class="field half" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
@@ -353,7 +364,7 @@
                 <button id="apply-origin" class="primary" title="Recenter the splat so the marker sits at the origin (-t/--translate), writing a new splat that auto-loads">Set as origin</button>
 
                 <div class="group">Region (crop / carve)</div>
-                <span class="hint">Enable a box or sphere, drag it in the viewport over the part, then apply. Remove deletes the inside (carve); Keep deletes everything outside (crop). Writes a trimmed .ply that auto-loads (the source is untouched). Works on any splat — non-PLY inputs are decompressed to PLY first.</span>
+                <span class="hint">Enable a box or sphere and shape it in the viewport: square handles resize a box face, the round knob sets the sphere radius, arrows move it. Remove deletes the inside (carve); Keep deletes everything outside (crop). Writes a trimmed .ply that auto-loads (the source is untouched). Works on any splat — non-PLY inputs are decompressed to PLY first.</span>
                 <label class="field" title="What 'Apply to region' does: Remove deletes the gaussians inside the box/sphere (carve); Keep deletes everything outside, keeping only the inside (crop)."><span>Mode</span>
                     <select id="region-mode">
                         <option value="remove" selected>Remove inside (carve)</option>
@@ -430,7 +441,7 @@
                         <label class="axis"><span>z</span><input type="number" id="seed-z" value="0" step="0.1" required title="Seed Z (CLI axes)" /></label>
                         <button id="seed-from-camera" title="Set the seed from the current camera position, converted to splat-transform's coordinate space — fly inside the scene first, then click">📷 from camera</button>
                     </div>
-                    <span class="hint">Typed XYZ use CLI axes (rotated 180° from the viewer) — prefer 📷.</span>
+                    <span class="hint">Typed XYZ use CLI axes — prefer 📷, or drag the capsule gizmo: its arrows are these axes (red x, green y, blue z).</span>
                 </div>
 
                 <div class="group">Collision region</div>
@@ -448,7 +459,7 @@
                         <label class="axis"><span>y</span><input type="number" id="region-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
                         <label class="axis"><span>z</span><input type="number" id="region-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
                     </div>
-                    <span class="hint">Or drag it in the viewport: square handles resize a face, arrows move the box.</span>
+                    <span class="hint">Or drag it in the viewport: square handles resize a face, arrows move the box (red x, green y, blue z — same axes as these fields).</span>
                 </div>
                 <label class="check" title="Limit collision to a sphere (-S/--filter-sphere)."><input type="checkbox" id="region-sphere-on" /> Limit to sphere</label>
                 <div class="field hidden" id="region-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the seed).">
@@ -541,6 +552,12 @@
             </section>
             <main id="viewport">
                 <canvas id="gs-canvas"></canvas>
+                <div id="viewport-welcome">
+                    <div class="vw-title">Nothing loaded yet</div>
+                    <div class="vw-line"><strong>Drop a splat file anywhere</strong> — or click <strong>view</strong> next to a file in the Files panel.</div>
+                    <div class="vw-line">Hover any control for what it does and the CLI flag it maps to.</div>
+                    <div class="vw-line">Camera: <strong>WASD</strong> + mouse-look to fly · right-drag pans · scroll zooms.</div>
+                </div>
                 <div id="viewport-toolbar">
                     <select id="camera-mode" class="tb-select" title="Camera control — Fly (mouse-look + WASD, default) or Orbit (drag to rotate). Right-drag pans, scroll zooms in both.">
                         <option value="fly" selected>🎮 Fly</option>

@@ -934,12 +934,20 @@ void api.listGpus().then((gpus) => {
     }
 }).catch(() => { /* device list is best-effort */ });
 
+// per-axis triplet fields <-> the "x,y,z" strings the CLI/API contract uses
+const vecFieldIds = (base: string): string[] => [`${base}-x`, `${base}-y`, `${base}-z`];
+const readVecField = (base: string): string => vecFieldIds(base).map((id) => String(Number($<HTMLInputElement>(id).value) || 0)).join(',');
+const writeVecField = (base: string, csv: string): void => {
+    const parts = csv.split(',');
+    vecFieldIds(base).forEach((id, i) => { $<HTMLInputElement>(id).value = String(Number(parts[i]) || 0); });
+};
+
 // WebP: grab the viewer camera, converted to CLI render space
 $<HTMLButtonElement>('webp-from-viewer').onclick = () => {
     if (!viewer) return showToast('Viewer is still starting up', true);
     const pose = viewer.cameraRenderPose();
-    $<HTMLInputElement>('webp-camera').value = pose.camera;
-    $<HTMLInputElement>('webp-lookat').value = pose.lookAt;
+    writeVecField('webp-camera', pose.camera);
+    writeVecField('webp-lookat', pose.lookAt);
     updateRenderFrustum();
     showToast('Camera set from viewer — adjust if needed');
 };
@@ -953,8 +961,8 @@ const numOrUndef = (id: string): number | undefined => {
     return v === '' ? undefined : Number(v);
 };
 const webpImageOptions = (): api.ImageOptions => ({
-    camera: strOrUndef('webp-camera'),
-    lookAt: strOrUndef('webp-lookat'),
+    camera: readVecField('webp-camera'),
+    lookAt: readVecField('webp-lookat'),
     fov: numOrUndef('webp-fov'),
     resolution: strOrUndef('webp-resolution'),
     background: strOrUndef('webp-background'),
@@ -979,15 +987,15 @@ const updateRenderFrustum = (): void => {
     const aspect = m ? Number(m[1]) / Number(m[2]) : 16 / 9;
     const equirect = $<HTMLSelectElement>('webp-projection').value === 'equirect';
     viewer.setRenderFrustum(
-        $<HTMLInputElement>('webp-camera').value,
-        $<HTMLInputElement>('webp-lookat').value,
+        readVecField('webp-camera'),
+        readVecField('webp-lookat'),
         Number($<HTMLInputElement>('webp-fov').value),
         aspect,
         renderActive() && !equirect
     );
     refreshCameraViewHint(); // show/hide the Camera-view placeholder with the Render tab
 };
-for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', 'webp-projection']) {
+for (const id of [...vecFieldIds('webp-camera'), ...vecFieldIds('webp-lookat'), 'webp-fov', 'webp-resolution', 'webp-projection']) {
     $(id).addEventListener('input', updateRenderFrustum);
     $(id).addEventListener('change', updateRenderFrustum);
 }
@@ -1828,8 +1836,10 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
     { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
     { id: 'voxels', label: 'Voxels', icon: '🧊', gizmo: false, has: () => !!viewer?.hasVoxels },
     // collision region box only while setting up collision (Collision tab + region on)
-    { id: 'collision-region', label: 'Collision region box', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && $<HTMLInputElement>('region-box-on').checked },
-    { id: 'collision-sphere', label: 'Collision region sphere', icon: '◯', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && $<HTMLInputElement>('region-sphere-on').checked },
+    // listed whenever their toggle is on (the box/sphere stays visible on other tabs, so the
+    // selection + gizmo must survive tab switches too)
+    { id: 'collision-region', label: 'Collision region box', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-box-on').checked },
+    { id: 'collision-sphere', label: 'Collision region sphere', icon: '◯', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-sphere-on').checked },
     // capsule only while actively setting up collision carving (Collision tab + carve on)
     { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && carveBox.checked },
     // render camera only when a WebP render is actually being set up
@@ -1838,6 +1848,8 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
 
 function rebuildSceneList(): void {
     if (!viewer) return;
+    // getting-started overlay lives while the viewport is empty
+    $('viewport-welcome').classList.toggle('hidden', viewer.hasSplat || viewer.hasCollision || viewer.hasVoxels);
     const items = SCENE_ITEMS.filter((it) => it.has());
     // if the selected object is no longer listed (e.g. capsule when collision
     // hidden, render camera when leaving WebP), clear the selection + its gizmo
@@ -2325,6 +2337,11 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             for (const el of [...ownerBoxFields(), ...ownerSphFields()]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncCropViz();
         };
+        // crop face/radius handles -> set just the dragged value (blank sides stay unbounded)
+        v.onCropBoxFace = (axis, sign, value) => {
+            ownerBoxFields()[(sign > 0 ? 3 : 0) + axis].value = String(value);
+        };
+        v.onCropSphereRadius = (r) => { ownerSphFields()[3].value = String(r); };
         // region box gizmo -> reflect absolute corners into the fields (live), persist on release
         v.onRegionBoxChange = (min, max) => {
             regMinX.value = String(min.x); regMinY.value = String(min.y); regMinZ.value = String(min.z);
@@ -2355,8 +2372,8 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         // gizmo drive the WebP camera/look-at fields
         v.onSelectionChange = () => rebuildSceneList();
         v.onRenderCameraMove = (cam, look) => {
-            $<HTMLInputElement>('webp-camera').value = `${cam.x},${cam.y},${cam.z}`;
-            $<HTMLInputElement>('webp-lookat').value = `${look.x},${look.y},${look.z}`;
+            writeVecField('webp-camera', `${cam.x},${cam.y},${cam.z}`);
+            writeVecField('webp-lookat', `${look.x},${look.y},${look.z}`);
             updateRenderFrustum();
         };
         v.setCameraMode($<HTMLSelectElement>('camera-mode').value as 'fly' | 'orbit');
@@ -2521,8 +2538,8 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     render_pose: ({ action, camera, lookAt }) => {
         if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');
         if (action === 'set') {
-            if (Array.isArray(camera)) setField('webp-camera', (camera as number[]).join(','));
-            if (Array.isArray(lookAt)) setField('webp-lookat', (lookAt as number[]).join(','));
+            if (Array.isArray(camera)) (camera as number[]).forEach((n, i) => setField(vecFieldIds('webp-camera')[i], n));
+            if (Array.isArray(lookAt)) (lookAt as number[]).forEach((n, i) => setField(vecFieldIds('webp-lookat')[i], n));
             return { ok: true };
         }
         return editorError('bad-input', `unknown render_pose action "${action}"`);
