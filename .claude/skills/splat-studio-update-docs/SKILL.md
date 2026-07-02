@@ -46,8 +46,8 @@ each panel is covered. Spot-check one or two regenerated PNGs actually show the 
 (not a blank frame).
 
 ## 4. Ship
-Commit (author CodeByKeegan, no AI attribution), push, open a PR titled
-`docs: refresh user guide + screenshots`. When run as the tail of a dependency bump,
+Commit (author CodeByKeegan; Claude attribution comes from repo settings — leave it),
+push, open a PR titled `docs: refresh user guide + screenshots`. When run as the tail of a dependency bump,
 fold the doc changes into that same PR instead.
 
 ## Notes

@@ -41,12 +41,13 @@ workspace.
 - [HTTP API](#http-api)
 - [Built with](#built-with)
 - [Contributing](#contributing)
+- [AI-assisted development](#ai-assisted-development)
 - [License](#license)
 - [Support](#support)
 
 ## Features
 
-- **Convert** splats between formats — `.ply`, `.compressed.ply`, `.sog` (bundled
+- **Export** splats between formats — `.ply`, `.compressed.ply`, `.sog` (bundled
   and unbundled), `.spz`, and **streamed LOD SOG** for large scenes — with
   spherical-harmonic compression controls.
 - **Collision** — voxelize a splat and emit a watertight triangle mesh
@@ -130,7 +131,7 @@ Then in the browser:
    a progress bar; job outputs flash blue in the list. Panel headers
    collapse/expand on click (state persists), the Job panel stays pinned to
    the bottom of the sidebar, and all form values survive a reload.
-2. **Convert** — pick an output format. SOG bundling is filename-driven in
+2. **Export** — pick an output format. SOG bundling is filename-driven in
    splat-transform: *SOG (bundled)* writes `name.sog`, *SOG (unbundled)* writes
    `name-sog/meta.json` + WebP textures. SH compression iterations apply to both.
    *Streamed LOD SOG* writes `name-lod/lod-meta.json` plus one unbundled-SOG
@@ -185,9 +186,10 @@ Then in the browser:
   table with histograms, with a **copy** button for the raw Markdown. The card
   survives later jobs (unlike the transient Job log).
 - **`.mjs` generators** — a JavaScript module that procedurally synthesizes a
-  splat is a first-class Convert/Analyze input. Drop one in or click **+ sample
-  generator** (writes [`examples/gen-grid.mjs`](examples/gen-grid.mjs)), then pick
-  it as the Convert input. A generator must `export` a `Generator` class with a
+  splat, run from the **Generate** tab (and usable as an Export/Analyze input).
+  Drop one in or click **+ sample generator** (writes
+  [`examples/gen-grid.mjs`](examples/gen-grid.mjs)), then pick it in the Generate
+  tab. A generator must `export` a `Generator` class with a
   static `create(params)` returning `{ count, columnNames, getRow(index, row) }`;
   column values are raw (log-space scale, logit opacity, SH-DC colour). Local-only.
   - **Generator params** (`-p/--params`): pass `width=16,height=16,scale=4`. If
@@ -201,7 +203,7 @@ Then in the browser:
 
 ## Render to image (WebP) & output options
 
-- **WebP render** — pick *WebP image (render)* as the Convert format to rasterize
+- **WebP render** — use the Render tab to rasterize
   the splat to a lossless `.webp` via the GPU (`--camera`/`--look-at`/`--fov`/
   `--resolution`/`--background`). **📷 from viewer** seeds the camera from the 3D
   view. **Projection** switches pinhole ↔ equirectangular 360° panorama. **Depth
@@ -261,7 +263,7 @@ Both write a new splat and load it straight into the viewer.
   reaped). Override with `SPLAT_JOB_IDLE_TIMEOUT_MS`. A running job can be
   cancelled from the job panel. Uploads are capped at 8 GB and written via temp
   file + rename so aborted uploads leave nothing behind.
-- Convert jobs never overwrite a pre-existing file the app didn't generate —
+- Export jobs never overwrite a pre-existing file the app didn't generate —
   outputs divert to a `-converted` name instead (e.g. converting
   `room.compressed.ply` back to PLY won't clobber your original `room.ply`).
 - The splat renders with the conventional 180° X flip (PLY data is Y-down);
@@ -342,6 +344,14 @@ Contributions are welcome — issues and pull requests both.
 
 Open an [issue](https://github.com/CodeByKeegan/splat-studio/issues) first if you
 want to discuss a larger change.
+
+## AI-assisted development
+
+Splat Studio is developed with [Claude Code](https://claude.com/claude-code).
+Commits and pull requests carry standard `Co-Authored-By` attribution, and PRs
+opened autonomously by the weekly dependency-update routine say so in their
+description. All changes — human- or agent-authored — are reviewed before merge
+and held to the same checks described in [Contributing](#contributing).
 
 ## License
 

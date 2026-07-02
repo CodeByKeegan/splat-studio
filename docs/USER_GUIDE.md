@@ -12,7 +12,8 @@ meshes, and edit splats — all with a live PlayCanvas 3D viewport.
 ## Contents
 - [The interface](#the-interface)
 - [Projects & files](#projects--files)
-- [Convert: output formats & filters](#convert-output-formats--filters)
+- [Export: output formats & filters](#export-output-formats--filters)
+- [Generate: procedural .mjs generators](#generate-procedural-mjs-generators)
   - [Filters](#filters)
 - [LOD: streamed multi-LOD](#lod-streamed-multi-lod)
 - [Render: WebP image](#render-webp-image)
@@ -39,10 +40,11 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
 
 - **Top menu bar** — the app title, the **Window** and **Layout** menus, and the
   project picker.
-- **Dock** — the default layout puts the panel tabs (Files, Convert, LOD, Render,
+- **Dock** — the default layout puts the panel tabs (Files, Export, Generate, LOD, Render,
   Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Job** panel
-  (live `splat-transform` output) below it, and **Scene** / **Settings** on the
-  right. Drag any tab to rearrange; drag a tab out to float it in its own window.
+  (live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
+  to rearrange; drag a tab out to float it in its own window. **Settings** opens as
+  its own dialog (⚙ in the viewport toolbar, or **Window ▸ Settings…**).
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
   its top. The default camera is **fly** (mouse-look + WASD); right-drag pans, scroll
   zooms. Switch to orbit from the toolbar.
@@ -60,7 +62,7 @@ Every control has a tooltip — hover to see what it does and which CLI flag it 
   disk), and the history resets when you switch projects.
 - **Window** — lists every panel with a checkmark for the ones that are open. Click to
   **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Job** tabs
-  can't be closed.)
+  can't be closed.) **Settings…** at the bottom opens the settings dialog.
 - **Layout** — **Reset to default** restores the standard arrangement; **Save layout**
   checkpoints the current one. The layout is **saved per workspace**, so each workspace
   remembers its own arrangement.
@@ -92,8 +94,8 @@ To add splats:
    ![File actions menu](screenshots/files-context-menu.png)
 
    - **View in viewport**
-   - **Convert → SOG bundle** / **Convert (other formats)…** — jumps to the Convert
-     panel with the file selected and the format preset; **Convert → Streamed LOD**
+   - **Export → SOG bundle** / **Export as…** — jumps to the Export
+     panel with the file selected and the format preset; **Export → Streamed LOD**
      jumps to the LOD panel.
    - **Generate / Regenerate collision…** — jumps to the Collision panel (the label
      tells you whether a collision mesh already sits next to the file).
@@ -101,7 +103,7 @@ To add splats:
    - **Edit (scale / origin)…**, **Generate & view** (`.mjs` generators),
      **Copy file path**, and **Delete**.
 4. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
-   project so you can try the generator workflow immediately.
+   project — run it from the [Generate tab](#generate-procedural-mjs-generators).
 
 > **Linked group — edit a proxy, apply to every LOD:** the **Linked group** section at
 > the bottom of the Files panel lets you tick the files that are the same location at
@@ -109,7 +111,7 @@ To add splats:
 > whole ladder so it stays consistent. Two actions:
 >
 > - **Apply transforms to members** — set the **Transform** in the **Edit** panel (plus
->   a splat output format in **Convert**) on your proxy, then click this; every ticked
+>   a splat output format in **Export**) on your proxy, then click this; every ticked
 >   member is converted in turn with the same transform/filter settings.
 > - **Apply region to members** — set a **Region** (carve or crop) in the **Edit** panel
 >   on your proxy, then click this; the same removal or crop is applied to every ticked
@@ -124,13 +126,14 @@ To add splats:
 
 ---
 
-## Convert: output formats & filters
+## Export: output formats & filters
 
-![Convert formats](screenshots/convert-formats.png)
+![Export formats](screenshots/convert-formats.png)
 
-The Convert panel runs one `splat-transform` conversion as a background job. It handles
-**output formats** and **encode-time filters**; spatial edits (transform, crop/carve)
-live in the [Edit panel](#edit-transform-measure--region), streamed multi-LOD bakes in
+The Export panel produces an output file from a splat — one `splat-transform`
+conversion as a background job. It handles **output formats** and **encode-time
+filters**; spatial edits (transform, crop/carve) live in the
+[Edit panel](#edit-transform-measure--region), streamed multi-LOD bakes in
 the [LOD panel](#lod-streamed-multi-lod), and image renders in the
 [Render panel](#render-webp-image).
 
@@ -152,13 +155,25 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
    paired **SH iterations** / **Encoder workers** row — iterations trade quality
    for speed, while Encoder workers (`--max-workers`) only changes encode speed,
    not the output (`0` = serial). Other formats surface SPZ version, HTML viewer
-   options, etc. Then click **Convert**. The exact CLI command and live output appear
+   options, etc. Then click **Export**. The exact CLI command and live output appear
    in the **Job** panel. With **Load result into viewport** checked (default), any
    viewable result loads automatically when the job finishes.
 
-> **Generators:** when the input is a `.mjs` file, a **Generator params** field (and,
-> if the generator advertises a schema, live sliders) appear. **✨ Generate & view**
-> runs the generator and loads the result straight into the viewport.
+## Generate: procedural .mjs generators
+
+The **Generate** tab runs a procedural `.mjs` generator — a script that creates
+gaussians from parameters instead of a scan (creation, not export, which is why it
+has its own tab).
+
+1. **Generator** — pick a `.mjs` file in the project (**+ sample generator** in
+   Files drops one in).
+2. **Params** — a freeform `key=val` field, or **live sliders** if the generator
+   advertises a `params` schema (drag and release to regenerate).
+3. **✨ Generate & view** — writes a `.ply` into the project and loads it straight
+   into the viewport.
+
+To export a generator to another format, pick the `.mjs` as the **Export** input —
+the Generate tab's params apply to that run too.
 
 ### Filters
 
@@ -187,7 +202,7 @@ The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-
 folders that the engine streams by camera distance, for scenes too big to load at once.
 
 1. **Input** — the highest-detail source (LOD 0).
-2. Set the paired **SH iterations** / **Encoder workers** row (as in Convert).
+2. Set the paired **SH iterations** / **Encoder workers** row (as in Export).
 3. **LOD source** — *Decimate input automatically* derives the lighter levels from the
    single input, or *Combine existing files as levels* uses files you already have
    (e.g. exports at different gaussian counts) as explicit levels.
@@ -222,8 +237,9 @@ The Render panel GPU-renders a lossless **WebP image** of the splat through the
 rasterizer.
 
 1. Pick the **Input** splat.
-2. Set **Camera (x,y,z)** and **Look at (x,y,z)** — or click **📷 from viewer** to copy
-   the current viewport camera as a starting point.
+2. Set the per-axis **Camera** and **Look at** fields — or click **📷 from viewer** to copy
+   the current viewport camera as a starting point, then fine-tune by dragging the
+   **Render camera** gizmo (select it in the [Scene panel](#scene-hierarchy)).
 3. Set **FOV°**, **Resolution**, **Projection** (pinhole or equirect 360°), and a
    **Background** color.
 4. Optionally add **Depth of field** (f-stop + focus distance, pinhole only) and
@@ -306,10 +322,14 @@ Trim the splat to (or away from) a box or sphere. A **Mode** dropdown picks what
 - **Remove inside (carve)** — deletes the gaussians *inside* the box/sphere.
 - **Keep inside (crop)** — deletes everything *outside*, keeping only the inside.
 
-Enable **Box region** and/or **Sphere region**, drag the wireframe in the viewport over
-the part (a live readout shows how many gaussians the trim will remove), then **✂ Apply
-to region**. It writes a new trimmed `.ply` that auto-loads; the source is untouched.
-`splat-transform`'s `-B`/`-S` can only *keep* inside, so this runs a local trim.
+Enable **Box region** and/or **Sphere region** and shape it in the viewport: drag a
+**square face handle** to resize one side of the box (the opposite face stays pinned —
+and only that side's field is filled in, so blank/unbounded sides stay unbounded), drag
+the **round knob** on the sphere's edge to set its radius, and drag the **arrows** to
+move the whole shape. A live readout shows how many gaussians the trim will remove;
+then **✂ Apply to region**. It writes a new trimmed `.ply` that auto-loads; the source
+is untouched. `splat-transform`'s `-B`/`-S` can only *keep* inside, so this runs a
+local trim.
 
 It works on **any single-file splat**, not just PLY: non-PLY inputs
 (`.sog`/`.spz`/`.splat`/`.ksplat`/`.lcc`) are decompressed to a temp PLY via the CLI
@@ -339,12 +359,14 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
    [Scene panel](#scene-hierarchy).
 5. **Collision region** *(optional)* — limit generation to part of a large scene.
    Tick **Limit to box** to crop the splat to an axis-aligned box (everything outside
-   is ignored before voxelizing). Select **Collision region** in the
-   [Scene panel](#scene-hierarchy) to get a draggable amber box in the viewport, with a
-   **Move / Resize** toggle: *Move* drags the whole box, *Resize* shows a handle on each
-   face — drag one and the opposite face stays put. The corner fields and the box stay
-   in sync, so you can also type exact extents. **Limit to sphere** crops to a sphere
-   instead. This is the fix when a big scene at a fine voxel size hits the
+   is ignored before voxelizing). An amber box appears in the viewport: drag a **square
+   face handle** to resize (the opposite face stays put) or the **arrows** to move the
+   whole box — no mode switching. The corner fields and the box stay in sync, so you
+   can also type exact extents. **Limit to sphere** crops to a sphere instead — drag
+   the **round knob** on its edge to set the radius, the arrows to move the centre.
+   **Region face shading** tints the region's faces so you can see exactly where it
+   cuts through the splat (0 = wireframe only). This is the fix when a big scene at a
+   fine voxel size hits the
    **marching-cubes vertex limit** (`RangeError: Map maximum size exceeded`): cropping
    shrinks the mesh surface. A risk chip estimates the overflow risk and offers one-click
    **Coarsen voxel** / **Shrink to seed**; **Generate** asks for confirmation when the
@@ -380,17 +402,27 @@ Display controls live in a **toolbar along the top of the Viewer 3D window**:
   quick outlier check). **Flip** — for collision meshes from other tools already in
   viewer/engine space (splat-transform output is aligned automatically).
 - **Frame** — re-fit the camera. **Clear** — unload everything and free GPU memory.
-- **⚙** — opens the **Settings** tab.
+- **⚙** — opens the **Settings** dialog (also under **Window ▸ Settings…**).
 
 Layer visibility (splat / collision / voxels) is toggled per-object with the **👁 eye
 buttons in the [Scene panel](#scene-hierarchy)**.
 
-![Settings panel](screenshots/settings-panel.png)
+![Settings dialog](screenshots/settings-panel.png)
 
-The **Settings** window holds the **wire / voxel colors & opacity** for the overlays.
-Appearance options (theme, font size, language) are placeholders for a future update.
+**Settings** opens as a dialog with sections down the left:
 
-It also has **Agent control (MCP)** — a single toggle that lets a connected AI agent drive the live
+- **Appearance** — the app **theme**. **Dark** and **Light** are built in; **+ New**
+  copies the selected theme into an editable one where every color is configurable
+  live — surfaces, text, the **accent**, the **selection/focus** color, the panel
+  hues and the status colors — each with a color picker + hex field. Custom themes
+  can be renamed, deleted, or reset to their base palette, and everything is
+  remembered between sessions.
+- **Viewport** — the **wire / voxel colors & opacity** for the 3D overlays.
+- **Workspace** — the folder whose subfolders are your projects.
+- **Agent (MCP)** — agent control of the live editor (below).
+- **About** — component versions.
+
+**Agent (MCP)** holds a single toggle that lets a connected AI agent drive the live
 editor through Splat Studio's [MCP server](../README.md#mcp-server-ai-agent-control). It's **off by
 default**, loopback-only, and revocable instantly (and it resets to off when you switch workspaces);
 the headless pipeline tools work regardless. See [docs/MCP_SETUP.md](MCP_SETUP.md) for the full
@@ -453,6 +485,10 @@ hint); closing the tab frees its GPU memory.
 - `splat-transform`'s voxel/collision pipeline uses a different up-axis convention,
   so **typed** seed/translate coordinates are in CLI space (rotated 180° about Y from
   the viewer). Prefer **📷 from camera** / clicking the splat, which convert for you.
+- **Gizmo arrows show the typed axes.** The seed, crop, and collision-region gizmos
+  run in local space, so their arrows point along the same axes as the panel fields:
+  **red = x, green = y, blue = z**. If you're ever unsure which way a typed value
+  moves something, look at the arrows.
 
 ---
 

@@ -16,10 +16,10 @@ const shotsDir = path.join(repoRoot, 'docs', 'screenshots');
 const WORKSPACE = process.env.SPLAT_WORKSPACE || 'C:/Users/user/Documents/ClaudeWorkbench/splats';
 const W = 1500, H = 950;
 
-// project, a splat filename to view, and the output name
+// project, a substring of the splat's file-row text, and the output name
 const SHOTS = [
-    { project: 'Acropolis', match: 'Acropolis_4mil.sog', out: 'readme-acropolis' },
-    { project: 'HOTP', match: 'HOTP_3mil.sog', out: 'readme-hotp' }
+    { project: 'Acropolis', match: 'Acropolis_4mil', out: 'readme-acropolis' },
+    { project: 'HOTP', match: 'HOTP_3mil', out: 'readme-hotp' }
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

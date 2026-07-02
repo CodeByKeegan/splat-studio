@@ -73,11 +73,12 @@ const startServer = async (port) => {
 // highlight: outline + glow over each selector, with optional numbered badges
 const PAGE_HELPERS = `
 window.__doc = {
-  clear() { document.querySelectorAll('.__doc-hl,.__doc-badge,.ctx-menu').forEach(n => n.remove()); document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); },
+  clearHl() { document.querySelectorAll('.__doc-hl,.__doc-badge').forEach(n => n.remove()); },
+  clear() { this.clearHl(); document.querySelectorAll('.ctx-menu').forEach(n => n.remove()); document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); window.__settings && window.__settings.close(); },
   closeMenus() { document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); },
   hl(selectors, opts) {
     opts = opts || {};
-    this.clear();
+    this.clearHl(); // highlights only — must not dismiss the menu/dialog being captured
     const sels = Array.isArray(selectors) ? selectors : [selectors];
     sels.forEach((sel, i) => {
       const el = typeof sel === 'string' ? document.querySelector(sel) : sel;
@@ -113,10 +114,11 @@ window.__doc = {
   // focus a panel's dock tab (replaces the old icon rail). panel = the dock id.
   rail(panel) {
     document.querySelectorAll('.menu-drop').forEach(d => d.classList.add('hidden')); // close any open menu
+    window.__settings && window.__settings.close(); // navigating away dismisses the settings dialog
     const dock = window.__dock;
     if (!dock) return;
     if (!dock.getPanel(panel)) {
-      const w = { 'panel-files':'Files','panel-convert':'Convert','panel-lod':'LOD','panel-render':'Render','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','panel-settings':'Settings','camera-view':'Camera view' }[panel];
+      const w = { 'panel-files':'Files','panel-convert':'Export','panel-generate':'Generate','panel-lod':'LOD','panel-render':'Render','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','camera-view':'Camera view' }[panel];
       try { dock.addPanel({ id: panel, component: panel, title: w || panel }); } catch (e) {}
     }
     const p = dock.getPanel(panel);
@@ -215,7 +217,11 @@ async function run() {
     add('analyze-panel', async () => { await js(`var f=document.getElementById('convert-format'); f.value='sog'; f.dispatchEvent(new Event('change',{bubbles:true})); window.__doc.rail('panel-analyze'); window.__doc.hl('#panel-analyze');`); });
     add('collision-panel', async () => { await js(`window.__doc.rail('panel-collision'); window.__doc.hl('#panel-collision');`); });
     add('viewport-toolbar', async () => { await js(`window.__doc.clear(); window.__doc.rail('panel-files'); window.__doc.hl('#viewport-toolbar',{pad:3});`); });
-    add('settings-panel', async () => { await js(`window.__doc.rail('panel-settings'); window.__doc.hl('#panel-settings');`); });
+    add('settings-panel', async () => {
+        await js(`window.__doc.clear(); window.__settings.open('appearance');`);
+        await sleep(250);
+        await js(`window.__doc.hl('#settings-modal',{pad:5});`);
+    });
 
     // scene hierarchy: keep the Collision tab active + carve on (so the capsule
     // qualifies), webp on (so the render camera lists), then select the capsule
@@ -235,7 +241,7 @@ async function run() {
         await js(`window.__doc.clear();
             var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true}));
             window.__doc.rail('camera-view');
-            (function(){var v=window.__viewer; if(!v||!v.splatEntity)return; var a=v.splatEntity.gsplat.customAabb, wt=v.splatEntity.getWorldTransform(); var C=wt.transformPoint(a.center.clone()), r=a.halfExtents.length(); v.camera.setPosition(C.x+r*1.1,C.y+r*0.6,C.z+r*1.1); v.camera.lookAt(C); var p=v.cameraRenderPose(); document.getElementById('webp-camera').value=p.camera; document.getElementById('webp-lookat').value=p.lookAt; document.getElementById('convert-format').dispatchEvent(new Event('change',{bubbles:true}));})();`);
+            (function(){var v=window.__viewer; if(!v||!v.splatEntity)return; var a=v.splatEntity.gsplat.customAabb, wt=v.splatEntity.getWorldTransform(); var C=wt.transformPoint(a.center.clone()), r=a.halfExtents.length(); v.camera.setPosition(C.x+r*1.1,C.y+r*0.6,C.z+r*1.1); v.camera.lookAt(C); var p=v.cameraRenderPose(); var setV=function(base,csv){var q=csv.split(','); ['x','y','z'].forEach(function(ax,i){document.getElementById(base+'-'+ax).value=String(Number(q[i])||0);});}; setV('webp-camera',p.camera); setV('webp-lookat',p.lookAt); document.getElementById('convert-format').dispatchEvent(new Event('change',{bubbles:true}));})();`);
         await sleep(1200); // let the render-to-texture readback fill the preview
         await js(`var c=document.querySelector('.camera-view-canvas'); window.__doc.hl(c?[c]:['.camera-view-panel'],{});`);
     });

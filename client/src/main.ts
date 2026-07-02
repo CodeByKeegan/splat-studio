@@ -2,10 +2,12 @@ import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
 import { startMcpBridge, editorError } from './mcp-bridge';
+import { applyActiveTheme, initThemeSettings } from './theme';
 import { createDockview, markDockviewPackageLoaded } from 'dockview-core';
 import type { DockviewApi, IContentRenderer, ITabRenderer, TabPartInitParameters } from 'dockview-core';
 import 'dockview-core/dist/styles/dockview.css';
 markDockviewPackageLoaded(); // silence the "internal package" dev notice — we use the core directly on purpose
+applyActiveTheme(); // before any UI paints
 
 const $ = <T extends HTMLElement>(id: string): T => {
     const el = document.getElementById(id);
@@ -15,6 +17,7 @@ const $ = <T extends HTMLElement>(id: string): T => {
 
 const fileList = $<HTMLUListElement>('file-list');
 const convertInput = $<HTMLSelectElement>('convert-input');
+const genInput = $<HTMLSelectElement>('gen-input');
 const lodInput = $<HTMLSelectElement>('lod-input');
 const renderInput = $<HTMLSelectElement>('render-input');
 const collisionInput = $<HTMLSelectElement>('collision-input');
@@ -137,8 +140,9 @@ let currentSplatName: string | null = null;
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
     select.innerHTML = '';
-    if (names.length === 0 || !names.includes(prev)) {
-        // never silently snap to the first file — a wrong input burns GPU minutes
+    // never silently snap to the first of SEVERAL files — a wrong input burns GPU
+    // minutes; a single candidate is unambiguous, so save the click
+    if (names.length !== 1 && (names.length === 0 || !names.includes(prev))) {
         const placeholder = document.createElement('option');
         placeholder.value = '';
         placeholder.disabled = true;
@@ -153,6 +157,7 @@ const fillSelect = (select: HTMLSelectElement, names: string[]) => {
         select.appendChild(opt);
     }
     if (names.includes(prev)) select.value = prev;
+    else if (names.length === 1) select.value = names[0];
 };
 
 const refreshFiles = async (highlight?: Set<string>) => {
@@ -167,6 +172,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
     const convertNames = [...splatFileNames, ...generatorNames];
     fillSelect(convertInput, convertNames);
     fillSelect(analyzeInput, convertNames);
+    fillSelect(genInput, generatorNames);
     for (const select of [lodInput, renderInput, collisionInput, editInput, ...lodRowSelects()]) {
         fillSelect(select, splatFileNames);
     }
@@ -190,6 +196,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
     for (const [select, id, names] of [
         [convertInput, 'convert-input', convertNames],
         [analyzeInput, 'analyze-input', convertNames],
+        [genInput, 'gen-input', generatorNames],
         [lodInput, 'lod-input', splatFileNames],
         [renderInput, 'render-input', splatFileNames],
         [collisionInput, 'collision-input', splatFileNames],
@@ -220,7 +227,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
             collision: 'Collision triangle mesh — view it as a wireframe over the splat',
             glb: 'glTF binary (KHR_gaussian_splatting splat export)',
             export: 'Export artifact (CSV / HTML / image)',
-            generator: 'Procedural splat generator (.mjs) — pick as a Convert input and pass -p params (Beta, local only)',
+            generator: 'Procedural splat generator (.mjs) — run it from the Generate tab with -p params (Beta, local only)',
             other: 'Unrecognized file type'
         };
         const tag = document.createElement('span');
@@ -443,15 +450,15 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
     if (f.viewable) items.push({ label: '👁  View in viewport', hint: 'Load this file into the 3D viewer', run: () => void viewFile(f.name, f.viewable!) });
 
     if (isGenerator) {
-        items.push({ label: '✨  Generate & view', hint: 'Run the .mjs generator and load the result', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); void updateInputRows().then(() => generateViewBtn.click()); } });
+        items.push({ label: '✨  Generate & view', hint: 'Run the .mjs generator and load the result', run: () => { prefillSelect(genInput, f.name); openPanel('panel-generate'); void updateGenRows().then(() => generateViewBtn.click()); } });
     }
     if (isRaw) {
-        items.push({ label: 'Convert → SOG bundle', hint: 'Compress to a single .sog (~95% smaller)', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'sog'); openPanel('panel-convert'); } });
-        items.push({ label: 'Convert → Streamed LOD', hint: 'Streamable multi-LOD SOG for big scenes', run: () => { prefillSelect(lodInput, f.name); openPanel('panel-lod'); } });
+        items.push({ label: 'Export → SOG bundle', hint: 'Compress to a single .sog (~95% smaller)', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'sog'); openPanel('panel-convert'); } });
+        items.push({ label: 'Export → Streamed LOD', hint: 'Streamable multi-LOD SOG for big scenes', run: () => { prefillSelect(lodInput, f.name); openPanel('panel-lod'); } });
         items.push({ label: 'Render → WebP image', hint: 'Render a lossless image via the GPU rasterizer', run: () => { prefillSelect(renderInput, f.name); openPanel('panel-render'); } });
     }
     if (isSplat || isGenerator) {
-        items.push({ label: isRaw ? 'Convert (other formats)…' : 'Convert…', hint: 'Open the Convert panel with this file selected', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); } });
+        items.push({ label: isRaw ? 'Export (other formats)…' : 'Export as…', hint: 'Open the Export panel with this file selected', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); } });
         items.push({ label: 'Analyze stats', hint: 'Run -m/--summary and show the stats card', run: () => { prefillSelect(analyzeInput, f.name); openPanel('panel-analyze'); analyzeRun.click(); } });
     }
     if (isSplat) {
@@ -504,8 +511,10 @@ const uploadFiles = async (files: Iterable<File>) => {
         } else if (lastSplat && lastSplat.endsWith('.mjs')) {
             convertInput.value = lastSplat; // generators aren't collision sources
             analyzeInput.value = lastSplat;
+            genInput.value = lastSplat;
         }
         updateInputRows();
+        void updateGenRows();
     }
 };
 
@@ -543,7 +552,7 @@ window.addEventListener('drop', (e) => {
 // Generator class with static create(params) returning {count, columnNames,
 // getRow}. Values are raw (log scale, logit opacity, SH-DC colour).
 const SAMPLE_GENERATOR = `// Sample procedural splat generator for @playcanvas/splat-transform.
-// Convert it in Splat Studio with params like: width=16,height=16,scale=4
+// Run it from Splat Studio's Generate tab with params like: width=16,height=16,scale=4
 const SH_C0 = 0.28209479177387814;
 const toSH = c => (c - 0.5) / SH_C0;        // colour [0..1] -> f_dc
 const toLogit = a => Math.log(a / (1 - a)); // alpha [0..1] -> opacity
@@ -732,14 +741,14 @@ const addLodRow = () => {
 $<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
 
 const RUN_LABELS: Record<string, string> = {
-    'sog': 'Convert → SOG bundle',
-    'sog-unbundled': 'Convert → SOG folder',
-    'ply': 'Convert → PLY',
-    'compressed-ply': 'Convert → Compressed PLY',
-    'spz': 'Convert → SPZ',
-    'glb': 'Convert → GLB',
-    'csv': 'Convert → CSV',
-    'html': 'Convert → HTML viewer'
+    'sog': 'Export → SOG bundle',
+    'sog-unbundled': 'Export → SOG folder',
+    'ply': 'Export → PLY',
+    'compressed-ply': 'Export → Compressed PLY',
+    'spz': 'Export → SPZ',
+    'glb': 'Export → GLB',
+    'csv': 'Export → CSV',
+    'html': 'Export → HTML viewer'
 };
 
 const updateConvertRows = () => {
@@ -748,7 +757,7 @@ const updateConvertRows = () => {
     $('row-sog-encode').classList.toggle('hidden', !isSog);
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
     $('html-rows').classList.toggle('hidden', f !== 'html');
-    if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Convert';
+    if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Export';
 };
 convertFormat.onchange = updateConvertRows;
 
@@ -885,20 +894,24 @@ const renderGenSliders = (schema: api.GenParam[]) => {
 };
 
 const currentGenParams = (): string => {
-    if (genSchema && genSchemaFor === convertInput.value) {
+    if (genSchema && genSchemaFor === genInput.value) {
         return [...$('gen-sliders').querySelectorAll<HTMLInputElement>('input[type=range]')]
             .map((i) => `${i.dataset.name}=${i.value}`).join(',');
     }
     return $<HTMLInputElement>('convert-params').value.trim();
 };
 
-const updateInputRows = async (): Promise<void> => {
-    const input = convertInput.value;
-    const isMjs = input.toLowerCase().endsWith('.mjs');
-    const lower = input.toLowerCase();
+const updateInputRows = (): void => {
+    const lower = convertInput.value.toLowerCase();
     $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2')));
-    $('row-gen-actions').classList.toggle('hidden', !isMjs);
-    if (!isMjs) {
+};
+convertInput.onchange = updateInputRows;
+
+// Generate panel: schema-driven sliders (or a freeform params field) for the
+// selected .mjs generator
+const updateGenRows = async (): Promise<void> => {
+    const input = genInput.value;
+    if (!input.toLowerCase().endsWith('.mjs')) {
         $('row-gen-params').classList.add('hidden');
         $('row-gen-sliders').classList.add('hidden');
         genSchema = null; genSchemaFor = '';
@@ -913,7 +926,7 @@ const updateInputRows = async (): Promise<void> => {
     $('row-gen-sliders').classList.toggle('hidden', !hasSchema);
     $('row-gen-params').classList.toggle('hidden', hasSchema);
 };
-convertInput.onchange = () => void updateInputRows();
+genInput.onchange = () => void updateGenRows();
 
 // populate the device dropdowns with GPU adapters (-L), then reapply any saved choice
 void api.listGpus().then((gpus) => {
@@ -930,12 +943,20 @@ void api.listGpus().then((gpus) => {
     }
 }).catch(() => { /* device list is best-effort */ });
 
+// per-axis triplet fields <-> the "x,y,z" strings the CLI/API contract uses
+const vecFieldIds = (base: string): string[] => [`${base}-x`, `${base}-y`, `${base}-z`];
+const readVecField = (base: string): string => vecFieldIds(base).map((id) => String(Number($<HTMLInputElement>(id).value) || 0)).join(',');
+const writeVecField = (base: string, csv: string): void => {
+    const parts = csv.split(',');
+    vecFieldIds(base).forEach((id, i) => { $<HTMLInputElement>(id).value = String(Number(parts[i]) || 0); });
+};
+
 // WebP: grab the viewer camera, converted to CLI render space
 $<HTMLButtonElement>('webp-from-viewer').onclick = () => {
     if (!viewer) return showToast('Viewer is still starting up', true);
     const pose = viewer.cameraRenderPose();
-    $<HTMLInputElement>('webp-camera').value = pose.camera;
-    $<HTMLInputElement>('webp-lookat').value = pose.lookAt;
+    writeVecField('webp-camera', pose.camera);
+    writeVecField('webp-lookat', pose.lookAt);
     updateRenderFrustum();
     showToast('Camera set from viewer — adjust if needed');
 };
@@ -949,8 +970,8 @@ const numOrUndef = (id: string): number | undefined => {
     return v === '' ? undefined : Number(v);
 };
 const webpImageOptions = (): api.ImageOptions => ({
-    camera: strOrUndef('webp-camera'),
-    lookAt: strOrUndef('webp-lookat'),
+    camera: readVecField('webp-camera'),
+    lookAt: readVecField('webp-lookat'),
     fov: numOrUndef('webp-fov'),
     resolution: strOrUndef('webp-resolution'),
     background: strOrUndef('webp-background'),
@@ -975,15 +996,15 @@ const updateRenderFrustum = (): void => {
     const aspect = m ? Number(m[1]) / Number(m[2]) : 16 / 9;
     const equirect = $<HTMLSelectElement>('webp-projection').value === 'equirect';
     viewer.setRenderFrustum(
-        $<HTMLInputElement>('webp-camera').value,
-        $<HTMLInputElement>('webp-lookat').value,
+        readVecField('webp-camera'),
+        readVecField('webp-lookat'),
         Number($<HTMLInputElement>('webp-fov').value),
         aspect,
         renderActive() && !equirect
     );
     refreshCameraViewHint(); // show/hide the Camera-view placeholder with the Render tab
 };
-for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', 'webp-projection']) {
+for (const id of [...vecFieldIds('webp-camera'), ...vecFieldIds('webp-lookat'), 'webp-fov', 'webp-resolution', 'webp-projection']) {
     $(id).addEventListener('input', updateRenderFrustum);
     $(id).addEventListener('change', updateRenderFrustum);
 }
@@ -991,8 +1012,8 @@ for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', '
 $('webp-projection').addEventListener('change', () => rebuildSceneList());
 
 const doGenerateView = (): void => {
-    const input = convertInput.value;
-    if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator as the Convert input', true); return; }
+    const input = genInput.value;
+    if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator in the Generate tab', true); return; }
     if (jobBusy) { scheduleGenPreview(); return; } // coalesce while a job runs
     void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn);
 };
@@ -1006,7 +1027,8 @@ generateViewBtn.onclick = doGenerateView;
 restoreFormState();
 updateConvertRows();
 updateLodRows();
-void updateInputRows();
+updateInputRows();
+void updateGenRows();
 
 // reveal each optional filter's inputs only when its checkbox is on
 const ACTION_TOGGLES: [string, string][] = [
@@ -1121,19 +1143,28 @@ carveRemoveBtn.onclick = () => {
     void runJob(() => api.startTrim({ input, options: { mode, ...region } }), carveRemoveBtn);
 };
 
-// ---------- collision region box (viewport <-> Collision-panel fields) ----------
+// ---------- collision region box + sphere (viewport <-> Collision-panel fields) ----------
 const regMinX = $<HTMLInputElement>('region-min-x'), regMinY = $<HTMLInputElement>('region-min-y'), regMinZ = $<HTMLInputElement>('region-min-z');
 const regMaxX = $<HTMLInputElement>('region-max-x'), regMaxY = $<HTMLInputElement>('region-max-y'), regMaxZ = $<HTMLInputElement>('region-max-z');
+const regSphX = $<HTMLInputElement>('region-sphere-x'), regSphY = $<HTMLInputElement>('region-sphere-y'), regSphZ = $<HTMLInputElement>('region-sphere-z'), regSphR = $<HTMLInputElement>('region-sphere-r');
 const regionBoxOn = () => $<HTMLInputElement>('region-box-on').checked;
+const regionSphereOn = () => $<HTMLInputElement>('region-sphere-on').checked;
+const regionShadeEl = $<HTMLInputElement>('region-shade');
 
 const syncRegionViz = () => {
+    $('region-shade-row').classList.toggle('hidden', !regionBoxOn() && !regionSphereOn());
     if (!viewer) return;
     viewer.setCollisionRegion(
         [numOrNull(regMinX), numOrNull(regMinY), numOrNull(regMinZ)],
         [numOrNull(regMaxX), numOrNull(regMaxY), numOrNull(regMaxZ)],
         regionBoxOn()
     );
-    rebuildSceneList(); // the 'Collision region' item appears/disappears with the toggle
+    viewer.setCollisionSphere(
+        [Number(regSphX.value), Number(regSphY.value), Number(regSphZ.value)],
+        Number(regSphR.value),
+        regionSphereOn()
+    );
+    rebuildSceneList(); // the region items appear/disappear with their toggles
 };
 
 // first time it's switched on, fill the box with the whole-scene bounds so the user shrinks inward
@@ -1146,13 +1177,33 @@ const seedRegionDefaults = () => {
     regMaxX.value = String(b.max[0]); regMaxY.value = String(b.max[1]); regMaxZ.value = String(b.max[2]);
 };
 
-for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.addEventListener('input', syncRegionViz);
+// first time on, centre the sphere in the scene at half its widest extent
+const seedSphereDefaults = () => {
+    const untouched = Number(regSphX.value) === 0 && Number(regSphY.value) === 0 && Number(regSphZ.value) === 0 && Number(regSphR.value) === 1;
+    if (!untouched) return;
+    const b = viewer?.regionDefaultBounds();
+    if (!b) return;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    regSphX.value = String(r2((b.min[0] + b.max[0]) / 2));
+    regSphY.value = String(r2((b.min[1] + b.max[1]) / 2));
+    regSphZ.value = String(r2((b.min[2] + b.max[2]) / 2));
+    regSphR.value = String(r2(Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2], 1) / 2));
+};
+
+for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR]) el.addEventListener('input', syncRegionViz);
 $('region-box-on').addEventListener('change', () => {
     if (regionBoxOn()) seedRegionDefaults();
     syncRegionViz();
-    if (regionBoxOn()) viewer?.selectObject('collision-region'); // raise the gizmo immediately
+    if (regionBoxOn()) viewer?.selectObject('collision-region'); // raise the gizmo + handles immediately
     updateRegionEstimate();
 });
+$('region-sphere-on').addEventListener('change', () => {
+    if (regionSphereOn()) seedSphereDefaults();
+    syncRegionViz();
+    if (regionSphereOn()) viewer?.selectObject('collision-sphere');
+    updateRegionEstimate();
+});
+regionShadeEl.addEventListener('input', () => viewer?.setRegionFaceOpacity(Number(regionShadeEl.value)));
 
 // ---------- overflow estimate (advisory) ----------
 // splat-transform's marching-cubes vertex dedup Map overflows V8's hard cap.
@@ -1164,7 +1215,7 @@ const fmtCount = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3
 const regionVoxelSize = () => Math.max(Number($<HTMLInputElement>('voxel-size').value) || 0.05, 0.001);
 const updateRegionEstimate = () => {
     const chip = $('region-estimate'), actions = $('region-estimate-actions');
-    if (!viewer || !viewer.hasSplat || !regionBoxOn()) { regionRiskLevel = 'ok'; chip.classList.add('hidden'); actions.classList.add('hidden'); return; }
+    if (!viewer || !viewer.hasSplat || (!regionBoxOn() && !regionSphereOn())) { regionRiskLevel = 'ok'; chip.classList.add('hidden'); actions.classList.add('hidden'); return; }
     const inBox = viewer.regionGaussianCount();
     const vs = regionVoxelSize();
     const load = inBox * Math.pow(0.05 / vs, 2);
@@ -1181,7 +1232,7 @@ const updateRegionEstimate = () => {
 };
 let regionEstTimer = 0;
 const updateRegionEstimateDebounced = () => { clearTimeout(regionEstTimer); regionEstTimer = window.setTimeout(updateRegionEstimate, 200); };
-for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.addEventListener('input', updateRegionEstimateDebounced);
+for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR]) el.addEventListener('input', updateRegionEstimateDebounced);
 $('voxel-size').addEventListener('input', updateRegionEstimateDebounced);
 
 $('region-coarsen').onclick = () => {
@@ -1368,7 +1419,7 @@ groupApplyBtn.onclick = async () => {
     if (!panelValid('panel-convert')) return;
     const format = convertFormat.value;
     if (format === 'csv') {
-        return showToast('Pick a splat output format in the Convert panel (PLY / SOG / …) — CSV doesn’t carry these per-gaussian edits', true);
+        return showToast('Pick a splat output format in the Export panel (PLY / SOG / …) — CSV doesn’t carry these per-gaussian edits', true);
     }
     groupWarn.classList.add('hidden');
     groupApplyBtn.disabled = true;
@@ -1681,7 +1732,7 @@ collisionRun.onclick = () => {
     const input = collisionInput.value;
     if (!input) return showToast('Pick an input file first', true);
     if (!panelValid('panel-collision')) return;
-    if (regionBoxOn() && regionRiskLevel === 'danger' &&
+    if ((regionBoxOn() || regionSphereOn()) && regionRiskLevel === 'danger' &&
         !confirm('This region may exceed splat-transform\'s marching-cubes vertex limit (RangeError: Map maximum size exceeded). Shrink the region or raise the voxel size to be safe. Generate anyway?')) return;
     void runJob(() => api.startCollision({
         input,
@@ -1777,11 +1828,6 @@ const camRotateBtn = $<HTMLButtonElement>('cam-rotate');
 camMoveBtn.onclick = () => { viewer?.setCameraGizmoMode('move'); camMoveBtn.classList.add('active'); camRotateBtn.classList.remove('active'); };
 camRotateBtn.onclick = () => { viewer?.setCameraGizmoMode('rotate'); camRotateBtn.classList.add('active'); camMoveBtn.classList.remove('active'); };
 
-const regionMoveBtn = $<HTMLButtonElement>('region-move');
-const regionResizeBtn = $<HTMLButtonElement>('region-resize');
-regionMoveBtn.onclick = () => { viewer?.setRegionGizmoMode('move'); regionMoveBtn.classList.add('active'); regionResizeBtn.classList.remove('active'); };
-regionResizeBtn.onclick = () => { viewer?.setRegionGizmoMode('resize'); regionResizeBtn.classList.add('active'); regionMoveBtn.classList.remove('active'); };
-
 // the Collision panel is "selected" when its tab is the shown one in its group
 // (isVisible is always true under 'always', and isActive is the single globally
 // focused panel — so compare the group's active tab)
@@ -1800,7 +1846,10 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
     { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
     { id: 'voxels', label: 'Voxels', icon: '🧊', gizmo: false, has: () => !!viewer?.hasVoxels },
     // collision region box only while setting up collision (Collision tab + region on)
-    { id: 'collision-region', label: 'Collision region', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && $<HTMLInputElement>('region-box-on').checked },
+    // listed whenever their toggle is on (the box/sphere stays visible on other tabs, so the
+    // selection + gizmo must survive tab switches too)
+    { id: 'collision-region', label: 'Collision region box', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-box-on').checked },
+    { id: 'collision-sphere', label: 'Collision region sphere', icon: '◯', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-sphere-on').checked },
     // capsule only while actively setting up collision carving (Collision tab + carve on)
     { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && carveBox.checked },
     // render camera only when a WebP render is actually being set up
@@ -1809,6 +1858,8 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
 
 function rebuildSceneList(): void {
     if (!viewer) return;
+    // getting-started overlay lives while the viewport is empty
+    $('viewport-welcome').classList.toggle('hidden', viewer.hasSplat || viewer.hasCollision || viewer.hasVoxels);
     const items = SCENE_ITEMS.filter((it) => it.has());
     // if the selected object is no longer listed (e.g. capsule when collision
     // hidden, render camera when leaving WebP), clear the selection + its gizmo
@@ -1839,7 +1890,6 @@ function rebuildSceneList(): void {
         sceneList.appendChild(li);
     }
     $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
-    $('region-gizmo-mode').classList.toggle('hidden', sel !== 'collision-region');
 }
 
 function selectScene(id: SelId): void {
@@ -1872,14 +1922,14 @@ $<HTMLButtonElement>('skybox-clear').onclick = () => { viewer?.clearSkybox(); sh
 type Win = { id: string; component: string; title: string; closable: boolean };
 const WINDOWS: Win[] = [
     { id: 'panel-files', component: 'panel-files', title: 'Files', closable: true },
-    { id: 'panel-convert', component: 'panel-convert', title: 'Convert', closable: true },
+    { id: 'panel-convert', component: 'panel-convert', title: 'Export', closable: true },
+    { id: 'panel-generate', component: 'panel-generate', title: 'Generate', closable: true },
     { id: 'panel-lod', component: 'panel-lod', title: 'LOD', closable: true },
     { id: 'panel-render', component: 'panel-render', title: 'Render', closable: true },
     { id: 'panel-analyze', component: 'panel-analyze', title: 'Analyze', closable: true },
     { id: 'panel-edit', component: 'panel-edit', title: 'Edit', closable: true },
     { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
     { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
-    { id: 'panel-settings', component: 'panel-settings', title: 'Settings', closable: true },
     { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
     { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
     { id: 'panel-job', component: 'panel-job', title: 'Job', closable: false }
@@ -1963,17 +2013,22 @@ function applyDefaultLayout(): void {
     dock.clear();
     dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
     dock.addPanel({ id: 'panel-files', component: 'panel-files', title: 'Files', position: { referencePanel: 'viewer', direction: 'left' } });
-    for (const id of ['panel-convert', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
+    for (const id of ['panel-convert', 'panel-generate', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-settings', component: 'panel-settings', title: titleOf('panel-settings'), position: { referencePanel: 'panel-scene', direction: 'within' } });
     dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Job', position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
     dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });
     dock.getPanel('panel-job')?.group.api.setSize({ height: 180 });
     dock.getPanel('panel-files')?.api.setActive();
+}
+
+// a restored layout carries the tab titles it was saved with — re-apply the
+// current names so renamed windows don't show stale titles
+function reconcilePanelTitles(): void {
+    for (const p of dock.panels) p.api.setTitle(titleOf(p.id));
 }
 
 // open (or focus) a window; close removes its tab (the node returns to the pool)
@@ -1996,7 +2051,7 @@ dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); }
 (window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
 
 // ---------- top menu bar (Window / Layout) ----------
-const LAYOUT_VERSION = 1;
+const LAYOUT_VERSION = 2; // v1 layouts had a Settings dock panel (now a dialog)
 let saveTimer: number | undefined;
 const persistNow = (): void => { void api.saveLayout({ __v: LAYOUT_VERSION, dockview: dock.toJSON() as unknown as Record<string, unknown> }); };
 
@@ -2141,11 +2196,14 @@ function buildMenuBar(): void {
             { label: 'Undo  (Ctrl+Z)', disabled: !canUndo(), onClick: doUndo },
             { label: 'Redo  (Ctrl+Y)', disabled: !canRedo(), onClick: doRedo }
         ]),
-        makeMenu('Window', () => WINDOWS.map((w) => ({
-            label: w.title,
-            checked: !!dock.getPanel(w.id),
-            onClick: () => { if (dock.getPanel(w.id)) { if (w.closable) closeWindow(w); else openWindow(w); } else openWindow(w); }
-        }))),
+        makeMenu('Window', () => [
+            ...WINDOWS.map((w) => ({
+                label: w.title,
+                checked: !!dock.getPanel(w.id),
+                onClick: () => { if (dock.getPanel(w.id)) { if (w.closable) closeWindow(w); else openWindow(w); } else openWindow(w); }
+            })),
+            { label: 'Settings…', checked: settingsOpen(), onClick: () => { if (settingsOpen()) closeSettings(); else openSettings(); } }
+        ]),
         makeMenu('Layout', () => [
             { label: 'Reset to default', onClick: () => { applyDefaultLayout(); persistNow(); } },
             { label: 'Save layout', onClick: persistNow }
@@ -2154,8 +2212,34 @@ function buildMenuBar(): void {
 }
 buildMenuBar();
 
-// the viewport toolbar's ⚙ opens (or focuses) the Settings tab
-$<HTMLButtonElement>('open-settings').onclick = () => { const w = winById('panel-settings'); if (w) openWindow(w); };
+// ---------- settings dialog ----------
+const settingsBackdrop = $<HTMLDivElement>('settings-backdrop');
+function settingsOpen(): boolean { return !settingsBackdrop.classList.contains('hidden'); }
+function showSettingsPage(page: string): void {
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-nav .settings-nav-item')) {
+        b.classList.toggle('active', b.dataset.page === page);
+    }
+    for (const p of document.querySelectorAll<HTMLElement>('.settings-page')) {
+        p.classList.toggle('hidden', p.dataset.page !== page);
+    }
+}
+function openSettings(page?: string): void {
+    settingsBackdrop.classList.remove('hidden');
+    if (page) showSettingsPage(page);
+}
+function closeSettings(): void { settingsBackdrop.classList.add('hidden'); }
+for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-nav .settings-nav-item')) {
+    b.onclick = () => showSettingsPage(b.dataset.page ?? 'appearance');
+}
+$<HTMLButtonElement>('settings-close').onclick = closeSettings;
+settingsBackdrop.addEventListener('pointerdown', (e) => { if (e.target === settingsBackdrop) closeSettings(); });
+// promptText's capture-phase Escape handler wins while a prompt is up
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settingsOpen()) closeSettings(); });
+initThemeSettings({ promptText, showToast });
+(window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // debug handle
+
+// the viewport toolbar's ⚙ opens the settings dialog
+$<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 
 // ---------- per-workspace layout persistence ----------
 async function bootLayout(): Promise<void> {
@@ -2163,7 +2247,7 @@ async function bootLayout(): Promise<void> {
     try { saved = await api.getLayout(); } catch { /* offline / first run → keep default */ }
     const s = saved as { __v?: number; dockview?: unknown } | null;
     if (s && s.__v === LAYOUT_VERSION && s.dockview) {
-        try { dock.fromJSON(s.dockview as Parameters<DockviewApi['fromJSON']>[0]); }
+        try { dock.fromJSON(s.dockview as Parameters<DockviewApi['fromJSON']>[0]); reconcilePanelTitles(); }
         catch { applyDefaultLayout(); }
     }
     dock.onDidLayoutChange(() => { clearTimeout(saveTimer); saveTimer = window.setTimeout(persistNow, 400); });
@@ -2270,6 +2354,11 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             for (const el of [...ownerBoxFields(), ...ownerSphFields()]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncCropViz();
         };
+        // crop face/radius handles -> set just the dragged value (blank sides stay unbounded)
+        v.onCropBoxFace = (axis, sign, value) => {
+            ownerBoxFields()[(sign > 0 ? 3 : 0) + axis].value = String(value);
+        };
+        v.onCropSphereRadius = (r) => { ownerSphFields()[3].value = String(r); };
         // region box gizmo -> reflect absolute corners into the fields (live), persist on release
         v.onRegionBoxChange = (min, max) => {
             regMinX.value = String(min.x); regMinY.value = String(min.y); regMinZ.value = String(min.z);
@@ -2280,6 +2369,17 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             syncRegionViz();
             updateRegionEstimate();
         };
+        // region sphere gizmo/knob -> reflect centre + radius into the fields (live), persist on release
+        v.onRegionSphereChange = (c, r) => {
+            regSphX.value = String(c.x); regSphY.value = String(c.y); regSphZ.value = String(c.z);
+            regSphR.value = String(r);
+        };
+        v.onRegionSphereEnd = () => {
+            for (const el of [regSphX, regSphY, regSphZ, regSphR]) el.dispatchEvent(new Event('change', { bubbles: true }));
+            syncRegionViz();
+            updateRegionEstimate();
+        };
+        v.setRegionFaceOpacity(Number(regionShadeEl.value));
         v.setBoundsVisible($<HTMLInputElement>('show-bounds').checked);
         // live measure readout + active-marker highlight as points are clicked in
         v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
@@ -2289,8 +2389,8 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         // gizmo drive the WebP camera/look-at fields
         v.onSelectionChange = () => rebuildSceneList();
         v.onRenderCameraMove = (cam, look) => {
-            $<HTMLInputElement>('webp-camera').value = `${cam.x},${cam.y},${cam.z}`;
-            $<HTMLInputElement>('webp-lookat').value = `${look.x},${look.y},${look.z}`;
+            writeVecField('webp-camera', `${cam.x},${cam.y},${cam.z}`);
+            writeVecField('webp-lookat', `${look.x},${look.y},${look.z}`);
             updateRenderFrustum();
         };
         v.setCameraMode($<HTMLSelectElement>('camera-mode').value as 'fly' | 'orbit');
@@ -2331,6 +2431,8 @@ const need = <T>(v: T | null | undefined, msg: string): T => { if (v == null) ed
 
 const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     panel: ({ action, id }) => {
+        // settings is a dialog now, but keeps its old panel id for MCP clients
+        if (id === 'panel-settings') { if (action === 'close') closeSettings(); else openSettings(); return { id, action }; }
         const w = winById(String(id));
         if (!w) return editorError('not-found', `no panel "${id}"`);
         if (action === 'close') { if (w.closable) closeWindow(w); else editorError('bad-input', `panel "${id}" can't be closed`); }
@@ -2341,7 +2443,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         if (action === 'get') return { layout: dock.toJSON() };
         if (action === 'reset') { applyDefaultLayout(); persistNow(); return { ok: true }; }
         if (action === 'set') {
-            try { dock.fromJSON(layout as Parameters<DockviewApi['fromJSON']>[0]); persistNow(); }
+            try { dock.fromJSON(layout as Parameters<DockviewApi['fromJSON']>[0]); reconcilePanelTitles(); persistNow(); }
             catch (e) { return editorError('bad-input', `invalid layout: ${(e as Error).message}`); }
             return { ok: true };
         }
@@ -2385,6 +2487,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     select_item: ({ id }) => { selectScene((id == null ? 'none' : String(id)) as SelId); return { selection: viewer?.selection ?? 'none' }; },
     get_editor_state: () => {
         const activePanels = WINDOWS.map((w) => w.id).filter((id) => { const p = dock.getPanel(id); return !!p && p.group.activePanel?.id === id; });
+        if (settingsOpen()) activePanels.push('panel-settings');
         return {
             project: projectSelect.value || null,
             loadedSplat: currentSplatName,
@@ -2431,8 +2534,12 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         if (target === 'collision_region') {
             setCheck('region-box-on', enabled == null ? true : !!enabled);
             if (Array.isArray(box)) setBoxFields('region', box as Array<number | string>);
-            if (gizmoMode === 'move' || gizmoMode === 'resize') document.getElementById(gizmoMode === 'resize' ? 'region-resize' : 'region-move')?.click();
-            return { region: 'collision_region' };
+            return { region: 'collision_region', note: gizmoMode ? 'gizmoMode ignored — move + resize handles are always active' : undefined };
+        }
+        if (target === 'collision_sphere') {
+            setCheck('region-sphere-on', enabled == null ? true : !!enabled);
+            if (Array.isArray(sphere)) { const s = sphere as number[]; setField('region-sphere-x', s[0]); setField('region-sphere-y', s[1]); setField('region-sphere-z', s[2]); setField('region-sphere-r', s[3]); }
+            return { region: 'collision_sphere' };
         }
         return editorError('bad-input', `unknown region target "${target}"`);
     },
@@ -2470,8 +2577,8 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     render_pose: ({ action, camera, lookAt }) => {
         if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');
         if (action === 'set') {
-            if (Array.isArray(camera)) setField('webp-camera', (camera as number[]).join(','));
-            if (Array.isArray(lookAt)) setField('webp-lookat', (lookAt as number[]).join(','));
+            if (Array.isArray(camera)) (camera as number[]).forEach((n, i) => setField(vecFieldIds('webp-camera')[i], n));
+            if (Array.isArray(lookAt)) (lookAt as number[]).forEach((n, i) => setField(vecFieldIds('webp-lookat')[i], n));
             return { ok: true };
         }
         return editorError('bad-input', `unknown render_pose action "${action}"`);

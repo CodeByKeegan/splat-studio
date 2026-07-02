@@ -138,14 +138,14 @@ export function register(server) {
     server.registerTool('set_region', {
         title: 'Set region',
         description:
-            'Set a viewport region gizmo. target="crop_box"/"crop_sphere" drive the Edit-panel crop/carve region; target="collision_region" drives the Collision-panel region. All three are the SPLAT frame (viewer [x,y,z] -> [x,-y,-z]) — the same numbers convert/trim_region/generate_collision take. gizmoMode switches move/resize on the collision region.',
+            'Set a viewport region gizmo. target="crop_box"/"crop_sphere" drive the Edit-panel crop/carve region; target="collision_region"/"collision_sphere" drive the Collision-panel region filters. All four are the SPLAT frame (viewer [x,y,z] -> [x,-y,-z]) — the same numbers convert/trim_region/generate_collision take.',
         annotations: SAFE,
         inputSchema: {
-            target: z.enum(['crop_box', 'crop_sphere', 'collision_region']),
+            target: z.enum(['crop_box', 'crop_sphere', 'collision_region', 'collision_sphere']),
             box: boxArr.optional().describe('[minX,minY,minZ,maxX,maxY,maxZ]; "" or "-" = unbounded side.'),
             sphere: sphereArr.optional().describe('[x,y,z,radius].'),
             enabled: z.boolean().optional().describe('show/hide the region.'),
-            gizmoMode: z.enum(['move', 'resize']).optional().describe('collision_region only.')
+            gizmoMode: z.enum(['move', 'resize']).optional().describe('deprecated — accepted and ignored (move + resize handles are always active).')
         }
     }, editor(async (args) => await callEditor('set_region', args)));
 
@@ -186,7 +186,7 @@ export function register(server) {
     // ---- dock ----
     server.registerTool('panel', {
         title: 'Panel',
-        description: 'Open or close a dock panel by id: panel-files, panel-convert, panel-lod, panel-render, panel-analyze, panel-edit, panel-collision, panel-scene, panel-settings (the MCP consent toggle lives there), panel-job.',
+        description: 'Open or close a dock panel by id: panel-files, panel-convert (titled "Export"), panel-generate, panel-lod, panel-render, panel-analyze, panel-edit, panel-collision, panel-scene, camera-view, panel-job, or panel-settings (opens the Settings dialog — the MCP consent toggle lives there).',
         annotations: SAFE,
         inputSchema: {
             action: z.enum(['open', 'close']),

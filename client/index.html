@@ -32,37 +32,46 @@
                         accept=".ply,.sog,.spz,.splat,.ksplat,.lcc,.lcc2,.json,.mjs" hidden />
                     <span class="hint">.ply · .compressed.ply · .sog · .spz · .splat · .ksplat · .lcc · .lcc2 · meta.json · .mjs generator</span>
                     <button type="button" class="link" id="add-sample-generator"
-                        title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then pick it as a Convert input and pass params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
+                        title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then run it from the Generate tab with params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
                 </div>
                 <ul id="file-list" class="file-list"></ul>
 
                 <div id="group-actions" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
                     <div class="group">Linked group <em>— apply edits to several files at once</em></div>
-                    <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Convert) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
+                    <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Export) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
                     <div id="group-members" class="group-members"></div>
                     <div class="hint hidden" id="group-warn"></div>
-                    <button id="group-apply" title="Run the current Convert Transform / Filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
+                    <button id="group-apply" title="Run the current Edit Transform + Export filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
                     <button id="group-apply-region" title="Run the Edit panel's Region (carve / crop) on every ticked member, writing a trimmed .ply of each — so a removal or crop on the proxy affects all its LODs (sequential jobs). Enable a Box or Sphere region in Edit first.">Apply region to members</button>
                 </div>
             </section>
 
-            <section class="panel" id="panel-convert">
-                <h2 title="Convert between gaussian splat formats using splat-transform">Convert</h2>
-                <label class="field" title="Source file — anything splat-transform can read, including formats the viewer can't display (.spz, .splat, .ksplat, .lcc, .lcc2) and .mjs generators">
-                    <span>Input</span>
-                    <select id="convert-input"></select>
+            <section class="panel" id="panel-generate">
+                <h2 title="Run a procedural .mjs generator and preview the result">Generate</h2>
+                <label class="field" title="A .mjs generator in this project — a script that procedurally creates gaussians. Add one with '+ sample generator' in Files, or drop your own">
+                    <span>Generator</span>
+                    <select id="gen-input"></select>
                 </label>
                 <label class="field hidden" id="row-gen-params" title="Parameters passed to the .mjs generator (-p/--params), comma-separated key=val — e.g. width=16,height=16,scale=4. Values are strings; the generator coerces types">
-                    <span>Generator params <em>(.mjs input only)</em></span>
+                    <span>Params</span>
                     <input type="text" id="convert-params" placeholder="width=16,height=16,scale=4" />
                 </label>
                 <div class="field hidden" id="row-gen-sliders" title="Live generator parameters (-p/--params). The generator advertises these via a static `params` schema; drag a slider and release to regenerate and preview">
-                    <span>Generator params <em>(live)</em></span>
+                    <span>Params <em>(live)</em></span>
                     <div id="gen-sliders"></div>
                 </div>
-                <div class="field-row hidden" id="row-gen-actions">
+                <div class="field-row" id="row-gen-actions">
                     <button id="generate-view" title="Run the .mjs generator with the params above and load the result straight into the 3D viewer (one click — no convert-then-find-the-file)">✨ Generate &amp; view</button>
                 </div>
+                <span class="hint">Writes a .ply into the project and loads it in the viewer. To export a generator to another format, pick it as the Export input — these params apply.</span>
+            </section>
+
+            <section class="panel" id="panel-convert">
+                <h2 title="Export a splat to another format using splat-transform">Export</h2>
+                <label class="field" title="Source file — anything splat-transform can read, including formats the viewer can't display (.spz, .splat, .ksplat, .lcc, .lcc2) and .mjs generators (their Generate-tab params apply)">
+                    <span>Input</span>
+                    <select id="convert-input"></select>
+                </label>
                 <label class="field hidden" id="row-lod-select" title="LCC / LCC2 input: comma-separated LOD levels to read (-O/--lod-select), e.g. 0,1,2. Empty reads all">
                     <span>LCC LOD levels <em>(.lcc / .lcc2 input only)</em></span>
                     <input type="text" id="convert-lod-select" placeholder="e.g. 0,1,2 — empty = all" />
@@ -186,7 +195,7 @@
                     <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --mem)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
-                <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>
+                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Job panel">Export</button>
             </section>
 
             <section class="panel" id="panel-lod">
@@ -256,11 +265,22 @@
                     <select id="render-input"></select>
                 </label>
                 <div class="group">Render camera</div>
-                <label class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera">
-                    <div class="label-row"><span>Camera (x,y,z)</span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
-                    <input type="text" id="webp-camera" value="2,1,-2" />
-                </label>
-                <label class="field" title="Camera target point (--look-at)"><span>Look at (x,y,z)</span><input type="text" id="webp-lookat" value="0,0,0" /></label>
+                <div class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera; drag the Render camera gizmo in the viewport to adjust">
+                    <div class="label-row"><span>Camera <em>(x, y, z)</em></span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="webp-camera-x" value="2" step="0.1" required title="Camera X" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="webp-camera-y" value="1" step="0.1" required title="Camera Y" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="webp-camera-z" value="-2" step="0.1" required title="Camera Z" /></label>
+                    </div>
+                </div>
+                <div class="field" title="Camera target point (--look-at)">
+                    <div class="label-row"><span>Look at <em>(x, y, z)</em></span></div>
+                    <div class="field-row">
+                        <label class="axis"><span>x</span><input type="number" id="webp-lookat-x" value="0" step="0.1" required title="Look-at X" /></label>
+                        <label class="axis"><span>y</span><input type="number" id="webp-lookat-y" value="0" step="0.1" required title="Look-at Y" /></label>
+                        <label class="axis"><span>z</span><input type="number" id="webp-lookat-z" value="0" step="0.1" required title="Look-at Z" /></label>
+                    </div>
+                </div>
                 <div class="field-row">
                     <label class="field half" title="Vertical field of view in degrees (--fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
                     <label class="field half" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
@@ -353,7 +373,7 @@
                 <button id="apply-origin" class="primary" title="Recenter the splat so the marker sits at the origin (-t/--translate), writing a new splat that auto-loads">Set as origin</button>
 
                 <div class="group">Region (crop / carve)</div>
-                <span class="hint">Enable a box or sphere, drag it in the viewport over the part, then apply. Remove deletes the inside (carve); Keep deletes everything outside (crop). Writes a trimmed .ply that auto-loads (the source is untouched). Works on any splat — non-PLY inputs are decompressed to PLY first.</span>
+                <span class="hint">Enable a box or sphere and shape it in the viewport: square handles resize a box face, the round knob sets the sphere radius, arrows move it. Remove deletes the inside (carve); Keep deletes everything outside (crop). Writes a trimmed .ply that auto-loads (the source is untouched). Works on any splat — non-PLY inputs are decompressed to PLY first.</span>
                 <label class="field" title="What 'Apply to region' does: Remove deletes the gaussians inside the box/sphere (carve); Keep deletes everything outside, keeping only the inside (crop)."><span>Mode</span>
                     <select id="region-mode">
                         <option value="remove" selected>Remove inside (carve)</option>
@@ -430,7 +450,7 @@
                         <label class="axis"><span>z</span><input type="number" id="seed-z" value="0" step="0.1" required title="Seed Z (CLI axes)" /></label>
                         <button id="seed-from-camera" title="Set the seed from the current camera position, converted to splat-transform's coordinate space — fly inside the scene first, then click">📷 from camera</button>
                     </div>
-                    <span class="hint">Typed XYZ use CLI axes (rotated 180° from the viewer) — prefer 📷.</span>
+                    <span class="hint">Typed XYZ use CLI axes — prefer 📷, or drag the capsule gizmo: its arrows are these axes (red x, green y, blue z).</span>
                 </div>
 
                 <div class="group">Collision region</div>
@@ -448,6 +468,7 @@
                         <label class="axis"><span>y</span><input type="number" id="region-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
                         <label class="axis"><span>z</span><input type="number" id="region-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
                     </div>
+                    <span class="hint">Or drag it in the viewport: square handles resize a face, arrows move the box (red x, green y, blue z — same axes as these fields).</span>
                 </div>
                 <label class="check" title="Limit collision to a sphere (-S/--filter-sphere)."><input type="checkbox" id="region-sphere-on" /> Limit to sphere</label>
                 <div class="field hidden" id="region-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the seed).">
@@ -458,8 +479,12 @@
                         <label class="axis"><span>z</span><input type="number" id="region-sphere-z" value="0" step="0.1" title="Sphere centre Z" /></label>
                         <label class="axis"><span>r</span><input type="number" id="region-sphere-r" value="1" step="0.1" min="0" title="Sphere radius" /></label>
                     </div>
-                    <span class="hint">Typed XYZ use CLI axes (same as the seed) — a draggable viewport box is coming.</span>
+                    <span class="hint">Or drag it in the viewport: the round knob on the edge sets the radius, arrows move the centre.</span>
                 </div>
+                <label class="field hidden" id="region-shade-row" title="Tint the region's faces so you can see where it cuts through the splat. 0 = wireframe only.">
+                    <span>Region face shading</span>
+                    <input type="range" id="region-shade" min="0" max="0.6" step="0.05" value="0.15" />
+                </label>
 
                 <div class="hint hidden" id="region-estimate" title="Rough marching-cubes overflow risk. Cropping the region or raising the voxel size both reduce it — the mesh fails above ~16.7M vertices."></div>
                 <div class="field-row hidden" id="region-estimate-actions">
@@ -509,70 +534,12 @@
                 <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb">Generate collision</button>
             </section>
 
-            <section class="panel" id="panel-settings">
-                <h2 title="Visual settings">Settings</h2>
-                <div class="group">Workspace</div>
-                <label class="field" title="The folder whose subfolders are your projects">
-                    <span>Current folder</span>
-                    <input type="text" id="ws-path" readonly value="—" />
-                </label>
-                <div class="field-row">
-                    <button id="ws-change" title="Choose a different workspace folder">Change folder…</button>
-                    <button id="ws-open" title="Open the workspace folder in your file browser" hidden>Open folder</button>
-                </div>
-                <span class="hint">Each subfolder of this folder is a project.</span>
-
-                <div class="group">Overlay colors</div>
-                <div class="field-row">
-                    <label class="field half" title="Color of the collision wireframe">
-                        <span>Wire color</span>
-                        <input type="color" id="wire-color" value="#00ff66" />
-                    </label>
-                    <label class="field half" title="Opacity of the collision wireframe">
-                        <span>Wire opacity</span>
-                        <input type="range" id="wire-opacity" min="0.05" max="1" step="0.05" value="0.6" />
-                    </label>
-                </div>
-                <div class="field-row">
-                    <label class="field half" title="Color of the voxel boxes">
-                        <span>Voxel color</span>
-                        <input type="color" id="voxel-color" value="#ff9e40" />
-                    </label>
-                    <label class="field half" title="Opacity of the voxel boxes">
-                        <span>Voxel opacity</span>
-                        <input type="range" id="voxel-opacity" min="0.05" max="1" step="0.05" value="0.35" />
-                    </label>
-                </div>
-                <div class="group">Appearance <em>— coming soon</em></div>
-                <label class="field" title="App color theme (coming soon)"><span>Theme</span><select id="ui-theme" disabled><option>Dark</option></select></label>
-                <label class="field" title="UI font size (coming soon)"><span>Font size</span><select id="ui-font" disabled><option>Default</option></select></label>
-                <label class="field" title="Interface language (coming soon)"><span>Language</span><select id="ui-language" disabled><option>English</option></select></label>
-                <span class="hint">Theme, font size and language are placeholders for a future update.</span>
-
-                <div class="group">Agent control (MCP)</div>
-                <label class="check" title="Let a connected MCP agent drive the LIVE editor (camera, panels, gizmos, tools). Off by default. The headless pipeline tools (convert, collision, render, trim) work regardless of this toggle."><input type="checkbox" id="mcp-control" /> Allow agent (MCP) control of the editor</label>
-                <span class="hint" id="mcp-status">Editor bridge: connecting…</span>
-                <span class="hint">When on, an MCP client on this machine can observe and drive the editor. Loopback-only; turn it off to revoke access instantly.</span>
-
-                <div class="group">About</div>
-                <div class="about-list">
-                    <div class="about-row"><a href="https://github.com/CodeByKeegan/splat-studio/releases" target="_blank" rel="noopener" title="Splat Studio releases on GitHub">Splat Studio</a><span id="ver-app">—</span></div>
-                    <div class="about-row"><a href="https://github.com/playcanvas/engine" target="_blank" rel="noopener" title="PlayCanvas engine on GitHub">PlayCanvas</a><span id="ver-playcanvas">—</span></div>
-                    <div class="about-row"><a href="https://github.com/playcanvas/splat-transform" target="_blank" rel="noopener" title="@playcanvas/splat-transform on GitHub">splat-transform</a><span id="ver-splat-transform">—</span></div>
-                    <div class="about-row"><a href="https://ko-fi.com/codebykeegan" target="_blank" rel="noopener" title="Support Splat Studio's development on Ko-fi">☕ Support on Ko-fi</a><span></span></div>
-                </div>
-            </section>
-
             <section class="panel" id="panel-scene">
                 <h2 title="Objects in the viewport. Select one to move it with a gizmo; selecting nothing hides all gizmos. The carve capsule only appears while it's selected.">Scene</h2>
                 <ul id="scene-list" class="scene-list"></ul>
                 <div class="field-row hidden" id="cam-gizmo-mode" title="What the render-camera gizmo does">
                     <button id="cam-move" class="active" title="Drag the gizmo to move the render camera (updates the WebP Camera position)">Move</button>
                     <button id="cam-rotate" title="Drag the gizmo to rotate the render camera (updates the WebP Look-at)">Rotate</button>
-                </div>
-                <div class="field-row hidden" id="region-gizmo-mode" title="How the collision region gizmo behaves">
-                    <button id="region-move" class="active" title="Drag the gizmo to move the whole region box">Move</button>
-                    <button id="region-resize" title="Drag a face handle to resize the region — the opposite face stays put">Resize</button>
                 </div>
                 <span class="hint" id="scene-hint">Select an object to move it. Click it again to deselect.</span>
 
@@ -594,6 +561,12 @@
             </section>
             <main id="viewport">
                 <canvas id="gs-canvas"></canvas>
+                <div id="viewport-welcome">
+                    <div class="vw-title">Nothing loaded yet</div>
+                    <div class="vw-line"><strong>Drop a splat file anywhere</strong> — or click <strong>view</strong> next to a file in the Files panel.</div>
+                    <div class="vw-line">Hover any control for what it does and the CLI flag it maps to.</div>
+                    <div class="vw-line">Camera: <strong>WASD</strong> + mouse-look to fly · right-drag pans · scroll zooms.</div>
+                </div>
                 <div id="viewport-toolbar">
                     <select id="camera-mode" class="tb-select" title="Camera control — Fly (mouse-look + WASD, default) or Orbit (drag to rotate). Right-drag pans, scroll zooms in both.">
                         <option value="fly" selected>🎮 Fly</option>
@@ -610,7 +583,7 @@
                     <button id="frame-scene" class="tb-btn" title="Re-center and re-distance the camera to fit the loaded scene">⤢ Frame</button>
                     <button id="clear-viewport" class="tb-btn" title="Unload all layers and free their GPU memory">Clear</button>
                     <span class="tb-sep"></span>
-                    <button id="open-settings" class="tb-btn" title="Open visual settings (colors, appearance)">⚙</button>
+                    <button id="open-settings" class="tb-btn" title="Open settings (theme, overlays, workspace)">⚙</button>
                 </div>
                 <div id="hud">
                     <span id="hud-splat" class="chip hidden" title="Currently displayed splat"><span class="chip-label"></span><button type="button" class="chip-remove" title="Remove the splat from the viewport (frees its GPU memory)">✕</button></span>
@@ -619,6 +592,93 @@
                 </div>
                 <div id="toast-stack"></div>
             </main>
+    </div>
+    <!-- settings dialog — opened by the viewport ⚙ or Window ▸ Settings… -->
+    <div id="settings-backdrop" class="modal-backdrop hidden">
+        <div id="settings-modal" class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
+            <header class="settings-head">
+                <span class="settings-title">Settings</span>
+                <button id="settings-close" class="settings-x" title="Close (Esc)">✕</button>
+            </header>
+            <div class="settings-body">
+                <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
+                    <button class="settings-nav-item active" data-page="appearance" title="Theme + custom colors">🎨 Appearance</button>
+                    <button class="settings-nav-item" data-page="viewport" title="3D viewport overlay colors">🧊 Viewport</button>
+                    <button class="settings-nav-item" data-page="workspace" title="Workspace folder">📁 Workspace</button>
+                    <button class="settings-nav-item" data-page="agent" title="MCP agent control of the editor">🤖 Agent (MCP)</button>
+                    <button class="settings-nav-item" data-page="about" title="Component versions">ℹ️ About</button>
+                </nav>
+                <div class="settings-pages">
+                    <section class="settings-page" data-page="appearance">
+                        <div class="group">Theme</div>
+                        <div class="theme-actions" title="Pick the app color theme. Dark and Light are built in; + New copies the selected theme into an editable one.">
+                            <select class="theme-select" title="Active theme"></select>
+                            <button class="theme-new" title="Create an editable copy of the selected theme">+ New</button>
+                            <button class="theme-rename" title="Rename this theme (custom themes only)">Rename</button>
+                            <button class="theme-delete" title="Delete this theme (custom themes only) — click twice to confirm">Delete</button>
+                        </div>
+                        <span class="hint theme-ro-hint">Built-in themes are read-only — click <strong>+ New</strong> to create an editable copy.</span>
+                        <div class="theme-scheme-row hidden" title="Base scheme — controls native widget rendering (scrollbars, pickers) and shadow weight, plus what 'Reset colors' restores">
+                            <span>Base scheme</span>
+                            <select class="theme-scheme"><option value="dark">Dark</option><option value="light">Light</option></select>
+                            <button class="theme-reset" title="Reset every color below to the base scheme's palette">Reset colors</button>
+                        </div>
+                        <div class="theme-editor" title="Colors apply live as you pick them"></div>
+                    </section>
+                    <section class="settings-page hidden" data-page="viewport">
+                        <div class="group">Overlay colors</div>
+                        <div class="field-row">
+                            <label class="field half" title="Color of the collision wireframe">
+                                <span>Wire color</span>
+                                <input type="color" id="wire-color" value="#00ff66" />
+                            </label>
+                            <label class="field half" title="Opacity of the collision wireframe">
+                                <span>Wire opacity</span>
+                                <input type="range" id="wire-opacity" min="0.05" max="1" step="0.05" value="0.6" />
+                            </label>
+                        </div>
+                        <div class="field-row">
+                            <label class="field half" title="Color of the voxel boxes">
+                                <span>Voxel color</span>
+                                <input type="color" id="voxel-color" value="#ff9e40" />
+                            </label>
+                            <label class="field half" title="Opacity of the voxel boxes">
+                                <span>Voxel opacity</span>
+                                <input type="range" id="voxel-opacity" min="0.05" max="1" step="0.05" value="0.35" />
+                            </label>
+                        </div>
+                        <span class="hint">These color the collision wireframe + voxel overlays in the 3D viewport.</span>
+                    </section>
+                    <section class="settings-page hidden" data-page="workspace">
+                        <div class="group">Workspace</div>
+                        <label class="field" title="The folder whose subfolders are your projects">
+                            <span>Current folder</span>
+                            <input type="text" id="ws-path" readonly value="—" />
+                        </label>
+                        <div class="field-row">
+                            <button id="ws-change" title="Choose a different workspace folder">Change folder…</button>
+                            <button id="ws-open" title="Open the workspace folder in your file browser" hidden>Open folder</button>
+                        </div>
+                        <span class="hint">Each subfolder of this folder is a project.</span>
+                    </section>
+                    <section class="settings-page hidden" data-page="agent">
+                        <div class="group">Agent control (MCP)</div>
+                        <label class="check" title="Let a connected MCP agent drive the LIVE editor (camera, panels, gizmos, tools). Off by default. The headless pipeline tools (convert, collision, render, trim) work regardless of this toggle."><input type="checkbox" id="mcp-control" /> Allow agent (MCP) control of the editor</label>
+                        <span class="hint" id="mcp-status">Editor bridge: connecting…</span>
+                        <span class="hint">When on, an MCP client on this machine can observe and drive the editor. Loopback-only; turn it off to revoke access instantly.</span>
+                    </section>
+                    <section class="settings-page hidden" data-page="about">
+                        <div class="group">About</div>
+                        <div class="about-list">
+                            <div class="about-row"><a href="https://github.com/CodeByKeegan/splat-studio/releases" target="_blank" rel="noopener" title="Splat Studio releases on GitHub">Splat Studio</a><span id="ver-app">—</span></div>
+                            <div class="about-row"><a href="https://github.com/playcanvas/engine" target="_blank" rel="noopener" title="PlayCanvas engine on GitHub">PlayCanvas</a><span id="ver-playcanvas">—</span></div>
+                            <div class="about-row"><a href="https://github.com/playcanvas/splat-transform" target="_blank" rel="noopener" title="@playcanvas/splat-transform on GitHub">splat-transform</a><span id="ver-splat-transform">—</span></div>
+                            <div class="about-row"><a href="https://ko-fi.com/codebykeegan" target="_blank" rel="noopener" title="Support Splat Studio's development on Ko-fi">☕ Support on Ko-fi</a><span></span></div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
 </body>
