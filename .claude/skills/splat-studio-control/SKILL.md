@@ -29,7 +29,7 @@ API_PORT=<port> SPLAT_WORKSPACE=<abs dir> node server/index.mjs
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | `{ ok, cli }` — `cli:true` means the CLI resolved |
-| GET | `/api/versions` | app + splat-transform + playcanvas versions |
+| GET | `/api/versions` | `{ app, splatTransform }` versions |
 | GET/POST | `/api/workspace` | get / switch (`{ path, create? }`) the workspace folder — live, no restart; switching resets editor consent |
 | GET | `/api/projects` | `{ projects: string[] }` |
 | POST | `/api/projects` | `{ name }` → create a project folder |

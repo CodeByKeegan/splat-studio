@@ -69,7 +69,7 @@ export function register(server) {
         argsSchema: { project: z.string(), input: z.string() }
     }, ({ project, input }) => userMsg(
         `Generate a collision mesh for "${input}" in project "${project}".\n` +
-        `1) generate_collision(project:"${project}", input:"${input}") with a sensible voxelSize (start 0.05), optionally seedPos (CLI space, e.g. [0,1,0] = 1m above the floor) and carve {height,radius}.\n` +
+        `1) generate_collision(project:"${project}", input:"${input}") with a sensible voxelSize (start 0.05), optionally seedPos (voxel space: viewer [x,y,z] -> [-x,y,-z]; [0,1,0] = 1m above the floor) and carve {height,radius}.\n` +
         `2) If it returns {refused:true}, raise voxelSize or set filterBox/filterSphere to crop the region (read the preflight estimate), then retry — or pass overridePreflight:true only if you accept the crash risk.\n` +
         `3) jobs(action:"wait", id), then report the collision.collision.glb output. GPU is required; a missing GPU surfaces as gpu-required.`
     ));
@@ -81,8 +81,8 @@ export function register(server) {
     }, ({ project, input }) => userMsg(
         `Clean up the raw scan "${input}" in project "${project}".\n` +
         `1) inspect(target:"stats") for the extents; if the scene has distant junk, plan a keep-region around the subject.\n` +
-        `2) convert(project:"${project}", input:"${input}", format:"ply", filterNaN:true, filterFloaters:{}) — floater removal is GPU-only; on gpu-required drop filterFloaters and rely on filterValue {column:"opacity", comparator:"gt", value:0.05} instead.\n` +
-        `3) If junk remains, trim_region(mode:"keep", box:[...]) around the subject (CLI space).\n` +
+        `2) convert(project:"${project}", input:"${input}", format:"ply", filterNaN:true, filterFloaters:{}) — floater removal is GPU-only: with device:"cpu" it is rejected as bad-input, with no usable GPU the job fails as gpu-required. Either way, drop filterFloaters and rely on filterValue {column:"opacity", comparator:"gt", value:0.05} instead.\n` +
+        `3) If junk remains, trim_region(mode:"keep", box:[...]) around the subject (SPLAT frame: viewer [x,y,z] -> [x,-y,-z]).\n` +
         `4) jobs(action:"wait") each step; report before/after gaussian counts via inspect(target:"stats").`
     ));
 
@@ -94,7 +94,7 @@ export function register(server) {
         `Scale "${input}" in project "${project}" to real-world meters using a known reference length.\n` +
         `1) inspect(target:"editor_status") — needs {connected:true, controlEnabled:true}; if control is off, ask the user to enable it in Settings.\n` +
         `2) load_into_viewport(action:"load", project:"${project}", file:"${input}"), then open the Edit panel: panel(action:"open", id:"panel-edit").\n` +
-        `3) Place A/B on a feature of known size: measure(action:"measure", points:[[ax,ay,az],[bx,by,bz]]) or two viewport_click calls; confirm with viewport_screenshot(max_width:800).\n` +
+        `3) Place A/B on a feature of known size: measure(action:"measure", points:[[ax,ay,az],[bx,by,bz]]) — passing points also turns measure mode on (viewport_click only places markers after that); confirm with viewport_screenshot(max_width:800).\n` +
         `4) measure(action:"set_length", length:<real meters>), then measure(action:"measure") -> read {scale}.\n` +
         `5) Apply headlessly: convert(project:"${project}", input:"${input}", format:"ply", scale:<scale>), jobs(action:"wait"), and report the output.`
     ));

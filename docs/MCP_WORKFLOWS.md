@@ -23,12 +23,16 @@ jobs(action: "get",  id: <jobId>)                        → full record: log, o
 
 On `timeout` the job **keeps running server-side** — wait again or `cancel` it.
 
-**2. Two coordinate frames.** The live viewport (`camera`, `viewport_click`, `measure`)
-speaks **viewer-world**. The CLI pipeline (`convert` translate/rotate/filters,
-`trim_region`, `render_image` cameras, `generate_collision` seed/region,
-`render_pose`, `set_collision_gizmo`) speaks **CLI space** — same Y-up, but **x and z
-are negated** relative to the viewer. Converting a viewer-world point `[x, y, z]` to
-CLI space is just `[-x, y, -z]`.
+**2. Three coordinate frames.** The live viewport (`camera`, `viewport_click`,
+`measure`) speaks **viewer-world**. Almost everything the CLI consumes — `convert`
+translate/rotate/filters, `trim_region`, `set_region` (all targets), `render_image`
+cameras, `render_pose`, and `generate_collision`'s crop region — speaks the **splat
+frame**: viewer `[x, y, z]` → `[x, -y, -z]` (a 180° flip about X). The **one
+exception** is the collision *seed*: `generate_collision(seedPos)` and
+`set_collision_gizmo(seed)` use **voxel space**, viewer `[x, y, z]` → `[-x, y, -z]`
+(180° about Y). Editor tools that hand you CLI-ready numbers (`measure` → `scale`,
+`set_origin` → `translate`, `render_pose`) already do the conversion — prefer them
+over converting by hand.
 
 **3. Errors are uniform.** Every failure is `{ error, message }` with `error` one of
 `no-editor`, `control-disabled`, `bad-input`, `job-failed`, `not-found`, `timeout`,
@@ -64,7 +68,7 @@ The bread-and-butter conversion — a compressed bundle any PlayCanvas app can s
 
 ```
 convert(project: "My Scan", input: "room.ply", format: "sog")     → { jobId }
-jobs(action: "wait", id: ...)                                     → outputs: room.compressed.ply-style bundle
+jobs(action: "wait", id: ...)                                     → outputs: room.sog
 ```
 
 Options worth reaching for: `iterations: 10` (SH-compression quality; higher = slower,
@@ -96,8 +100,9 @@ generate_collision(project: "My Scan", input: "room.ply",
                    carve: { height: 1.8, radius: 0.4 })
 ```
 
-- `seedPos` is CLI space; `[0, 1, 0]` = 1 m above the floor at the origin — a good
-  default for indoor scans. It seeds the flood fill that separates inside from outside.
+- `seedPos` is voxel space (viewer `[x, y, z]` → `[-x, y, -z]`); `[0, 1, 0]` = 1 m above
+  the floor at the origin — a good default for indoor scans. It seeds the flood fill
+  that separates inside from outside.
 - `carve` guarantees a player-capsule-sized tunnel stays open.
 - **The preflight may refuse:** huge scene × fine voxel overflows the marching-cubes
   vertex limit. The refusal includes `{ preflight }` with the estimated load. Raise
@@ -116,7 +121,7 @@ render_image(project: "My Scan", input: "room.ply", image: {
 })
 ```
 
-Camera vectors are CLI-space `"x,y,z"` strings. For depth of field add
+Camera vectors are splat-frame `"x,y,z"` strings (viewer `[x, y, z]` → `[x, -y, -z]`). For depth of field add
 `fStop: 1.4, focusDistance: 4`. To *see* what the camera will frame before burning a
 render, use the editor: `render_pose(action: "set", camera: [...], lookAt: [...])`
 shows a frustum in the viewport, then `viewport_screenshot(max_width: 800)` to check.
@@ -149,7 +154,7 @@ trim_region(project: "My Scan", input: "room.ply", mode: "keep",
             box: [-5, "", -5, 5, "", 5])          ("" = that side unbounded)
 ```
 
-Box/sphere are CLI space. To set the region visually first **(editor)**:
+Box/sphere are the splat frame (viewer `[x, y, z]` → `[x, -y, -z]`). To set the region visually first **(editor)**:
 `set_region(target: "crop_box", box: [...])`, confirm with `viewport_screenshot`,
 then run the trim headlessly with the same numbers.
 
@@ -167,9 +172,11 @@ render_image(project: "My Scan", input: "room.ply", image: {
 })
 ```
 
-`equirect` ignores `fov` and depth-of-field; `camera` is the pano's eye point. A 2:1
-resolution keeps the projection undistorted. The output WebP drops straight into
-Splat Studio's own skybox slot: `set_view_option(option: "skybox", value: "<file>")`.
+`equirect` **rejects** `fov` and the depth-of-field options — omit them entirely (the
+CLI errors rather than ignoring them). The resolution **must be 2:1** (`width = 2 ×
+height`; omit it for the 2048x1024 default). `camera` is the pano's eye point. The
+output WebP drops straight into Splat Studio's own skybox slot:
+`set_view_option(option: "skybox", value: "<file>")`.
 
 ### 9. Motion-blur render
 
@@ -194,14 +201,15 @@ Photogrammetry splats are rarely metric. Measure a known span, then apply the sc
 inspect(target: "editor_status")                       → needs connected + controlEnabled
 load_into_viewport(action: "load", project: "My Scan", file: "room.ply")
 panel(action: "open", id: "panel-edit")
-measure(action: "measure", points: [[a...], [b...]])   (or two viewport_click calls)
+measure(action: "measure", points: [[a...], [b...]])   (this also turns measure mode on)
 measure(action: "set_length", length: 0.82)            (the span's real size in meters)
 measure(action: "measure")                             → { a, b, distance, scale }
 convert(project: "My Scan", input: "room.ply", format: "ply", scale: <scale>)
 ```
 
-The `scale` field is precomputed: real length ÷ measured span. Canned prompt:
-`scale_to_real_world`.
+The `scale` field is precomputed: real length ÷ measured span. `viewport_click` can
+fine-tune a marker, but only once measure mode is on (the `points` call above enables
+it). Canned prompt: `scale_to_real_world`.
 
 ### 11. Recenter the origin *(editor)*
 
@@ -209,7 +217,7 @@ Put the origin where the content actually is (engines expect it):
 
 ```
 set_origin(point: [1.2, 0.0, -3.4])                    (viewer-world; or place via viewport_click)
-   → { placed: true, translate: [x, y, z] }            (already CLI space)
+   → { placed: true, translate: [x, y, z] }            (already in the splat frame convert expects)
 convert(project: "My Scan", input: "room.ply", format: "ply", translate: <translate>)
 ```
 
@@ -258,7 +266,7 @@ interchange; `spzVersion: 3` if the consumer is on the older spec.
 Verify outputs by looking at them — the way a human would:
 
 ```
-load_into_viewport(action: "load", project: "My Scan", file: "room.collision.glb")
+load_into_viewport(action: "load", project: "My Scan", file: "collision.collision.glb")
 set_view_option(option: "collision_style", value: "xray")
 camera(action: "frame")
 viewport_screenshot(max_width: 1024)          → image comes back inline

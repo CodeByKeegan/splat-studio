@@ -2347,8 +2347,11 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         }
         return editorError('bad-input', `unknown layout action "${action}"`);
     },
-    load_into_viewport: async ({ action, file }) => {
+    load_into_viewport: async ({ action, project, file }) => {
         if (action === 'clear') { removeSplat(); removeCollision(); removeVoxels(); return { cleared: true }; }
+        if (project != null && String(project) !== projectSelect.value) {
+            return editorError('bad-input', `project "${project}" is not the app's current project ("${projectSelect.value}") — the viewport loads from the current project only`);
+        }
         const name = need(file as string, 'load needs file');
         const as: api.ViewKind = /\.voxel\.json$/i.test(name) ? 'voxel' : /collision\.glb$/i.test(name) ? 'collision' : 'splat';
         const ok = await viewFile(name, as);
@@ -2387,6 +2390,8 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
             loadedSplat: currentSplatName,
             activePanels,
             selection: viewer?.selection ?? 'none',
+            items: viewer ? SCENE_ITEMS.filter((it) => it.has()).map((it) => it.id) : [],
+            editTool: measureToggle.checked ? 'measure' : originToggle.checked ? 'origin' : 'none',
             layers: { ...layerVisible },
             camera: viewer?.getCamera() ?? null
         };
@@ -2456,10 +2461,11 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         return { ...st, ...(st.distance > 0 && len > 0 ? { scale: r4(len / st.distance) } : {}) };
     },
     history: ({ action }) => {
+        if (action !== 'get' && undoApplying) return editorError('bad-input', 'a previous undo/redo is still applying — retry in a moment');
         if (action === 'undo') { if (!canUndo()) return editorError('bad-input', 'nothing to undo'); doUndo(); }
         else if (action === 'redo') { if (!canRedo()) return editorError('bad-input', 'nothing to redo'); doRedo(); }
         else if (action !== 'get') return editorError('bad-input', `unknown history action "${action}"`);
-        return { canUndo: canUndo(), canRedo: canRedo() };
+        return { canUndo: canUndo(), canRedo: canRedo(), applying: undoApplying };
     },
     render_pose: ({ action, camera, lookAt }) => {
         if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');

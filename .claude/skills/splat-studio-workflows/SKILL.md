@@ -46,23 +46,29 @@ then `build_lod(mode:"combine", lodFiles:[...], lodEnvFlags:[...])` — env flag
 backdrop (LOD −1); ≥1 non-env level required; `input` is LOD 0.
 
 **360° pano:** `render_image(image:{projection:"equirect", camera:"0,1.6,0",
-resolution:"4096x2048"})` — 2:1 aspect; fov/DoF ignored. Result can feed
-`set_view_option(option:"skybox", value:<file>)`.
+resolution:"4096x2048"})` — 2:1 aspect REQUIRED (else the CLI errors); OMIT fov/DoF
+options (rejected, not ignored). Result can feed `set_view_option(option:"skybox", value:<file>)`.
 
 **Motion blur:** add `cameraEnd`/`lookAtEnd` + `shutter:0.5, motionSamples:64` to a normal
 render. Keep the move 10–20 cm.
 
 **Scale to real (editor):** `load_into_viewport` → `panel(open, "panel-edit")` →
-`measure(action:"measure", points:[[A],[B]])` on a known span (or two `viewport_click`) →
+`measure(action:"measure", points:[[A],[B]])` on a known span (passing points turns measure
+mode on; only after that do `viewport_click` taps place markers) →
 `measure(action:"set_length", length:<m>)` → `measure(action:"measure")` → take `scale` →
 `convert(format:"ply", scale)`. Verify: re-measure the new output ≈ real length.
 
 **Recenter origin (editor):** `set_origin(point:[viewer-world])` → take returned `translate`
-(already CLI space) → `convert(format:"ply", translate)`.
+(already in the splat frame convert expects) → `convert(format:"ply", translate)`.
 
 **Region carve/crop:** stage visually *(editor)* with `set_region(target:"crop_box", box)` +
-screenshot, then apply headlessly: `trim_region(mode:"remove"|"keep", box|sphere)` (CLI space;
-`""` = unbounded side; single-file splats only — not meta.json/lod bundles; output always .ply).
+screenshot, then apply headlessly: `trim_region(mode:"remove"|"keep", box|sphere)` (splat
+frame — the same numbers as set_region; `""` = unbounded side; single-file splats only — not
+meta.json/lod bundles; output always .ply).
+
+**Frames cheat-sheet:** viewer `[x,y,z]` → splat frame `[x,-y,-z]` (convert/trim/regions/render
+cameras); → voxel space `[-x,y,-z]` (collision seedPos only). Editor tools return CLI-ready
+values — prefer them over hand conversion.
 
 **Generators:** `inspect(target:"generator_params", input:"gen.mjs")` → `convert(input:"gen.mjs",
 format:"ply", params:"k=v,k=v")`. Sample: `examples/gen-grid.mjs`.

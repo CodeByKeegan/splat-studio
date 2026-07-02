@@ -45,8 +45,8 @@ const isUnreachable = (e) => {
     return /ECONNREFUSED|ENOTFOUND|ECONNRESET|EHOSTUNREACH|fetch failed|socket hang up|network/i.test(s);
 };
 
-async function fetchOnce(method, p, { body, headers, duplex } = {}) {
-    const url = base + p;
+async function fetchOnce(atBase, method, p, { body, headers, duplex } = {}) {
+    const url = atBase + p;
     let res;
     try {
         res = await fetch(url, { method, headers, body, duplex });
@@ -62,16 +62,18 @@ async function fetchOnce(method, p, { body, headers, duplex } = {}) {
 
 // opts.body may be a factory function so a stream can be recreated per attempt
 async function req(method, p, opts = {}) {
-    const attempt = () => fetchOnce(method, p, { ...opts, body: typeof opts.body === 'function' ? opts.body() : opts.body });
+    const attempt = (b) => fetchOnce(b, method, p, { ...opts, body: typeof opts.body === 'function' ? opts.body() : opts.body });
+    const used = base; // snapshot: a concurrent request may re-resolve `base` mid-flight
     try {
-        return await attempt();
+        return await attempt(used);
     } catch (e) {
         if (!(e instanceof ConnError)) throw e;
         // unreachable: the app may have (re)started on a different port — re-resolve once
         const fresh = resolveBase();
-        if (fresh === base) throw e;
-        base = fresh;
-        return await attempt();
+        const next = fresh !== used ? fresh : base !== used ? base : null;
+        if (next == null) throw e;
+        base = next;
+        return await attempt(next);
     }
 }
 

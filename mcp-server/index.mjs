@@ -18,7 +18,7 @@ const INSTRUCTIONS = [
     'Long operations are jobs: convert/build_lod/render_image/generate_collision/trim_region/get_summary return {jobId}; poll with jobs(action="wait") then jobs(action="get").',
     'Editor tools require the consent toggle in the app\'s Settings panel; with it off they return error "control-disabled". Probe first with inspect(target:"editor_status") — it needs no consent. Switching workspace resets consent to OFF.',
     'Every failure is {error,message} with error in: no-editor, control-disabled, bad-input, job-failed, not-found, timeout, gpu-required.',
-    'Spatial frames: camera tools are viewer-world; render_pose / set_collision_gizmo(seed) / set_region(collision_region) are CLI space (x and z negated vs the viewer).'
+    'Spatial frames: camera/viewport_click/measure are viewer-world. Everything the CLI consumes — convert/trim/collision region boxes+spheres, set_region (all targets), render cameras (render_image/render_pose), set_origin\'s translate — is the SPLAT frame: viewer [x,y,z] -> [x,-y,-z]. Sole exception: generate_collision seedPos / set_collision_gizmo(seed) use voxel space: viewer [x,y,z] -> [-x,y,-z].'
 ].join(' ');
 
 const server = new McpServer(

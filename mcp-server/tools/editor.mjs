@@ -67,7 +67,7 @@ export function register(server) {
     server.registerTool('viewport_click', {
         title: 'Viewport click',
         description:
-            'Pick the front splat surface at normalized viewport coords (x,y in 0..1) and place the active marker there. Returns the picked point in VIEWER-WORLD space, or {hit:false}.',
+            'Pick the front splat surface at normalized viewport coords (x,y in 0..1). Returns the picked point in VIEWER-WORLD space, or {hit:false}. Places the active edit marker ONLY while a measure/origin tool is on (enable one first via measure(points) or set_origin); otherwise it is just a click.',
         annotations: SAFE,
         inputSchema: {
             x: z.number().min(0).max(1).describe('horizontal fraction (0=left, 1=right).'),
@@ -77,11 +77,11 @@ export function register(server) {
 
     server.registerTool('load_into_viewport', {
         title: 'Load into viewport',
-        description: 'action="load" loads a project file (a viewable splat/collision) into the 3D viewport; "clear" empties it.',
+        description: 'action="load" loads a file from the app\'s CURRENT project (a viewable splat/collision/voxel) into the 3D viewport; "clear" empties it. The viewport cannot load across projects — if project is given and differs from the current one (see get_editor_state.project), this errors.',
         annotations: SAFE,
         inputSchema: {
             action: z.enum(['load', 'clear']),
-            project: z.string().optional().describe('project name (required for load).'),
+            project: z.string().optional().describe('must match the app\'s current project when given.'),
             file: z.string().optional().describe('project-relative file (required for load).')
         }
     }, editor(async (args) => await callEditor('load_into_viewport', args)));
@@ -96,7 +96,7 @@ export function register(server) {
     server.registerTool('get_editor_state', {
         title: 'Get editor state',
         description:
-            'Snapshot the live editor: active panel, current selection, scene items, layer visibility, active tool, loaded splat, and camera. Use this for editor reads instead of separate getters.',
+            'Snapshot the live editor: current project, loaded splat, active panels, selection + the selectable scene item ids (for select_item), active edit tool (none|measure|origin), layer visibility, and camera. Use this for editor reads instead of separate getters.',
         annotations: RO,
         inputSchema: {}
     }, editor(async () => await callEditor('get_editor_state', {})));
@@ -118,19 +118,19 @@ export function register(server) {
     server.registerTool('measure', {
         title: 'Measure',
         description:
-            'Measure-to-scale tool. action="measure" -> {a, b, distance, scale?} — the current A/B marker positions (viewer-world), their span in world units, and (if a real length is set) the scale factor to pass to convert(scale). action="set_length" sets the real-world A-B length (m). Place markers with viewport_click, or pass points [[ax,ay,az],[bx,by,bz]] to set both directly.',
+            'Measure-to-scale tool. action="measure" -> {a, b, distance, scale?} — the current A/B marker positions (viewer-world), their span in world units, and (if a real length is set) the scale factor to pass to convert(scale). action="set_length" sets the real-world A-B length (m). Passing points also turns measure mode on: two points set A then B; a single point sets whichever marker is ACTIVE (A first, alternating). Subsequent viewport_click calls place markers too, once measure mode is on.',
         annotations: SAFE,
         inputSchema: {
             action: z.enum(['measure', 'set_length']),
             length: z.number().positive().optional().describe('real A-B length in meters (action="set_length").'),
-            points: z.array(vec3).min(1).max(2).optional().describe('viewer-world marker positions [A] or [A,B] to place directly (action="measure").')
+            points: z.array(vec3).min(1).max(2).optional().describe('viewer-world positions: [A,B] sets both; a single [p] sets the active marker (action="measure").')
         }
     }, editor(async (args) => await callEditor('measure', args)));
 
     server.registerTool('set_origin', {
         title: 'Set origin',
         description:
-            'Turn on origin mode and optionally place the origin point. Returns {translate} — the CLI-space translate that recenters the splat there; pass it to convert(format:"ply", translate) to apply headlessly. Provide a viewer-world point, or omit and place it with viewport_click.',
+            'Turn on origin mode and optionally place the origin point. Returns {translate} — the SPLAT-frame translate that recenters the splat there; pass it to convert(format:"ply", translate) to apply headlessly. Provide a viewer-world point, or omit and place it with viewport_click.',
         annotations: SAFE,
         inputSchema: { point: vec3.optional().describe('viewer-world point to make the new origin.') }
     }, editor(async (args) => await callEditor('set_origin', args)));
@@ -138,7 +138,7 @@ export function register(server) {
     server.registerTool('set_region', {
         title: 'Set region',
         description:
-            'Set a viewport region gizmo. target="crop_box"/"crop_sphere" drive the Edit-panel crop/carve region (-B/-S action space); target="collision_region" drives the Collision-panel region (R_y(180) CLI space). gizmoMode switches move/resize on the collision region.',
+            'Set a viewport region gizmo. target="crop_box"/"crop_sphere" drive the Edit-panel crop/carve region; target="collision_region" drives the Collision-panel region. All three are the SPLAT frame (viewer [x,y,z] -> [x,-y,-z]) — the same numbers convert/trim_region/generate_collision take. gizmoMode switches move/resize on the collision region.',
         annotations: SAFE,
         inputSchema: {
             target: z.enum(['crop_box', 'crop_sphere', 'collision_region']),
@@ -152,20 +152,19 @@ export function register(server) {
     server.registerTool('render_pose', {
         title: 'Render pose',
         description:
-            'Read or set the offline-render (WebP) camera pose shown as a frustum in the viewport. CLI space. action="get" -> {camera,lookAt}; "set" takes camera/lookAt (and optional up) as [x,y,z].',
+            'Read or set the offline-render (WebP) camera pose shown as a frustum in the viewport. SPLAT frame (viewer [x,y,z] -> [x,-y,-z]) — the same values render_image takes. action="get" -> {camera,lookAt}; "set" takes camera/lookAt as [x,y,z].',
         annotations: SAFE,
         inputSchema: {
             action: z.enum(['get', 'set']),
             camera: vec3.optional(),
-            lookAt: vec3.optional(),
-            up: vec3.optional()
+            lookAt: vec3.optional()
         }
     }, editor(async (args) => await callEditor('render_pose', args)));
 
     server.registerTool('set_collision_gizmo', {
         title: 'Set collision gizmo',
         description:
-            'Set a collision input gizmo. target="seed" sets the --seed-pos point [x,y,z] in CLI space (engine Y-up; 1m above floor = [0,1,0]); target="capsule" sets the player capsule {height,radius}.',
+            'Set a collision input gizmo. target="seed" sets the --seed-pos point [x,y,z] in VOXEL space (viewer [x,y,z] -> [-x,y,-z]; Y-up, 1m above floor = [0,1,0]); target="capsule" sets the player capsule {height,radius}.',
         annotations: SAFE,
         inputSchema: {
             target: z.enum(['seed', 'capsule']),
@@ -187,7 +186,7 @@ export function register(server) {
     // ---- dock ----
     server.registerTool('panel', {
         title: 'Panel',
-        description: 'Open or close a dock panel by id (e.g. panel-files, panel-convert, panel-lod, panel-render, panel-edit, panel-collision, panel-scene, panel-settings, panel-mcp).',
+        description: 'Open or close a dock panel by id: panel-files, panel-convert, panel-lod, panel-render, panel-analyze, panel-edit, panel-collision, panel-scene, panel-settings (the MCP consent toggle lives there), panel-job.',
         annotations: SAFE,
         inputSchema: {
             action: z.enum(['open', 'close']),

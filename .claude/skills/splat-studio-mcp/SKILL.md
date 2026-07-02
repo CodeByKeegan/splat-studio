@@ -68,9 +68,12 @@ All tools carry MCP annotations: `files` and `import_file` are the only destruct
 - **Errors are always `{error,message}`** with `error` in: `no-editor`, `control-disabled`, `bad-input`,
   `job-failed`, `not-found`, `timeout`, `gpu-required`.
 - **Coordinate frames matter.** `camera` + `viewport_click` + `measure` are **viewer-world**.
-  `render_pose`, `set_collision_gizmo(seed)`, and `set_region(collision_region)` are **CLI space**
-  (Y-up; x and z negated vs the viewer — convert with `[-x, y, -z]`). `set_region(crop_box|crop_sphere)`
-  and `trim_region` use the `-B/-S` action space. Tool descriptions restate the frame per tool.
+  Everything the CLI consumes — `convert` transforms/filters, `trim_region`, `set_region` (all
+  targets), `render_image` cameras, `render_pose`, `set_origin`'s returned translate — is the
+  **splat frame**: viewer `[x,y,z]` → `[x,-y,-z]` (R_x(180)). Sole exception:
+  `generate_collision(seedPos)` / `set_collision_gizmo(seed)` are **voxel space**: viewer →
+  `[-x,y,-z]` (R_y(180)). Tool descriptions restate the frame per tool; prefer the editor tools'
+  returned values over hand conversion.
 - **GPU.** `generate_collision` and `--filter-cluster`/floater removal need the GPU → `gpu-required` if
   unavailable. SOG encoding has a CPU fallback (`device:"cpu"`).
 - **Editor reads → headless writes.** The scale/origin flows read derived values from the editor

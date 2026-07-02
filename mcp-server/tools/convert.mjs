@@ -17,8 +17,8 @@ const device = z
 const filterBox = z
     .array(z.union([z.number(), z.literal(''), z.literal('-')]))
     .length(6)
-    .describe('[minX,minY,minZ,maxX,maxY,maxZ] in CLI space (Y-up, x/z negated vs viewer); "" or "-" leaves a side unbounded; set at least one bound.');
-const filterSphere = z.array(z.number()).length(4).describe('[x,y,z,radius] in CLI space; radius >= 0.');
+    .describe('[minX,minY,minZ,maxX,maxY,maxZ] in the SPLAT frame (viewer [x,y,z] -> [x,-y,-z]); "" or "-" leaves a side unbounded; set at least one bound.');
+const filterSphere = z.array(z.number()).length(4).describe('[x,y,z,radius] in the SPLAT frame; radius >= 0.');
 
 const filterValue = z
     .object({
@@ -34,13 +34,13 @@ const filterFloaters = z
         opacity: z.number().min(0).max(1).optional(),
         min: z.number().min(0).optional()
     })
-    .describe('GPU-only floater removal (-G). Empty {} = CLI defaults (0.05,0.1,0.004). With device "cpu" this returns gpu-required.');
+    .describe('GPU-only floater removal (-G). Empty {} = CLI defaults (0.05,0.1,0.004). With device "cpu" the server rejects it up front (bad-input); with no usable GPU the job fails as gpu-required.');
 
 export function register(server) {
     server.registerTool('convert', {
         title: 'Convert',
         description:
-            'Convert a splat to another format with optional transforms / filters / crop / decimate. Returns {jobId} (fire-and-poll). Use build_lod for streamed LOD and render_image for a WebP render. translate/rotate and filterBox/filterSphere are CLI space.',
+            'Convert a splat to another format with optional transforms / filters / crop / decimate. Returns {jobId} (fire-and-poll). Use build_lod for streamed LOD and render_image for a WebP render. translate/rotate and filterBox/filterSphere are the SPLAT frame (viewer [x,y,z] -> [x,-y,-z]).',
         annotations: SAFE,
         inputSchema: {
             project: z.string(),
@@ -102,7 +102,7 @@ export function register(server) {
     server.registerTool('render_image', {
         title: 'Render image (WebP)',
         description:
-            'Offline WebP render of a splat via the GPU rasterizer (camera / projection / depth-of-field / motion blur). Returns {jobId}. Camera vectors (camera/lookAt/up + the *End motion-blur vectors) are CLI space "x,y,z" strings.',
+            'Offline WebP render of a splat via the GPU rasterizer (camera / projection / depth-of-field / motion blur). Returns {jobId}. Camera vectors (camera/lookAt/up + the *End motion-blur vectors) are SPLAT-frame "x,y,z" strings (viewer [x,y,z] -> [x,-y,-z]; render_pose reads/sets the same pose).',
         annotations: SAFE,
         inputSchema: {
             project: z.string(),
@@ -110,7 +110,7 @@ export function register(server) {
             device: device.optional(),
             image: z
                 .object({
-                    projection: z.enum(['perspective', 'equirect']).optional().describe('default perspective; equirect ignores fov + DoF.'),
+                    projection: z.enum(['perspective', 'equirect']).optional().describe('default perspective. equirect REJECTS fov/fStop/focusDistance/sensorSize (omit them) and requires a 2:1 resolution (width = 2 × height; default 2048x1024).'),
                     camera: z.string().optional().describe('eye "x,y,z" (CLI space; default "2,1,-2").'),
                     lookAt: z.string().optional().describe('target "x,y,z" (default "0,0,0").'),
                     up: z.string().optional().describe('up "x,y,z" (default "0,1,0").'),
@@ -134,7 +134,7 @@ export function register(server) {
     server.registerTool('generate_collision', {
         title: 'Generate collision',
         description:
-            'Voxelize a splat into a collision mesh (collision.collision.glb + voxel json/bin). GPU required (no device param); an unavailable GPU returns gpu-required. seedPos and the crop region (filterBox/filterSphere) are CLI space. Returns {jobId}.',
+            'Voxelize a splat into a collision mesh (collision.collision.glb + voxel json/bin). GPU required (no device param); an unavailable GPU returns gpu-required. seedPos is VOXEL space (viewer [x,y,z] -> [-x,y,-z]); the crop region (filterBox/filterSphere) is the SPLAT frame (viewer -> [x,-y,-z]), same as convert/trim. Returns {jobId}.',
         annotations: SAFE,
         inputSchema: {
             project: z.string(),
@@ -145,9 +145,9 @@ export function register(server) {
             fillSize: z.number().min(0).max(100).optional().describe('fill size (default 1.6).'),
             carve: z.object({ height: z.number().min(0.01).max(100), radius: z.number().min(0.01).max(100) }).optional().describe('carve a player tunnel (--voxel-carve height,radius).'),
             meshShape: z.enum(['smooth', 'faces']).optional().describe('-K mesh style (default smooth).'),
-            seedPos: vec3.optional().describe('--seed-pos [x,y,z] (CLI space; engine Y-up, 1m above floor = [0,1,0]).'),
+            seedPos: vec3.optional().describe('--seed-pos [x,y,z] in VOXEL space (viewer [x,y,z] -> [-x,y,-z]; Y-up, 1m above floor = [0,1,0]).'),
             filterCluster: z.boolean().optional().describe('--filter-cluster (GPU; can TDR on very large scans).'),
-            filterBox: filterBox.optional().describe('crop the collision region to a box before voxelizing (CLI space).'),
+            filterBox: filterBox.optional().describe('crop the collision region to a box before voxelizing (SPLAT frame, same as convert/trim).'),
             filterSphere: filterSphere.optional(),
             overridePreflight: z.boolean().optional().describe('proceed even if the V8-Map size preflight estimates a crash risk (default false).')
         }
@@ -184,7 +184,7 @@ export function register(server) {
     server.registerTool('trim_region', {
         title: 'Trim region (carve / crop)',
         description:
-            'Remove (carve) or keep-only (crop) the gaussians inside a box and/or sphere, writing a new trimmed .ply. Works on any single-file splat (.ply/.sog/.spz/.splat/.ksplat/.lcc; non-PLY are decompressed first). box/sphere are CLI space. Returns {jobId}.',
+            'Remove (carve) or keep-only (crop) the gaussians inside a box and/or sphere, writing a new trimmed .ply. Works on any single-file splat (.ply/.sog/.spz/.splat/.ksplat/.lcc; non-PLY are decompressed first). box/sphere are the SPLAT frame (viewer [x,y,z] -> [x,-y,-z]). Returns {jobId}.',
         annotations: SAFE,
         inputSchema: {
             project: z.string(),
