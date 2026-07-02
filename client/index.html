@@ -38,10 +38,10 @@
 
                 <div id="group-actions" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
                     <div class="group">Linked group <em>— apply edits to several files at once</em></div>
-                    <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Convert) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
+                    <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Export) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
                     <div id="group-members" class="group-members"></div>
                     <div class="hint hidden" id="group-warn"></div>
-                    <button id="group-apply" title="Run the current Convert Transform / Filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
+                    <button id="group-apply" title="Run the current Edit Transform + Export filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
                     <button id="group-apply-region" title="Run the Edit panel's Region (carve / crop) on every ticked member, writing a trimmed .ply of each — so a removal or crop on the proxy affects all its LODs (sequential jobs). Enable a Box or Sphere region in Edit first.">Apply region to members</button>
                 </div>
             </section>
@@ -195,7 +195,7 @@
                     <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --mem)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
-                <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>
+                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Job panel">Export</button>
             </section>
 
             <section class="panel" id="panel-lod">
