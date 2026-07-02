@@ -186,6 +186,7 @@ button.primary:focus-visible { outline-color: var(--text); }
 }
 #panel-files h2 { --panel-hue: var(--text-dim); }
 #panel-convert h2 { --panel-hue: var(--accent); }
+#panel-generate h2 { --panel-hue: var(--accent-2); }
 #panel-lod h2 { --panel-hue: var(--accent); }
 #panel-render h2 { --panel-hue: var(--purple); }
 #panel-collision h2 { --panel-hue: var(--accent-2); }
@@ -659,7 +660,7 @@ body.dropping #viewport::after {
     word-break: break-word;
 }
 .log:empty::before {
-    content: 'No job yet — Convert / Generate runs stream their CLI output here.';
+    content: 'No job yet — Export / Generate runs stream their CLI output here.';
     color: var(--text-dim);
     font-family: "Segoe UI", system-ui, sans-serif;
     font-size: var(--fs-sm);

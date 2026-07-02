@@ -32,37 +32,46 @@
                         accept=".ply,.sog,.spz,.splat,.ksplat,.lcc,.lcc2,.json,.mjs" hidden />
                     <span class="hint">.ply · .compressed.ply · .sog · .spz · .splat · .ksplat · .lcc · .lcc2 · meta.json · .mjs generator</span>
                     <button type="button" class="link" id="add-sample-generator"
-                        title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then pick it as a Convert input and pass params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
+                        title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then run it from the Generate tab with params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
                 </div>
                 <ul id="file-list" class="file-list"></ul>
 
                 <div id="group-actions" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
                     <div class="group">Linked group <em>— apply edits to several files at once</em></div>
-                    <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Convert) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
+                    <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Export) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
                     <div id="group-members" class="group-members"></div>
                     <div class="hint hidden" id="group-warn"></div>
-                    <button id="group-apply" title="Run the current Convert Transform / Filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
+                    <button id="group-apply" title="Run the current Edit Transform + Export filter settings on every ticked member, writing an edited copy of each (sequential jobs, current output format)">Apply transforms to members</button>
                     <button id="group-apply-region" title="Run the Edit panel's Region (carve / crop) on every ticked member, writing a trimmed .ply of each — so a removal or crop on the proxy affects all its LODs (sequential jobs). Enable a Box or Sphere region in Edit first.">Apply region to members</button>
                 </div>
             </section>
 
-            <section class="panel" id="panel-convert">
-                <h2 title="Convert between gaussian splat formats using splat-transform">Convert</h2>
-                <label class="field" title="Source file — anything splat-transform can read, including formats the viewer can't display (.spz, .splat, .ksplat, .lcc, .lcc2) and .mjs generators">
-                    <span>Input</span>
-                    <select id="convert-input"></select>
+            <section class="panel" id="panel-generate">
+                <h2 title="Run a procedural .mjs generator and preview the result">Generate</h2>
+                <label class="field" title="A .mjs generator in this project — a script that procedurally creates gaussians. Add one with '+ sample generator' in Files, or drop your own">
+                    <span>Generator</span>
+                    <select id="gen-input"></select>
                 </label>
                 <label class="field hidden" id="row-gen-params" title="Parameters passed to the .mjs generator (-p/--params), comma-separated key=val — e.g. width=16,height=16,scale=4. Values are strings; the generator coerces types">
-                    <span>Generator params <em>(.mjs input only)</em></span>
+                    <span>Params</span>
                     <input type="text" id="convert-params" placeholder="width=16,height=16,scale=4" />
                 </label>
                 <div class="field hidden" id="row-gen-sliders" title="Live generator parameters (-p/--params). The generator advertises these via a static `params` schema; drag a slider and release to regenerate and preview">
-                    <span>Generator params <em>(live)</em></span>
+                    <span>Params <em>(live)</em></span>
                     <div id="gen-sliders"></div>
                 </div>
-                <div class="field-row hidden" id="row-gen-actions">
+                <div class="field-row" id="row-gen-actions">
                     <button id="generate-view" title="Run the .mjs generator with the params above and load the result straight into the 3D viewer (one click — no convert-then-find-the-file)">✨ Generate &amp; view</button>
                 </div>
+                <span class="hint">Writes a .ply into the project and loads it in the viewer. To export a generator to another format, pick it as the Export input — these params apply.</span>
+            </section>
+
+            <section class="panel" id="panel-convert">
+                <h2 title="Export a splat to another format using splat-transform">Export</h2>
+                <label class="field" title="Source file — anything splat-transform can read, including formats the viewer can't display (.spz, .splat, .ksplat, .lcc, .lcc2) and .mjs generators (their Generate-tab params apply)">
+                    <span>Input</span>
+                    <select id="convert-input"></select>
+                </label>
                 <label class="field hidden" id="row-lod-select" title="LCC / LCC2 input: comma-separated LOD levels to read (-O/--lod-select), e.g. 0,1,2. Empty reads all">
                     <span>LCC LOD levels <em>(.lcc / .lcc2 input only)</em></span>
                     <input type="text" id="convert-lod-select" placeholder="e.g. 0,1,2 — empty = all" />
@@ -186,7 +195,7 @@
                     <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --mem)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
-                <button id="convert-run" class="primary" title="Run the conversion as a background job — the exact CLI command appears in the Job panel">Convert</button>
+                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Job panel">Export</button>
             </section>
 
             <section class="panel" id="panel-lod">
