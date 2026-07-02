@@ -2,10 +2,12 @@ import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
 import { startMcpBridge, editorError } from './mcp-bridge';
+import { applyActiveTheme, initThemeSettings } from './theme';
 import { createDockview, markDockviewPackageLoaded } from 'dockview-core';
 import type { DockviewApi, IContentRenderer, ITabRenderer, TabPartInitParameters } from 'dockview-core';
 import 'dockview-core/dist/styles/dockview.css';
 markDockviewPackageLoaded(); // silence the "internal package" dev notice — we use the core directly on purpose
+applyActiveTheme(); // before any UI paints
 
 const $ = <T extends HTMLElement>(id: string): T => {
     const el = document.getElementById(id);
@@ -1879,7 +1881,6 @@ const WINDOWS: Win[] = [
     { id: 'panel-edit', component: 'panel-edit', title: 'Edit', closable: true },
     { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
     { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
-    { id: 'panel-settings', component: 'panel-settings', title: 'Settings', closable: true },
     { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
     { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
     { id: 'panel-job', component: 'panel-job', title: 'Job', closable: false }
@@ -1967,7 +1968,6 @@ function applyDefaultLayout(): void {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-settings', component: 'panel-settings', title: titleOf('panel-settings'), position: { referencePanel: 'panel-scene', direction: 'within' } });
     dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Job', position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
@@ -1996,7 +1996,7 @@ dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); }
 (window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
 
 // ---------- top menu bar (Window / Layout) ----------
-const LAYOUT_VERSION = 1;
+const LAYOUT_VERSION = 2; // v1 layouts had a Settings dock panel (now a dialog)
 let saveTimer: number | undefined;
 const persistNow = (): void => { void api.saveLayout({ __v: LAYOUT_VERSION, dockview: dock.toJSON() as unknown as Record<string, unknown> }); };
 
@@ -2141,11 +2141,14 @@ function buildMenuBar(): void {
             { label: 'Undo  (Ctrl+Z)', disabled: !canUndo(), onClick: doUndo },
             { label: 'Redo  (Ctrl+Y)', disabled: !canRedo(), onClick: doRedo }
         ]),
-        makeMenu('Window', () => WINDOWS.map((w) => ({
-            label: w.title,
-            checked: !!dock.getPanel(w.id),
-            onClick: () => { if (dock.getPanel(w.id)) { if (w.closable) closeWindow(w); else openWindow(w); } else openWindow(w); }
-        }))),
+        makeMenu('Window', () => [
+            ...WINDOWS.map((w) => ({
+                label: w.title,
+                checked: !!dock.getPanel(w.id),
+                onClick: () => { if (dock.getPanel(w.id)) { if (w.closable) closeWindow(w); else openWindow(w); } else openWindow(w); }
+            })),
+            { label: 'Settings…', checked: settingsOpen(), onClick: () => { if (settingsOpen()) closeSettings(); else openSettings(); } }
+        ]),
         makeMenu('Layout', () => [
             { label: 'Reset to default', onClick: () => { applyDefaultLayout(); persistNow(); } },
             { label: 'Save layout', onClick: persistNow }
@@ -2154,8 +2157,34 @@ function buildMenuBar(): void {
 }
 buildMenuBar();
 
-// the viewport toolbar's ⚙ opens (or focuses) the Settings tab
-$<HTMLButtonElement>('open-settings').onclick = () => { const w = winById('panel-settings'); if (w) openWindow(w); };
+// ---------- settings dialog ----------
+const settingsBackdrop = $<HTMLDivElement>('settings-backdrop');
+function settingsOpen(): boolean { return !settingsBackdrop.classList.contains('hidden'); }
+function showSettingsPage(page: string): void {
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-nav .settings-nav-item')) {
+        b.classList.toggle('active', b.dataset.page === page);
+    }
+    for (const p of document.querySelectorAll<HTMLElement>('.settings-page')) {
+        p.classList.toggle('hidden', p.dataset.page !== page);
+    }
+}
+function openSettings(page?: string): void {
+    settingsBackdrop.classList.remove('hidden');
+    if (page) showSettingsPage(page);
+}
+function closeSettings(): void { settingsBackdrop.classList.add('hidden'); }
+for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-nav .settings-nav-item')) {
+    b.onclick = () => showSettingsPage(b.dataset.page ?? 'appearance');
+}
+$<HTMLButtonElement>('settings-close').onclick = closeSettings;
+settingsBackdrop.addEventListener('pointerdown', (e) => { if (e.target === settingsBackdrop) closeSettings(); });
+// promptText's capture-phase Escape handler wins while a prompt is up
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settingsOpen()) closeSettings(); });
+initThemeSettings({ promptText, showToast });
+(window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // debug handle
+
+// the viewport toolbar's ⚙ opens the settings dialog
+$<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 
 // ---------- per-workspace layout persistence ----------
 async function bootLayout(): Promise<void> {
@@ -2331,6 +2360,8 @@ const need = <T>(v: T | null | undefined, msg: string): T => { if (v == null) ed
 
 const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     panel: ({ action, id }) => {
+        // settings is a dialog now, but keeps its old panel id for MCP clients
+        if (id === 'panel-settings') { if (action === 'close') closeSettings(); else openSettings(); return { id, action }; }
         const w = winById(String(id));
         if (!w) return editorError('not-found', `no panel "${id}"`);
         if (action === 'close') { if (w.closable) closeWindow(w); else editorError('bad-input', `panel "${id}" can't be closed`); }
@@ -2382,6 +2413,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     select_item: ({ id }) => { selectScene((id == null ? 'none' : String(id)) as SelId); return { selection: viewer?.selection ?? 'none' }; },
     get_editor_state: () => {
         const activePanels = WINDOWS.map((w) => w.id).filter((id) => { const p = dock.getPanel(id); return !!p && p.group.activePanel?.id === id; });
+        if (settingsOpen()) activePanels.push('panel-settings');
         return {
             project: projectSelect.value || null,
             loadedSplat: currentSplatName,
