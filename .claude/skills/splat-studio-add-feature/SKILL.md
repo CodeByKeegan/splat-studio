@@ -46,7 +46,7 @@ running it against `workspace/demo-room.ply` (regenerate with `npm run demo`).
 
 ## 5. Ship
 Commit (author CodeByKeegan; Claude attribution comes from repo settings — leave it),
-push the branch, open a PR with a "Verification" section. Check off the matching Asana task.
+push the branch, open a PR with a "Verification" section. Check off the matching coverage-board task.
 
 ## Exclusions (not applicable to a GUI)
 `--help/-h`, `--version/-v`, `--quiet/-q` (the summary feature uses `-q`

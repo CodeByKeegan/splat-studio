@@ -178,4 +178,4 @@ return `{ jobId }`. Wait with `jobs(action: "wait", id, timeout_ms)`, then read 
 Tutorials for common and uncommon workflows: [MCP_WORKFLOWS.md](MCP_WORKFLOWS.md). For the
 agent-facing playbooks (operating contract, recipes, extending the surface), see the
 `splat-studio-mcp` and `splat-studio-workflows` skills in `.claude/skills/`. The authoritative
-design lives on the project's Asana board (the MCP epic), not in markdown.
+design lives on the project's internal task board, not in markdown.

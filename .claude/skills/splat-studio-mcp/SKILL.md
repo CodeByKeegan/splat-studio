@@ -101,4 +101,4 @@ fields + persistence stay in sync — keep tool descriptions honest about what t
 does). The error contract + job model live in `mcp-server/errors.mjs`. Run `npm run test:mcp`
 after changes (and `npm run typecheck` if `client/` was touched); keep the tool-count check in
 `tests/mcp-e2e.mjs` and the docs (`docs/MCP_SETUP.md` §7, `docs/MCP_WORKFLOWS.md`) in sync.
-The authoritative design is the Asana MCP epic, not markdown.
+The authoritative design lives on the internal task board, not markdown.

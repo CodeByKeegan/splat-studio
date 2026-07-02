@@ -188,6 +188,6 @@ through before its PR can merge.
 ## Conventions
 
 - **Branch + PR per change** (worktrees preferred); the suite must be green.
-- Commits authored **CodeByKeegan**, no AI attribution.
+- Commits authored **CodeByKeegan** with Claude Code co-authorship (see the README's AI-assisted development section).
 - Every GUI control's tooltip names the CLI flag it maps to, in parentheses.
-- New feature work is tracked on the Asana coverage board (one task per CLI flag).
+- New feature work is tracked on an internal coverage board (one task per CLI flag).

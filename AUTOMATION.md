@@ -48,5 +48,6 @@ illustrated guide to every feature.
 
 ## Conventions
 Branch + PR per change (worktrees preferred); commits authored **CodeByKeegan**
-with no AI attribution; tooltips name the CLI flag in parens. New feature work
-is tracked on the Asana coverage board (one task per CLI flag).
+with Claude Code co-authorship (see the README's AI-assisted development section);
+tooltips name the CLI flag in parens. New feature work is tracked on an internal
+coverage board (one task per CLI flag).

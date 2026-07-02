@@ -47,7 +47,7 @@ bar. Run a UX pass first:
    visibility like the neighbouring rows; put the flag name + caveat in `title=`.
 3. **Implement** end-to-end per **splat-studio-add-feature** (server builder +
    client control + tooltip), add a `check(...)` to `tests/e2e.mjs`, and
-   create/check-off the matching Asana task (project gid [redacted-id]).
+   create/check-off the matching task on the internal coverage board.
 
 For a **non-trivial bump** (a new feature like environment-LOD, or several flags),
 run a **Workflow** to fan this out: discover (purpose · design-system fit ·
