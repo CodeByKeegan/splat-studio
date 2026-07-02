@@ -41,6 +41,7 @@ workspace.
 - [HTTP API](#http-api)
 - [Built with](#built-with)
 - [Contributing](#contributing)
+- [AI-assisted development](#ai-assisted-development)
 - [License](#license)
 - [Support](#support)
 
@@ -341,6 +342,14 @@ Contributions are welcome — issues and pull requests both.
 
 Open an [issue](https://github.com/CodeByKeegan/splat-studio/issues) first if you
 want to discuss a larger change.
+
+## AI-assisted development
+
+Splat Studio is developed with [Claude Code](https://claude.com/claude-code).
+Commits and pull requests carry standard `Co-Authored-By` attribution, and PRs
+opened autonomously by the weekly dependency-update routine say so in their
+description. All changes — human- or agent-authored — are reviewed before merge
+and held to the same checks described in [Contributing](#contributing).
 
 ## License
 

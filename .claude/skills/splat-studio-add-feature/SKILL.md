@@ -45,8 +45,8 @@ running it against `workspace/demo-room.ply` (regenerate with `npm run demo`).
   isolated server (own port + temp workspace) — assert via DOM/`window.__viewer`.
 
 ## 5. Ship
-Commit (no AI attribution; author CodeByKeegan), push the branch, open a PR with
-a "Verification" section. Check off the matching Asana task.
+Commit (author CodeByKeegan; Claude attribution comes from repo settings — leave it),
+push the branch, open a PR with a "Verification" section. Check off the matching Asana task.
 
 ## Exclusions (not applicable to a GUI)
 `--help/-h`, `--version/-v`, `--quiet/-q` (the summary feature uses `-q`
