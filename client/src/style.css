@@ -633,6 +633,9 @@ body.dropping #viewport::after {
 #lod-file-rows .lod-row .lod-env input { margin: 0; }
 #lod-add-level { margin-top: 2px; font-size: var(--fs-sm); }
 
+/* the console grows/shrinks with the Job tab */
+#panel-job { display: flex; flex-direction: column; }
+#panel-job h2, #job-command { flex-shrink: 0; }
 #job-command {
     display: block;
     font-size: var(--fs-sm);
@@ -649,12 +652,12 @@ body.dropping #viewport::after {
     font-size: var(--fs-sm);
     padding: 8px;
     margin: 0;
-    height: 140px;
+    flex: 1;
+    min-height: 38px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
 }
-.log:empty { height: auto; min-height: 38px; }
 .log:empty::before {
     content: 'No job yet — Convert / Generate runs stream their CLI output here.';
     color: var(--text-dim);
