@@ -12,7 +12,8 @@ meshes, and edit splats — all with a live PlayCanvas 3D viewport.
 ## Contents
 - [The interface](#the-interface)
 - [Projects & files](#projects--files)
-- [Convert: output formats & filters](#convert-output-formats--filters)
+- [Export: output formats & filters](#export-output-formats--filters)
+- [Generate: procedural .mjs generators](#generate-procedural-mjs-generators)
   - [Filters](#filters)
 - [LOD: streamed multi-LOD](#lod-streamed-multi-lod)
 - [Render: WebP image](#render-webp-image)
@@ -39,7 +40,7 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
 
 - **Top menu bar** — the app title, the **Window** and **Layout** menus, and the
   project picker.
-- **Dock** — the default layout puts the panel tabs (Files, Convert, LOD, Render,
+- **Dock** — the default layout puts the panel tabs (Files, Export, Generate, LOD, Render,
   Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Job** panel
   (live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
   to rearrange; drag a tab out to float it in its own window. **Settings** opens as
@@ -93,8 +94,8 @@ To add splats:
    ![File actions menu](screenshots/files-context-menu.png)
 
    - **View in viewport**
-   - **Convert → SOG bundle** / **Convert (other formats)…** — jumps to the Convert
-     panel with the file selected and the format preset; **Convert → Streamed LOD**
+   - **Export → SOG bundle** / **Export as…** — jumps to the Export
+     panel with the file selected and the format preset; **Export → Streamed LOD**
      jumps to the LOD panel.
    - **Generate / Regenerate collision…** — jumps to the Collision panel (the label
      tells you whether a collision mesh already sits next to the file).
@@ -102,7 +103,7 @@ To add splats:
    - **Edit (scale / origin)…**, **Generate & view** (`.mjs` generators),
      **Copy file path**, and **Delete**.
 4. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
-   project so you can try the generator workflow immediately.
+   project — run it from the [Generate tab](#generate-procedural-mjs-generators).
 
 > **Linked group — edit a proxy, apply to every LOD:** the **Linked group** section at
 > the bottom of the Files panel lets you tick the files that are the same location at
@@ -110,7 +111,7 @@ To add splats:
 > whole ladder so it stays consistent. Two actions:
 >
 > - **Apply transforms to members** — set the **Transform** in the **Edit** panel (plus
->   a splat output format in **Convert**) on your proxy, then click this; every ticked
+>   a splat output format in **Export**) on your proxy, then click this; every ticked
 >   member is converted in turn with the same transform/filter settings.
 > - **Apply region to members** — set a **Region** (carve or crop) in the **Edit** panel
 >   on your proxy, then click this; the same removal or crop is applied to every ticked
@@ -125,13 +126,14 @@ To add splats:
 
 ---
 
-## Convert: output formats & filters
+## Export: output formats & filters
 
-![Convert formats](screenshots/convert-formats.png)
+![Export formats](screenshots/convert-formats.png)
 
-The Convert panel runs one `splat-transform` conversion as a background job. It handles
-**output formats** and **encode-time filters**; spatial edits (transform, crop/carve)
-live in the [Edit panel](#edit-transform-measure--region), streamed multi-LOD bakes in
+The Export panel produces an output file from a splat — one `splat-transform`
+conversion as a background job. It handles **output formats** and **encode-time
+filters**; spatial edits (transform, crop/carve) live in the
+[Edit panel](#edit-transform-measure--region), streamed multi-LOD bakes in
 the [LOD panel](#lod-streamed-multi-lod), and image renders in the
 [Render panel](#render-webp-image).
 
@@ -153,13 +155,25 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
    paired **SH iterations** / **Encoder workers** row — iterations trade quality
    for speed, while Encoder workers (`--max-workers`) only changes encode speed,
    not the output (`0` = serial). Other formats surface SPZ version, HTML viewer
-   options, etc. Then click **Convert**. The exact CLI command and live output appear
+   options, etc. Then click **Export**. The exact CLI command and live output appear
    in the **Job** panel. With **Load result into viewport** checked (default), any
    viewable result loads automatically when the job finishes.
 
-> **Generators:** when the input is a `.mjs` file, a **Generator params** field (and,
-> if the generator advertises a schema, live sliders) appear. **✨ Generate & view**
-> runs the generator and loads the result straight into the viewport.
+## Generate: procedural .mjs generators
+
+The **Generate** tab runs a procedural `.mjs` generator — a script that creates
+gaussians from parameters instead of a scan (creation, not export, which is why it
+has its own tab).
+
+1. **Generator** — pick a `.mjs` file in the project (**+ sample generator** in
+   Files drops one in).
+2. **Params** — a freeform `key=val` field, or **live sliders** if the generator
+   advertises a `params` schema (drag and release to regenerate).
+3. **✨ Generate & view** — writes a `.ply` into the project and loads it straight
+   into the viewport.
+
+To export a generator to another format, pick the `.mjs` as the **Export** input —
+the Generate tab's params apply to that run too.
 
 ### Filters
 
@@ -188,7 +202,7 @@ The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-
 folders that the engine streams by camera distance, for scenes too big to load at once.
 
 1. **Input** — the highest-detail source (LOD 0).
-2. Set the paired **SH iterations** / **Encoder workers** row (as in Convert).
+2. Set the paired **SH iterations** / **Encoder workers** row (as in Export).
 3. **LOD source** — *Decimate input automatically* derives the lighter levels from the
    single input, or *Combine existing files as levels* uses files you already have
    (e.g. exports at different gaussian counts) as explicit levels.

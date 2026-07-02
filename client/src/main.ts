@@ -17,6 +17,7 @@ const $ = <T extends HTMLElement>(id: string): T => {
 
 const fileList = $<HTMLUListElement>('file-list');
 const convertInput = $<HTMLSelectElement>('convert-input');
+const genInput = $<HTMLSelectElement>('gen-input');
 const lodInput = $<HTMLSelectElement>('lod-input');
 const renderInput = $<HTMLSelectElement>('render-input');
 const collisionInput = $<HTMLSelectElement>('collision-input');
@@ -169,6 +170,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
     const convertNames = [...splatFileNames, ...generatorNames];
     fillSelect(convertInput, convertNames);
     fillSelect(analyzeInput, convertNames);
+    fillSelect(genInput, generatorNames);
     for (const select of [lodInput, renderInput, collisionInput, editInput, ...lodRowSelects()]) {
         fillSelect(select, splatFileNames);
     }
@@ -192,6 +194,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
     for (const [select, id, names] of [
         [convertInput, 'convert-input', convertNames],
         [analyzeInput, 'analyze-input', convertNames],
+        [genInput, 'gen-input', generatorNames],
         [lodInput, 'lod-input', splatFileNames],
         [renderInput, 'render-input', splatFileNames],
         [collisionInput, 'collision-input', splatFileNames],
@@ -222,7 +225,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
             collision: 'Collision triangle mesh — view it as a wireframe over the splat',
             glb: 'glTF binary (KHR_gaussian_splatting splat export)',
             export: 'Export artifact (CSV / HTML / image)',
-            generator: 'Procedural splat generator (.mjs) — pick as a Convert input and pass -p params (Beta, local only)',
+            generator: 'Procedural splat generator (.mjs) — run it from the Generate tab with -p params (Beta, local only)',
             other: 'Unrecognized file type'
         };
         const tag = document.createElement('span');
@@ -445,15 +448,15 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
     if (f.viewable) items.push({ label: '👁  View in viewport', hint: 'Load this file into the 3D viewer', run: () => void viewFile(f.name, f.viewable!) });
 
     if (isGenerator) {
-        items.push({ label: '✨  Generate & view', hint: 'Run the .mjs generator and load the result', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); void updateInputRows().then(() => generateViewBtn.click()); } });
+        items.push({ label: '✨  Generate & view', hint: 'Run the .mjs generator and load the result', run: () => { prefillSelect(genInput, f.name); openPanel('panel-generate'); void updateGenRows().then(() => generateViewBtn.click()); } });
     }
     if (isRaw) {
-        items.push({ label: 'Convert → SOG bundle', hint: 'Compress to a single .sog (~95% smaller)', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'sog'); openPanel('panel-convert'); } });
-        items.push({ label: 'Convert → Streamed LOD', hint: 'Streamable multi-LOD SOG for big scenes', run: () => { prefillSelect(lodInput, f.name); openPanel('panel-lod'); } });
+        items.push({ label: 'Export → SOG bundle', hint: 'Compress to a single .sog (~95% smaller)', run: () => { prefillSelect(convertInput, f.name); prefillSelect(convertFormat, 'sog'); openPanel('panel-convert'); } });
+        items.push({ label: 'Export → Streamed LOD', hint: 'Streamable multi-LOD SOG for big scenes', run: () => { prefillSelect(lodInput, f.name); openPanel('panel-lod'); } });
         items.push({ label: 'Render → WebP image', hint: 'Render a lossless image via the GPU rasterizer', run: () => { prefillSelect(renderInput, f.name); openPanel('panel-render'); } });
     }
     if (isSplat || isGenerator) {
-        items.push({ label: isRaw ? 'Convert (other formats)…' : 'Convert…', hint: 'Open the Convert panel with this file selected', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); } });
+        items.push({ label: isRaw ? 'Export (other formats)…' : 'Export as…', hint: 'Open the Export panel with this file selected', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); } });
         items.push({ label: 'Analyze stats', hint: 'Run -m/--summary and show the stats card', run: () => { prefillSelect(analyzeInput, f.name); openPanel('panel-analyze'); analyzeRun.click(); } });
     }
     if (isSplat) {
@@ -506,8 +509,10 @@ const uploadFiles = async (files: Iterable<File>) => {
         } else if (lastSplat && lastSplat.endsWith('.mjs')) {
             convertInput.value = lastSplat; // generators aren't collision sources
             analyzeInput.value = lastSplat;
+            genInput.value = lastSplat;
         }
         updateInputRows();
+        void updateGenRows();
     }
 };
 
@@ -545,7 +550,7 @@ window.addEventListener('drop', (e) => {
 // Generator class with static create(params) returning {count, columnNames,
 // getRow}. Values are raw (log scale, logit opacity, SH-DC colour).
 const SAMPLE_GENERATOR = `// Sample procedural splat generator for @playcanvas/splat-transform.
-// Convert it in Splat Studio with params like: width=16,height=16,scale=4
+// Run it from Splat Studio's Generate tab with params like: width=16,height=16,scale=4
 const SH_C0 = 0.28209479177387814;
 const toSH = c => (c - 0.5) / SH_C0;        // colour [0..1] -> f_dc
 const toLogit = a => Math.log(a / (1 - a)); // alpha [0..1] -> opacity
@@ -734,14 +739,14 @@ const addLodRow = () => {
 $<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
 
 const RUN_LABELS: Record<string, string> = {
-    'sog': 'Convert → SOG bundle',
-    'sog-unbundled': 'Convert → SOG folder',
-    'ply': 'Convert → PLY',
-    'compressed-ply': 'Convert → Compressed PLY',
-    'spz': 'Convert → SPZ',
-    'glb': 'Convert → GLB',
-    'csv': 'Convert → CSV',
-    'html': 'Convert → HTML viewer'
+    'sog': 'Export → SOG bundle',
+    'sog-unbundled': 'Export → SOG folder',
+    'ply': 'Export → PLY',
+    'compressed-ply': 'Export → Compressed PLY',
+    'spz': 'Export → SPZ',
+    'glb': 'Export → GLB',
+    'csv': 'Export → CSV',
+    'html': 'Export → HTML viewer'
 };
 
 const updateConvertRows = () => {
@@ -750,7 +755,7 @@ const updateConvertRows = () => {
     $('row-sog-encode').classList.toggle('hidden', !isSog);
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
     $('html-rows').classList.toggle('hidden', f !== 'html');
-    if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Convert';
+    if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Export';
 };
 convertFormat.onchange = updateConvertRows;
 
@@ -887,20 +892,24 @@ const renderGenSliders = (schema: api.GenParam[]) => {
 };
 
 const currentGenParams = (): string => {
-    if (genSchema && genSchemaFor === convertInput.value) {
+    if (genSchema && genSchemaFor === genInput.value) {
         return [...$('gen-sliders').querySelectorAll<HTMLInputElement>('input[type=range]')]
             .map((i) => `${i.dataset.name}=${i.value}`).join(',');
     }
     return $<HTMLInputElement>('convert-params').value.trim();
 };
 
-const updateInputRows = async (): Promise<void> => {
-    const input = convertInput.value;
-    const isMjs = input.toLowerCase().endsWith('.mjs');
-    const lower = input.toLowerCase();
+const updateInputRows = (): void => {
+    const lower = convertInput.value.toLowerCase();
     $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2')));
-    $('row-gen-actions').classList.toggle('hidden', !isMjs);
-    if (!isMjs) {
+};
+convertInput.onchange = updateInputRows;
+
+// Generate panel: schema-driven sliders (or a freeform params field) for the
+// selected .mjs generator
+const updateGenRows = async (): Promise<void> => {
+    const input = genInput.value;
+    if (!input.toLowerCase().endsWith('.mjs')) {
         $('row-gen-params').classList.add('hidden');
         $('row-gen-sliders').classList.add('hidden');
         genSchema = null; genSchemaFor = '';
@@ -915,7 +924,7 @@ const updateInputRows = async (): Promise<void> => {
     $('row-gen-sliders').classList.toggle('hidden', !hasSchema);
     $('row-gen-params').classList.toggle('hidden', hasSchema);
 };
-convertInput.onchange = () => void updateInputRows();
+genInput.onchange = () => void updateGenRows();
 
 // populate the device dropdowns with GPU adapters (-L), then reapply any saved choice
 void api.listGpus().then((gpus) => {
@@ -993,8 +1002,8 @@ for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', '
 $('webp-projection').addEventListener('change', () => rebuildSceneList());
 
 const doGenerateView = (): void => {
-    const input = convertInput.value;
-    if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator as the Convert input', true); return; }
+    const input = genInput.value;
+    if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator in the Generate tab', true); return; }
     if (jobBusy) { scheduleGenPreview(); return; } // coalesce while a job runs
     void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn);
 };
@@ -1008,7 +1017,8 @@ generateViewBtn.onclick = doGenerateView;
 restoreFormState();
 updateConvertRows();
 updateLodRows();
-void updateInputRows();
+updateInputRows();
+void updateGenRows();
 
 // reveal each optional filter's inputs only when its checkbox is on
 const ACTION_TOGGLES: [string, string][] = [
@@ -1370,7 +1380,7 @@ groupApplyBtn.onclick = async () => {
     if (!panelValid('panel-convert')) return;
     const format = convertFormat.value;
     if (format === 'csv') {
-        return showToast('Pick a splat output format in the Convert panel (PLY / SOG / …) — CSV doesn’t carry these per-gaussian edits', true);
+        return showToast('Pick a splat output format in the Export panel (PLY / SOG / …) — CSV doesn’t carry these per-gaussian edits', true);
     }
     groupWarn.classList.add('hidden');
     groupApplyBtn.disabled = true;
@@ -1874,7 +1884,8 @@ $<HTMLButtonElement>('skybox-clear').onclick = () => { viewer?.clearSkybox(); sh
 type Win = { id: string; component: string; title: string; closable: boolean };
 const WINDOWS: Win[] = [
     { id: 'panel-files', component: 'panel-files', title: 'Files', closable: true },
-    { id: 'panel-convert', component: 'panel-convert', title: 'Convert', closable: true },
+    { id: 'panel-convert', component: 'panel-convert', title: 'Export', closable: true },
+    { id: 'panel-generate', component: 'panel-generate', title: 'Generate', closable: true },
     { id: 'panel-lod', component: 'panel-lod', title: 'LOD', closable: true },
     { id: 'panel-render', component: 'panel-render', title: 'Render', closable: true },
     { id: 'panel-analyze', component: 'panel-analyze', title: 'Analyze', closable: true },
@@ -1964,7 +1975,7 @@ function applyDefaultLayout(): void {
     dock.clear();
     dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
     dock.addPanel({ id: 'panel-files', component: 'panel-files', title: 'Files', position: { referencePanel: 'viewer', direction: 'left' } });
-    for (const id of ['panel-convert', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
+    for (const id of ['panel-convert', 'panel-generate', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
@@ -1974,6 +1985,12 @@ function applyDefaultLayout(): void {
     dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });
     dock.getPanel('panel-job')?.group.api.setSize({ height: 180 });
     dock.getPanel('panel-files')?.api.setActive();
+}
+
+// a restored layout carries the tab titles it was saved with — re-apply the
+// current names so renamed windows don't show stale titles
+function reconcilePanelTitles(): void {
+    for (const p of dock.panels) p.api.setTitle(titleOf(p.id));
 }
 
 // open (or focus) a window; close removes its tab (the node returns to the pool)
@@ -2192,7 +2209,7 @@ async function bootLayout(): Promise<void> {
     try { saved = await api.getLayout(); } catch { /* offline / first run → keep default */ }
     const s = saved as { __v?: number; dockview?: unknown } | null;
     if (s && s.__v === LAYOUT_VERSION && s.dockview) {
-        try { dock.fromJSON(s.dockview as Parameters<DockviewApi['fromJSON']>[0]); }
+        try { dock.fromJSON(s.dockview as Parameters<DockviewApi['fromJSON']>[0]); reconcilePanelTitles(); }
         catch { applyDefaultLayout(); }
     }
     dock.onDidLayoutChange(() => { clearTimeout(saveTimer); saveTimer = window.setTimeout(persistNow, 400); });
@@ -2372,7 +2389,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         if (action === 'get') return { layout: dock.toJSON() };
         if (action === 'reset') { applyDefaultLayout(); persistNow(); return { ok: true }; }
         if (action === 'set') {
-            try { dock.fromJSON(layout as Parameters<DockviewApi['fromJSON']>[0]); persistNow(); }
+            try { dock.fromJSON(layout as Parameters<DockviewApi['fromJSON']>[0]); reconcilePanelTitles(); persistNow(); }
             catch (e) { return editorError('bad-input', `invalid layout: ${(e as Error).message}`); }
             return { ok: true };
         }

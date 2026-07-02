@@ -118,7 +118,7 @@ window.__doc = {
     const dock = window.__dock;
     if (!dock) return;
     if (!dock.getPanel(panel)) {
-      const w = { 'panel-files':'Files','panel-convert':'Convert','panel-lod':'LOD','panel-render':'Render','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','camera-view':'Camera view' }[panel];
+      const w = { 'panel-files':'Files','panel-convert':'Export','panel-generate':'Generate','panel-lod':'LOD','panel-render':'Render','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','camera-view':'Camera view' }[panel];
       try { dock.addPanel({ id: panel, component: panel, title: w || panel }); } catch (e) {}
     }
     const p = dock.getPanel(panel);
