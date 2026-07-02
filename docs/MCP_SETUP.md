@@ -96,8 +96,8 @@ Run the server over **stdio** with:
 
 Headless tools work as soon as the app is running. To let an agent drive the **live editor**:
 
-1. In Splat Studio, open the **Settings** panel.
-2. Under **Agent control (MCP)**, tick **"Allow agent (MCP) control of the editor."**
+1. In Splat Studio, open **Settings** (⚙ in the viewport toolbar) and pick the **Agent (MCP)** section.
+2. Tick **"Allow agent (MCP) control of the editor."**
 3. The status line shows the editor bridge as **connected · control ON**.
 
 It's **off by default**, loopback-only, and you can untick it any time to revoke access instantly.

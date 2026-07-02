@@ -41,8 +41,9 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
   project picker.
 - **Dock** — the default layout puts the panel tabs (Files, Convert, LOD, Render,
   Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Job** panel
-  (live `splat-transform` output) below it, and **Scene** / **Settings** on the
-  right. Drag any tab to rearrange; drag a tab out to float it in its own window.
+  (live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
+  to rearrange; drag a tab out to float it in its own window. **Settings** opens as
+  its own dialog (⚙ in the viewport toolbar, or **Window ▸ Settings…**).
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
   its top. The default camera is **fly** (mouse-look + WASD); right-drag pans, scroll
   zooms. Switch to orbit from the toolbar.
@@ -60,7 +61,7 @@ Every control has a tooltip — hover to see what it does and which CLI flag it 
   disk), and the history resets when you switch projects.
 - **Window** — lists every panel with a checkmark for the ones that are open. Click to
   **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Job** tabs
-  can't be closed.)
+  can't be closed.) **Settings…** at the bottom opens the settings dialog.
 - **Layout** — **Reset to default** restores the standard arrangement; **Save layout**
   checkpoints the current one. The layout is **saved per workspace**, so each workspace
   remembers its own arrangement.
@@ -380,17 +381,27 @@ Display controls live in a **toolbar along the top of the Viewer 3D window**:
   quick outlier check). **Flip** — for collision meshes from other tools already in
   viewer/engine space (splat-transform output is aligned automatically).
 - **Frame** — re-fit the camera. **Clear** — unload everything and free GPU memory.
-- **⚙** — opens the **Settings** tab.
+- **⚙** — opens the **Settings** dialog (also under **Window ▸ Settings…**).
 
 Layer visibility (splat / collision / voxels) is toggled per-object with the **👁 eye
 buttons in the [Scene panel](#scene-hierarchy)**.
 
-![Settings panel](screenshots/settings-panel.png)
+![Settings dialog](screenshots/settings-panel.png)
 
-The **Settings** window holds the **wire / voxel colors & opacity** for the overlays.
-Appearance options (theme, font size, language) are placeholders for a future update.
+**Settings** opens as a dialog with sections down the left:
 
-It also has **Agent control (MCP)** — a single toggle that lets a connected AI agent drive the live
+- **Appearance** — the app **theme**. **Dark** and **Light** are built in; **+ New**
+  copies the selected theme into an editable one where every color is configurable
+  live — surfaces, text, the **accent**, the **selection/focus** color, the panel
+  hues and the status colors — each with a color picker + hex field. Custom themes
+  can be renamed, deleted, or reset to their base palette, and everything is
+  remembered between sessions.
+- **Viewport** — the **wire / voxel colors & opacity** for the 3D overlays.
+- **Workspace** — the folder whose subfolders are your projects.
+- **Agent (MCP)** — agent control of the live editor (below).
+- **About** — component versions.
+
+**Agent (MCP)** holds a single toggle that lets a connected AI agent drive the live
 editor through Splat Studio's [MCP server](../README.md#mcp-server-ai-agent-control). It's **off by
 default**, loopback-only, and revocable instantly; the headless pipeline tools work regardless. See
 [docs/MCP_SETUP.md](MCP_SETUP.md) for the full setup.
