@@ -84,9 +84,11 @@ binary failed to install, set `ELECTRON_OVERRIDE_DIST_PATH` to the main checkout
 `node_modules/electron/dist`. Fold the doc diff into this same PR.
 
 ## 6. Ship
-Commit (author CodeByKeegan, no AI attribution), push, open a PR titled
-`chore: bump <pkg> to <version> (+ N new flags wired)`, with a Verification
-section listing the `npm test` result and any new flags surfaced.
+Commit (author CodeByKeegan; Claude attribution comes from repo settings — leave it),
+push, open a PR titled `chore: bump <pkg> to <version> (+ N new flags wired)`, with
+a Verification section listing the `npm test` result and any new flags surfaced.
+End the PR body with: *Authored autonomously by the weekly dependency-update routine.*
+Never include claude.ai session links.
 
 ## Notes
 - The regression suite (`tests/e2e.mjs`) is the safety net — if a bump breaks an
