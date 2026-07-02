@@ -2367,7 +2367,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         if (action === 'set') { v.setCamera(need(eye as number[], 'set needs eye'), need(target as number[], 'set needs target')); return v.getCamera(); }
         return editorError('bad-input', `unknown camera action "${action}"`);
     },
-    viewport_screenshot: async () => await need(viewer, 'viewer not ready').captureScreenshot(),
+    viewport_screenshot: async ({ maxWidth }) => await need(viewer, 'viewer not ready').captureScreenshot(Number(maxWidth) || undefined),
     viewport_click: ({ x, y }) => {
         const v = need(viewer, 'viewer not ready');
         const canvas = v.canvas;
@@ -2432,18 +2432,34 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         return editorError('bad-input', `unknown region target "${target}"`);
     },
     set_origin: ({ point }) => {
-        need(viewer, 'viewer not ready');
+        const v = need(viewer, 'viewer not ready');
         setCheck('origin-toggle', true);
-        void point;
-        return { ok: true, note: 'origin mode on — place the point with viewport_click' };
+        if (Array.isArray(point)) v.placeMarkerAt(point as [number, number, number]);
+        if (!v.markersPlaced) return { placed: false, note: 'origin mode on — place the point with viewport_click or pass point' };
+        const t = v.originTranslateCli();
+        return { placed: true, translate: [t.x, t.y, t.z] };
     },
-    measure: ({ action, length }) => {
+    measure: ({ action, length, points }) => {
+        const v = need(viewer, 'viewer not ready');
         if (action === 'set_length') {
             if (!(Number(length) > 0)) return editorError('bad-input', 'length must be > 0');
             setField('measure-length', Number(length));
             return { length };
         }
-        return { note: 'enable Measure mode + place A/B with viewport_click while the Edit panel is active' };
+        if (Array.isArray(points) && points.length) {
+            setCheck('measure-toggle', true);
+            if (points.length === 2) v.setActiveMarker('a');
+            for (const p of points as number[][]) v.placeMarkerAt(p as [number, number, number]);
+        }
+        const st = v.measureState();
+        const len = Number($<HTMLInputElement>('measure-length').value);
+        return { ...st, ...(st.distance > 0 && len > 0 ? { scale: r4(len / st.distance) } : {}) };
+    },
+    history: ({ action }) => {
+        if (action === 'undo') { if (!canUndo()) return editorError('bad-input', 'nothing to undo'); doUndo(); }
+        else if (action === 'redo') { if (!canRedo()) return editorError('bad-input', 'nothing to redo'); doRedo(); }
+        else if (action !== 'get') return editorError('bad-input', `unknown history action "${action}"`);
+        return { canUndo: canUndo(), canRedo: canRedo() };
     },
     render_pose: ({ action, camera, lookAt }) => {
         if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');

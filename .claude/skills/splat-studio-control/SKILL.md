@@ -29,17 +29,28 @@ API_PORT=<port> SPLAT_WORKSPACE=<abs dir> node server/index.mjs
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | `{ ok, cli }` — `cli:true` means the CLI resolved |
+| GET | `/api/versions` | app + splat-transform + playcanvas versions |
+| GET/POST | `/api/workspace` | get / switch (`{ path, create? }`) the workspace folder — live, no restart; switching resets editor consent |
 | GET | `/api/projects` | `{ projects: string[] }` |
 | POST | `/api/projects` | `{ name }` → create a project folder |
 | GET | `/api/files?project=` | `{ files: [{ name, size, kind, viewable }] }` |
-| POST | `/api/upload?project=&name=` | raw body stream → file |
+| POST | `/api/upload?project=&name=` | raw body stream → file (8 GB cap; overwrites) |
 | DELETE | `/api/files/:rel?project=` | delete a file/folder |
-| POST | `/api/convert` | `{ project, input, format, options }` → `{ jobId }` |
+| GET | `/api/stats?project=&input=` | gaussian count + extents (cached by path+mtime) |
+| GET | `/api/gpus` | GPU adapters `[{ index, name }]` |
+| POST | `/api/convert` | `{ project, input, format, options }` → `{ jobId }` (also `lod` + `webp` formats) |
 | POST | `/api/collision` | `{ project, input, options }` → `{ jobId }` |
 | POST | `/api/summary` | `{ project, input, options? }` → `{ jobId }` (analysis-only) |
+| POST | `/api/trim` | `{ project, input, options: { mode, box?, sphere? } }` → `{ jobId }` (region carve/crop worker) |
 | GET | `/api/generator-params?project=&input=` | `{ params }` — a .mjs generator's slider schema, or null |
+| GET | `/api/jobs` | all jobs, no logs |
 | GET | `/api/jobs/:id` | `{ status: running\|done\|error, log, command, outputs, viewables }` |
 | POST | `/api/jobs/:id/cancel` | kill a running job |
+| GET/POST | `/api/layout` | persisted dock layout (per-workspace dotfile) |
+| GET/POST | `/api/groups` | location-group members + proxy sidecar (viewer linked groups) |
+| POST | `/api/editor/command` | forward `{ name, params }` to the GUI over the WS relay (consent-gated: 403 off, 409 no editor, 504 timeout) |
+| GET | `/api/editor/status` | `{ connected, controlEnabled, editorProject, appVersion, ... }` |
+| POST | `/api/editor/control` | `{ enabled }` — persist the consent toggle (the GUI's checkbox; agents must not flip it) |
 
 ### Running a job
 POST to convert/collision/summary, then poll `/api/jobs/:id` until

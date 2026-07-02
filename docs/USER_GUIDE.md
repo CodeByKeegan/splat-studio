@@ -392,8 +392,9 @@ Appearance options (theme, font size, language) are placeholders for a future up
 
 It also has **Agent control (MCP)** — a single toggle that lets a connected AI agent drive the live
 editor through Splat Studio's [MCP server](../README.md#mcp-server-ai-agent-control). It's **off by
-default**, loopback-only, and revocable instantly; the headless pipeline tools work regardless. See
-[docs/MCP_SETUP.md](MCP_SETUP.md) for the full setup.
+default**, loopback-only, and revocable instantly (and it resets to off when you switch workspaces);
+the headless pipeline tools work regardless. See [docs/MCP_SETUP.md](MCP_SETUP.md) for the full
+setup and [docs/MCP_WORKFLOWS.md](MCP_WORKFLOWS.md) for step-by-step agent workflow tutorials.
 
 ---
 

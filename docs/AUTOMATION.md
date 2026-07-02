@@ -170,6 +170,8 @@ place, so a docs PR is a clean diff of only what visually changed.
 | Skill | Responsibility |
 | --- | --- |
 | `splat-studio-control` | How to drive the app: server, project model, the full HTTP API for every function. |
+| `splat-studio-mcp` | The MCP server contract: tools, consent, jobs, coordinate frames, extending the surface. |
+| `splat-studio-workflows` | End-to-end MCP recipes (web optimization, collision, renders, cleanup, scaling, batch). |
 | `splat-studio-test` | Run and extend the regression suite. |
 | `splat-studio-add-feature` | Wire a new CLI flag (or viewer feature) into the GUI end-to-end, with a test. |
 | `splat-studio-update-deps` | The autonomous routine: detect an upstream update, bump it, wire new flags, run tests, open a PR. |

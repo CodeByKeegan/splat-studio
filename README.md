@@ -307,11 +307,12 @@ Point an MCP client (Claude Desktop, Claude Code, etc.) at the server:
 
 Start Splat Studio first. Headless tools work immediately. To let an agent control the **live** editor,
 turn on **Settings → Agent control (MCP)** — it's off by default, loopback-only, and revocable instantly.
-26 tools total.
+28 tools total.
 
 📖 **Step-by-step install + client setup (Claude Desktop / Claude Code), the full tool list, and
-troubleshooting: [docs/MCP_SETUP.md](docs/MCP_SETUP.md).** For the agent-facing playbook, see the
-`splat-studio-mcp` skill.
+troubleshooting: [docs/MCP_SETUP.md](docs/MCP_SETUP.md).** Workflow tutorials — from "convert this
+for the web" to 360° panoramas and real-world scaling: [docs/MCP_WORKFLOWS.md](docs/MCP_WORKFLOWS.md).
+For the agent-facing playbooks, see the `splat-studio-mcp` and `splat-studio-workflows` skills.
 
 ## Built with
 

@@ -12,3 +12,8 @@ export const headless = (fn) => async (args, extra) => {
 };
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Tool annotation presets (MCP behaviour hints; everything is local/loopback).
+export const RO = { readOnlyHint: true, openWorldHint: false };                    // pure read
+export const SAFE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false }; // writes, never deletes user data
+export const DEL = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };   // can delete/overwrite user data

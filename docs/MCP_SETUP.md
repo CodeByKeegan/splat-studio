@@ -134,18 +134,24 @@ return `no-editor`.
 
 ---
 
-## 7. What the agent can do (26 tools)
+## 7. What the agent can do (28 tools)
 
 | Group | Tools |
 |---|---|
-| **Files** | `projects` (list/create) · `files` (list/delete) · `import_file` |
-| **Analysis / jobs** | `inspect` (stats/generator_params/gpus/health/versions) · `get_summary` · `jobs` (get/list/cancel/wait) · `suggest_lod_settings` |
+| **Workspace / files** | `workspace` (get/set) · `projects` (list/create) · `files` (list/delete) · `import_file` |
+| **Analysis / jobs** | `inspect` (stats/generator_params/gpus/health/versions/editor_status) · `get_summary` · `jobs` (get/list/cancel/wait) · `suggest_lod_settings` |
 | **Pipeline (jobs)** | `convert` · `build_lod` · `render_image` · `generate_collision` · `trim_region` |
 | **Editor — viewport** | `camera` (get/set/mode/frame) · `viewport_screenshot` · `viewport_click` · `load_into_viewport` · `select_item` · `get_editor_state` |
-| **Editor — scene/tools/dock** | `set_view_option` · `measure` · `set_origin` · `set_region` · `render_pose` · `set_collision_gizmo` · `panel` · `layout` |
+| **Editor — scene/tools/dock** | `set_view_option` · `measure` · `set_origin` · `set_region` · `render_pose` · `set_collision_gizmo` · `history` (undo/redo) · `panel` · `layout` |
 
 Plus **resources** (`splat-studio://projects`, `://jobs`, `://files/{project}`) and **prompts**
-(`optimize_for_web`, `setup_collision`, `inspect_splat`).
+(`optimize_for_web`, `setup_collision`, `inspect_splat`, `clean_up_scan`, `scale_to_real_world`).
+
+Every tool carries MCP behaviour annotations (read-only / destructive hints), so clients
+can prompt appropriately — only `files` (delete) and `import_file` (overwrite) are
+flagged destructive.
+
+**Step-by-step recipes** — common and uncommon — live in [MCP_WORKFLOWS.md](MCP_WORKFLOWS.md).
 
 **Jobs are fire-and-poll:** `convert`/`build_lod`/`render_image`/`generate_collision`/`trim_region`/`get_summary`
 return `{ jobId }`. Wait with `jobs(action: "wait", id, timeout_ms)`, then read it with
@@ -160,15 +166,16 @@ return `{ jobId }`. Wait with `jobs(action: "wait", id, timeout_ms)`, then read 
 
 | Symptom | Cause / fix |
 |---|---|
-| Headless tools return `timeout` ("is the app running?") | Splat Studio isn't running, or it's on a different port — start the app, or set `SPLAT_API_PORT`. |
+| Headless tools return `timeout` ("is the app running?") | Splat Studio isn't running — start it. The MCP server re-resolves the port on the next call (env → `port.json` → 5174), so it recovers automatically once the app is up. |
 | Editor tools return `no-editor` | The app is up but its editor bridge isn't connected yet (give it a second after launch), or no GUI window is open. |
-| Editor tools return `control-disabled` | Turn on **Settings → Agent control (MCP)**. |
+| Editor tools return `control-disabled` | Turn on **Settings → Agent control (MCP)**. Note: **switching workspaces resets this to off.** Probe without consent via `inspect(target: "editor_status")`. |
 | `generate_collision` returns `{ refused: true }` | The preflight estimates the voxelization would overflow the marching-cubes vertex limit. Raise `voxelSize`, crop with `filterBox`/`filterSphere`, or pass `overridePreflight: true`. |
 | `gpu-required` | Voxelization/collision and `--filter-cluster`/floater removal need a GPU. SOG encoding can fall back with `device: "cpu"`. |
 | Client can't find the server | Use the **absolute** path to `mcp-server/index.mjs`, and make sure `node` is on PATH. |
 
 ---
 
-For the agent-facing playbook (workflows, coordinate frames, extending the surface), see the
-`splat-studio-mcp` skill in `.claude/skills/`. The authoritative design lives on the project's Asana
-board (the MCP epic), not in markdown.
+Tutorials for common and uncommon workflows: [MCP_WORKFLOWS.md](MCP_WORKFLOWS.md). For the
+agent-facing playbooks (operating contract, recipes, extending the surface), see the
+`splat-studio-mcp` and `splat-studio-workflows` skills in `.claude/skills/`. The authoritative
+design lives on the project's Asana board (the MCP epic), not in markdown.

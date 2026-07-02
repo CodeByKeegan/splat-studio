@@ -60,13 +60,21 @@ try {
 
     console.log('Splat Studio MCP e2e\n');
 
-    await check('catalog registers the full 27-tool set + resources', async () => {
+    await check('catalog registers the full 28-tool set + resources', async () => {
         const want = ['workspace', 'projects', 'files', 'import_file', 'inspect', 'get_summary', 'jobs', 'convert', 'build_lod', 'render_image', 'generate_collision', 'trim_region',
-            'camera', 'viewport_screenshot', 'viewport_click', 'load_into_viewport', 'set_view_option', 'select_item', 'get_editor_state', 'measure', 'set_origin', 'set_region', 'render_pose', 'set_collision_gizmo', 'panel', 'layout', 'suggest_lod_settings'];
+            'camera', 'viewport_screenshot', 'viewport_click', 'load_into_viewport', 'set_view_option', 'select_item', 'get_editor_state', 'measure', 'set_origin', 'set_region', 'render_pose', 'set_collision_gizmo', 'panel', 'layout', 'history', 'suggest_lod_settings'];
         const missing = want.filter((n) => !tools.includes(n));
         assert(missing.length === 0, `missing tools: ${missing.join(',')}`);
         const res = (await client.listResources()).resources.map((r) => r.uri);
         assert(res.includes('splat-studio://projects') && res.includes('splat-studio://jobs'), `resources: ${res.join(',')}`);
+    });
+
+    await check('tools carry behaviour annotations (files destructive, inspect read-only)', async () => {
+        const all = (await client.listTools()).tools;
+        const byName = Object.fromEntries(all.map((t) => [t.name, t.annotations ?? {}]));
+        assert(byName.files.destructiveHint === true, `files: ${JSON.stringify(byName.files)}`);
+        assert(byName.inspect.readOnlyHint === true, `inspect: ${JSON.stringify(byName.inspect)}`);
+        assert(byName.convert.destructiveHint === false, `convert: ${JSON.stringify(byName.convert)}`);
     });
 
     await check('inspect health + projects list', async () => {
@@ -93,8 +101,20 @@ try {
     await check('convert -> job -> wait -> done', async () => {
         const j = data(await call('convert', { project: 'Demo', input: 'demo-room.ply', format: 'ply' }));
         assert(j.jobId, 'no jobId');
-        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeoutMs: 60000 }));
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 60000 }));
         assert(w.status === 'done' && w.outputs?.length, `job: ${JSON.stringify(w).slice(0, 160)}`);
+    });
+
+    await check('trim_region -> job -> done with a .ply output', async () => {
+        const j = data(await call('trim_region', { project: 'Demo', input: 'demo-room.ply', mode: 'remove', sphere: [0, 0, 0, 0.1] }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 60000 }));
+        assert(w.status === 'done' && w.outputs?.some((o) => /\.ply$/i.test(o)), `trim job: ${JSON.stringify(w).slice(0, 160)}`);
+    });
+
+    await check('import_file with a missing source returns not-found', async () => {
+        const r = await call('import_file', { project: 'Demo', source_path: path.join(os.tmpdir(), 'nope-does-not-exist.ply') });
+        assert(r.isError && data(r).error === 'not-found', `expected not-found: ${text(r)}`);
     });
 
     await check('suggest_lod_settings proposes decimate settings', async () => {
@@ -113,7 +133,7 @@ try {
 
     await check('MCP prompts are registered', async () => {
         const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
-        assert(['optimize_for_web', 'setup_collision', 'inspect_splat'].every((n) => prompts.includes(n)), `prompts: ${prompts.join(',')}`);
+        assert(['optimize_for_web', 'setup_collision', 'inspect_splat', 'clean_up_scan', 'scale_to_real_world'].every((n) => prompts.includes(n)), `prompts: ${prompts.join(',')}`);
     });
 
     await check('headless error shapes: not-found + bad-input', async () => {
@@ -126,6 +146,11 @@ try {
     await check('editor tool returns no-editor when unconnected', async () => {
         const r = await call('panel', { action: 'open', id: 'panel-edit' });
         assert(r.isError && data(r).error === 'no-editor', `expected no-editor: ${text(r)}`);
+    });
+
+    await check('inspect editor_status probes without consent (disconnected)', async () => {
+        const s = data(await call('inspect', { target: 'editor_status' }));
+        assert(s.connected === false && s.controlEnabled === false, `status: ${JSON.stringify(s)}`);
     });
 
     ed = mockEditor(port);
@@ -146,6 +171,13 @@ try {
     await check('viewport_screenshot returns an image content block', async () => {
         const r = await call('viewport_screenshot', {});
         assert(r.content?.some((c) => c.type === 'image' && c.mimeType === 'image/png'), `no image block: ${JSON.stringify(r.content)}`);
+    });
+
+    await check('editor_status reflects the connected editor + consent, and history forwards', async () => {
+        const s = data(await call('inspect', { target: 'editor_status' }));
+        assert(s.connected === true && s.controlEnabled === true, `status: ${JSON.stringify(s)}`);
+        const h = data(await call('history', { action: 'get' }));
+        assert(h.name === 'history' && h.params?.action === 'get', `forward: ${JSON.stringify(h)}`);
     });
 
     console.log(`\n${pass} passed, ${fail} failed`);

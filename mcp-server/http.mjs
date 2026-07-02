@@ -34,15 +34,19 @@ const resolveBase = () => {
     return `http://${host}:${port}`;
 };
 
-export const BASE = resolveBase();
+// The base is re-resolved when the app is unreachable, so the packaged app's
+// dynamic port (port.json) is picked up even if it starts AFTER this server.
+let base = resolveBase();
+export const currentBase = () => base;
+export const BASE = base; // startup value, for the ready log only
 
 const isUnreachable = (e) => {
     const s = String(e?.cause?.code || e?.code || e?.cause?.message || e?.message || e);
     return /ECONNREFUSED|ENOTFOUND|ECONNRESET|EHOSTUNREACH|fetch failed|socket hang up|network/i.test(s);
 };
 
-async function req(method, p, { body, headers, duplex } = {}) {
-    const url = BASE + p;
+async function fetchOnce(method, p, { body, headers, duplex } = {}) {
+    const url = base + p;
     let res;
     try {
         res = await fetch(url, { method, headers, body, duplex });
@@ -56,6 +60,21 @@ async function req(method, p, { body, headers, duplex } = {}) {
     return payload;
 }
 
+// opts.body may be a factory function so a stream can be recreated per attempt
+async function req(method, p, opts = {}) {
+    const attempt = () => fetchOnce(method, p, { ...opts, body: typeof opts.body === 'function' ? opts.body() : opts.body });
+    try {
+        return await attempt();
+    } catch (e) {
+        if (!(e instanceof ConnError)) throw e;
+        // unreachable: the app may have (re)started on a different port — re-resolve once
+        const fresh = resolveBase();
+        if (fresh === base) throw e;
+        base = fresh;
+        return await attempt();
+    }
+}
+
 export const apiGet = (p) => req('GET', p);
 export const apiPost = (p, body) =>
     req('POST', p, { body: JSON.stringify(body ?? {}), headers: { 'content-type': 'application/json' } });
@@ -64,9 +83,8 @@ export const apiDelete = (p) => req('DELETE', p);
 // stream a local file to POST /api/upload (8 GB cap server-side; never buffered here)
 export const apiUploadFile = (p, absPath) => {
     const size = fs.statSync(absPath).size;
-    const stream = fs.createReadStream(absPath);
     return req('POST', p, {
-        body: stream,
+        body: () => fs.createReadStream(absPath),
         headers: { 'content-type': 'application/octet-stream', 'content-length': String(size) },
         duplex: 'half'
     });

@@ -1,7 +1,7 @@
 // Headless ANALYSIS / JOBS tools (not consent-gated): inspect, get_summary, jobs.
 import { z } from 'zod';
 import { apiGet, apiPost, qs } from '../http.mjs';
-import { headless, sleep } from './_wrap.mjs';
+import { headless, sleep, RO, SAFE } from './_wrap.mjs';
 import { ERR, okResult, failResult, mapHttpError, classifyJobFailure } from '../errors.mjs';
 
 const POLL_MS = 700;
@@ -10,14 +10,17 @@ export function register(server) {
     server.registerTool('inspect', {
         title: 'Inspect',
         description:
-            'Read quick, synchronous info. target="stats" -> gaussian count + x/y/z extents for one splat (needs project+input); "generator_params" -> a .mjs generator\'s advertised params (needs project+input); "gpus" -> GPU adapters [{index,name}]; "health" -> server + CLI status; "versions" -> app + splat-transform versions.',
+            'Read quick, synchronous info. target="stats" -> gaussian count + x/y/z extents for one splat (needs project+input); "generator_params" -> a .mjs generator\'s advertised params (needs project+input); "gpus" -> GPU adapters [{index,name}]; "health" -> server + CLI status; "versions" -> app + splat-transform versions; "editor_status" -> {connected, controlEnabled, ...} — probe the live-editor bridge WITHOUT consent (use before editor tools).',
+        annotations: RO,
         inputSchema: {
-            target: z.enum(['stats', 'generator_params', 'gpus', 'health', 'versions']).describe('what to read'),
+            target: z.enum(['stats', 'generator_params', 'gpus', 'health', 'versions', 'editor_status']).describe('what to read'),
             project: z.string().optional().describe('Project name (required for stats / generator_params).'),
             input: z.string().optional().describe('Project-relative splat path (required for stats / generator_params).')
         }
     }, headless(async ({ target, project, input }) => {
         switch (target) {
+            case 'editor_status':
+                return await apiGet('/api/editor/status');
             case 'stats':
                 if (!project || !input) throw new Error('stats needs project and input');
                 return await apiGet(`/api/stats${qs({ project, input })}`);
@@ -39,6 +42,7 @@ export function register(server) {
         title: 'Get summary (job)',
         description:
             'Start an analysis-only summary job for a splat (per-column stats land in the JOB LOG; no file is written). Returns {jobId}; read the result with jobs(action="wait") then jobs(action="get").',
+        annotations: SAFE,
         inputSchema: {
             project: z.string(),
             input: z.string().describe('Project-relative splat path.')
@@ -48,7 +52,8 @@ export function register(server) {
     server.registerTool('jobs', {
         title: 'Jobs',
         description:
-            'Inspect or control fire-and-poll jobs. action="list" -> all jobs (no logs); "get" -> one full job record incl log; "cancel" -> kill a running job; "wait" -> block until the job is done/error or the deadline (on timeout the job KEEPS RUNNING server-side; timeout != cancelled). Only the last ~50 finished jobs are retained.',
+            'Inspect or control fire-and-poll jobs. action="list" -> all jobs (no logs); "get" -> one full job record incl log; "cancel" -> kill a running job; "wait" -> block until the job is done/error or the deadline (on timeout the job KEEPS RUNNING server-side; timeout != cancelled). Only the last ~50 finished jobs are retained. Jobs run concurrently as subprocesses — avoid overlapping GPU-heavy jobs.',
+        annotations: SAFE,
         inputSchema: {
             action: z.enum(['get', 'list', 'cancel', 'wait']),
             id: z.string().optional().describe('Job id (required for get / cancel / wait).'),

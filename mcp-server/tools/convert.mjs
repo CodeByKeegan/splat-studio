@@ -3,7 +3,7 @@
 // server-decided; resolved paths appear in the job's outputs on completion.
 import { z } from 'zod';
 import { apiPost, apiGet, qs } from '../http.mjs';
-import { headless } from './_wrap.mjs';
+import { headless, SAFE } from './_wrap.mjs';
 
 // marching-cubes vertex cap (V8 Map limit 2^24) the collision preflight guards against
 const MC_VERTEX_CAP = 16_777_216;
@@ -41,6 +41,7 @@ export function register(server) {
         title: 'Convert',
         description:
             'Convert a splat to another format with optional transforms / filters / crop / decimate. Returns {jobId} (fire-and-poll). Use build_lod for streamed LOD and render_image for a WebP render. translate/rotate and filterBox/filterSphere are CLI space.',
+        annotations: SAFE,
         inputSchema: {
             project: z.string(),
             input: z.string().describe('Project-relative source path (or a .mjs generator).'),
@@ -72,6 +73,7 @@ export function register(server) {
         title: 'Build streamed LOD',
         description:
             'Bake a streamed multi-LOD SOG (lod-meta.json + per-LOD chunk folders). mode="decimate" auto-decimates one input into lodLevels; mode="combine" uses lodFiles as explicit lighter levels, optionally tagging one as an always-visible environment shell (env flag). Returns {jobId}.',
+        annotations: SAFE,
         inputSchema: {
             project: z.string(),
             input: z.string().describe('LOD 0 (highest detail) source.'),
@@ -101,6 +103,7 @@ export function register(server) {
         title: 'Render image (WebP)',
         description:
             'Offline WebP render of a splat via the GPU rasterizer (camera / projection / depth-of-field / motion blur). Returns {jobId}. Camera vectors (camera/lookAt/up + the *End motion-blur vectors) are CLI space "x,y,z" strings.',
+        annotations: SAFE,
         inputSchema: {
             project: z.string(),
             input: z.string(),
@@ -132,6 +135,7 @@ export function register(server) {
         title: 'Generate collision',
         description:
             'Voxelize a splat into a collision mesh (collision.collision.glb + voxel json/bin). GPU required (no device param); an unavailable GPU returns gpu-required. seedPos and the crop region (filterBox/filterSphere) are CLI space. Returns {jobId}.',
+        annotations: SAFE,
         inputSchema: {
             project: z.string(),
             input: z.string(),
@@ -181,6 +185,7 @@ export function register(server) {
         title: 'Trim region (carve / crop)',
         description:
             'Remove (carve) or keep-only (crop) the gaussians inside a box and/or sphere, writing a new trimmed .ply. Works on any single-file splat (.ply/.sog/.spz/.splat/.ksplat/.lcc; non-PLY are decompressed first). box/sphere are CLI space. Returns {jobId}.',
+        annotations: SAFE,
         inputSchema: {
             project: z.string(),
             input: z.string().describe('Single-file splat (not a meta.json/lod-meta.json bundle).'),

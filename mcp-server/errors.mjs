@@ -50,7 +50,8 @@ export function mapHttpError(err) {
         if (err.status === 400) return { error: MISSING_RE.test(text) ? ERR.NOT_FOUND : ERR.BAD_INPUT, message: text };
         return { error: ERR.BAD_INPUT, message: text || `HTTP ${err.status}` };
     }
-    return { error: ERR.BAD_INPUT, message: err?.message || String(err) };
+    const msg = err?.message || String(err);
+    return { error: MISSING_RE.test(msg) ? ERR.NOT_FOUND : ERR.BAD_INPUT, message: msg };
 }
 
 // map an EDITOR-relay failure (POST /api/editor/command uses distinct statuses)
