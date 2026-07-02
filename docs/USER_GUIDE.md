@@ -237,8 +237,9 @@ The Render panel GPU-renders a lossless **WebP image** of the splat through the
 rasterizer.
 
 1. Pick the **Input** splat.
-2. Set **Camera (x,y,z)** and **Look at (x,y,z)** — or click **📷 from viewer** to copy
-   the current viewport camera as a starting point.
+2. Set the per-axis **Camera** and **Look at** fields — or click **📷 from viewer** to copy
+   the current viewport camera as a starting point, then fine-tune by dragging the
+   **Render camera** gizmo (select it in the [Scene panel](#scene-hierarchy)).
 3. Set **FOV°**, **Resolution**, **Projection** (pinhole or equirect 360°), and a
    **Background** color.
 4. Optionally add **Depth of field** (f-stop + focus distance, pinhole only) and
@@ -321,10 +322,14 @@ Trim the splat to (or away from) a box or sphere. A **Mode** dropdown picks what
 - **Remove inside (carve)** — deletes the gaussians *inside* the box/sphere.
 - **Keep inside (crop)** — deletes everything *outside*, keeping only the inside.
 
-Enable **Box region** and/or **Sphere region**, drag the wireframe in the viewport over
-the part (a live readout shows how many gaussians the trim will remove), then **✂ Apply
-to region**. It writes a new trimmed `.ply` that auto-loads; the source is untouched.
-`splat-transform`'s `-B`/`-S` can only *keep* inside, so this runs a local trim.
+Enable **Box region** and/or **Sphere region** and shape it in the viewport: drag a
+**square face handle** to resize one side of the box (the opposite face stays pinned —
+and only that side's field is filled in, so blank/unbounded sides stay unbounded), drag
+the **round knob** on the sphere's edge to set its radius, and drag the **arrows** to
+move the whole shape. A live readout shows how many gaussians the trim will remove;
+then **✂ Apply to region**. It writes a new trimmed `.ply` that auto-loads; the source
+is untouched. `splat-transform`'s `-B`/`-S` can only *keep* inside, so this runs a
+local trim.
 
 It works on **any single-file splat**, not just PLY: non-PLY inputs
 (`.sog`/`.spz`/`.splat`/`.ksplat`/`.lcc`) are decompressed to a temp PLY via the CLI
@@ -354,12 +359,14 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
    [Scene panel](#scene-hierarchy).
 5. **Collision region** *(optional)* — limit generation to part of a large scene.
    Tick **Limit to box** to crop the splat to an axis-aligned box (everything outside
-   is ignored before voxelizing). Select **Collision region** in the
-   [Scene panel](#scene-hierarchy) to get a draggable amber box in the viewport, with a
-   **Move / Resize** toggle: *Move* drags the whole box, *Resize* shows a handle on each
-   face — drag one and the opposite face stays put. The corner fields and the box stay
-   in sync, so you can also type exact extents. **Limit to sphere** crops to a sphere
-   instead. This is the fix when a big scene at a fine voxel size hits the
+   is ignored before voxelizing). An amber box appears in the viewport: drag a **square
+   face handle** to resize (the opposite face stays put) or the **arrows** to move the
+   whole box — no mode switching. The corner fields and the box stay in sync, so you
+   can also type exact extents. **Limit to sphere** crops to a sphere instead — drag
+   the **round knob** on its edge to set the radius, the arrows to move the centre.
+   **Region face shading** tints the region's faces so you can see exactly where it
+   cuts through the splat (0 = wireframe only). This is the fix when a big scene at a
+   fine voxel size hits the
    **marching-cubes vertex limit** (`RangeError: Map maximum size exceeded`): cropping
    shrinks the mesh surface. A risk chip estimates the overflow risk and offers one-click
    **Coarsen voxel** / **Shrink to seed**; **Generate** asks for confirmation when the
@@ -477,6 +484,10 @@ hint); closing the tab frees its GPU memory.
 - `splat-transform`'s voxel/collision pipeline uses a different up-axis convention,
   so **typed** seed/translate coordinates are in CLI space (rotated 180° about Y from
   the viewer). Prefer **📷 from camera** / clicking the splat, which convert for you.
+- **Gizmo arrows show the typed axes.** The seed, crop, and collision-region gizmos
+  run in local space, so their arrows point along the same axes as the panel fields:
+  **red = x, green = y, blue = z**. If you're ever unsure which way a typed value
+  moves something, look at the arrows.
 
 ---
 

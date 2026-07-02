@@ -140,8 +140,9 @@ let currentSplatName: string | null = null;
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
     select.innerHTML = '';
-    if (names.length === 0 || !names.includes(prev)) {
-        // never silently snap to the first file — a wrong input burns GPU minutes
+    // never silently snap to the first of SEVERAL files — a wrong input burns GPU
+    // minutes; a single candidate is unambiguous, so save the click
+    if (names.length !== 1 && (names.length === 0 || !names.includes(prev))) {
         const placeholder = document.createElement('option');
         placeholder.value = '';
         placeholder.disabled = true;
@@ -156,6 +157,7 @@ const fillSelect = (select: HTMLSelectElement, names: string[]) => {
         select.appendChild(opt);
     }
     if (names.includes(prev)) select.value = prev;
+    else if (names.length === 1) select.value = names[0];
 };
 
 const refreshFiles = async (highlight?: Set<string>) => {
@@ -941,12 +943,20 @@ void api.listGpus().then((gpus) => {
     }
 }).catch(() => { /* device list is best-effort */ });
 
+// per-axis triplet fields <-> the "x,y,z" strings the CLI/API contract uses
+const vecFieldIds = (base: string): string[] => [`${base}-x`, `${base}-y`, `${base}-z`];
+const readVecField = (base: string): string => vecFieldIds(base).map((id) => String(Number($<HTMLInputElement>(id).value) || 0)).join(',');
+const writeVecField = (base: string, csv: string): void => {
+    const parts = csv.split(',');
+    vecFieldIds(base).forEach((id, i) => { $<HTMLInputElement>(id).value = String(Number(parts[i]) || 0); });
+};
+
 // WebP: grab the viewer camera, converted to CLI render space
 $<HTMLButtonElement>('webp-from-viewer').onclick = () => {
     if (!viewer) return showToast('Viewer is still starting up', true);
     const pose = viewer.cameraRenderPose();
-    $<HTMLInputElement>('webp-camera').value = pose.camera;
-    $<HTMLInputElement>('webp-lookat').value = pose.lookAt;
+    writeVecField('webp-camera', pose.camera);
+    writeVecField('webp-lookat', pose.lookAt);
     updateRenderFrustum();
     showToast('Camera set from viewer — adjust if needed');
 };
@@ -960,8 +970,8 @@ const numOrUndef = (id: string): number | undefined => {
     return v === '' ? undefined : Number(v);
 };
 const webpImageOptions = (): api.ImageOptions => ({
-    camera: strOrUndef('webp-camera'),
-    lookAt: strOrUndef('webp-lookat'),
+    camera: readVecField('webp-camera'),
+    lookAt: readVecField('webp-lookat'),
     fov: numOrUndef('webp-fov'),
     resolution: strOrUndef('webp-resolution'),
     background: strOrUndef('webp-background'),
@@ -986,15 +996,15 @@ const updateRenderFrustum = (): void => {
     const aspect = m ? Number(m[1]) / Number(m[2]) : 16 / 9;
     const equirect = $<HTMLSelectElement>('webp-projection').value === 'equirect';
     viewer.setRenderFrustum(
-        $<HTMLInputElement>('webp-camera').value,
-        $<HTMLInputElement>('webp-lookat').value,
+        readVecField('webp-camera'),
+        readVecField('webp-lookat'),
         Number($<HTMLInputElement>('webp-fov').value),
         aspect,
         renderActive() && !equirect
     );
     refreshCameraViewHint(); // show/hide the Camera-view placeholder with the Render tab
 };
-for (const id of ['webp-camera', 'webp-lookat', 'webp-fov', 'webp-resolution', 'webp-projection']) {
+for (const id of [...vecFieldIds('webp-camera'), ...vecFieldIds('webp-lookat'), 'webp-fov', 'webp-resolution', 'webp-projection']) {
     $(id).addEventListener('input', updateRenderFrustum);
     $(id).addEventListener('change', updateRenderFrustum);
 }
@@ -1133,19 +1143,28 @@ carveRemoveBtn.onclick = () => {
     void runJob(() => api.startTrim({ input, options: { mode, ...region } }), carveRemoveBtn);
 };
 
-// ---------- collision region box (viewport <-> Collision-panel fields) ----------
+// ---------- collision region box + sphere (viewport <-> Collision-panel fields) ----------
 const regMinX = $<HTMLInputElement>('region-min-x'), regMinY = $<HTMLInputElement>('region-min-y'), regMinZ = $<HTMLInputElement>('region-min-z');
 const regMaxX = $<HTMLInputElement>('region-max-x'), regMaxY = $<HTMLInputElement>('region-max-y'), regMaxZ = $<HTMLInputElement>('region-max-z');
+const regSphX = $<HTMLInputElement>('region-sphere-x'), regSphY = $<HTMLInputElement>('region-sphere-y'), regSphZ = $<HTMLInputElement>('region-sphere-z'), regSphR = $<HTMLInputElement>('region-sphere-r');
 const regionBoxOn = () => $<HTMLInputElement>('region-box-on').checked;
+const regionSphereOn = () => $<HTMLInputElement>('region-sphere-on').checked;
+const regionShadeEl = $<HTMLInputElement>('region-shade');
 
 const syncRegionViz = () => {
+    $('region-shade-row').classList.toggle('hidden', !regionBoxOn() && !regionSphereOn());
     if (!viewer) return;
     viewer.setCollisionRegion(
         [numOrNull(regMinX), numOrNull(regMinY), numOrNull(regMinZ)],
         [numOrNull(regMaxX), numOrNull(regMaxY), numOrNull(regMaxZ)],
         regionBoxOn()
     );
-    rebuildSceneList(); // the 'Collision region' item appears/disappears with the toggle
+    viewer.setCollisionSphere(
+        [Number(regSphX.value), Number(regSphY.value), Number(regSphZ.value)],
+        Number(regSphR.value),
+        regionSphereOn()
+    );
+    rebuildSceneList(); // the region items appear/disappear with their toggles
 };
 
 // first time it's switched on, fill the box with the whole-scene bounds so the user shrinks inward
@@ -1158,13 +1177,33 @@ const seedRegionDefaults = () => {
     regMaxX.value = String(b.max[0]); regMaxY.value = String(b.max[1]); regMaxZ.value = String(b.max[2]);
 };
 
-for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.addEventListener('input', syncRegionViz);
+// first time on, centre the sphere in the scene at half its widest extent
+const seedSphereDefaults = () => {
+    const untouched = Number(regSphX.value) === 0 && Number(regSphY.value) === 0 && Number(regSphZ.value) === 0 && Number(regSphR.value) === 1;
+    if (!untouched) return;
+    const b = viewer?.regionDefaultBounds();
+    if (!b) return;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    regSphX.value = String(r2((b.min[0] + b.max[0]) / 2));
+    regSphY.value = String(r2((b.min[1] + b.max[1]) / 2));
+    regSphZ.value = String(r2((b.min[2] + b.max[2]) / 2));
+    regSphR.value = String(r2(Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2], 1) / 2));
+};
+
+for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR]) el.addEventListener('input', syncRegionViz);
 $('region-box-on').addEventListener('change', () => {
     if (regionBoxOn()) seedRegionDefaults();
     syncRegionViz();
-    if (regionBoxOn()) viewer?.selectObject('collision-region'); // raise the gizmo immediately
+    if (regionBoxOn()) viewer?.selectObject('collision-region'); // raise the gizmo + handles immediately
     updateRegionEstimate();
 });
+$('region-sphere-on').addEventListener('change', () => {
+    if (regionSphereOn()) seedSphereDefaults();
+    syncRegionViz();
+    if (regionSphereOn()) viewer?.selectObject('collision-sphere');
+    updateRegionEstimate();
+});
+regionShadeEl.addEventListener('input', () => viewer?.setRegionFaceOpacity(Number(regionShadeEl.value)));
 
 // ---------- overflow estimate (advisory) ----------
 // splat-transform's marching-cubes vertex dedup Map overflows V8's hard cap.
@@ -1176,7 +1215,7 @@ const fmtCount = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3
 const regionVoxelSize = () => Math.max(Number($<HTMLInputElement>('voxel-size').value) || 0.05, 0.001);
 const updateRegionEstimate = () => {
     const chip = $('region-estimate'), actions = $('region-estimate-actions');
-    if (!viewer || !viewer.hasSplat || !regionBoxOn()) { regionRiskLevel = 'ok'; chip.classList.add('hidden'); actions.classList.add('hidden'); return; }
+    if (!viewer || !viewer.hasSplat || (!regionBoxOn() && !regionSphereOn())) { regionRiskLevel = 'ok'; chip.classList.add('hidden'); actions.classList.add('hidden'); return; }
     const inBox = viewer.regionGaussianCount();
     const vs = regionVoxelSize();
     const load = inBox * Math.pow(0.05 / vs, 2);
@@ -1193,7 +1232,7 @@ const updateRegionEstimate = () => {
 };
 let regionEstTimer = 0;
 const updateRegionEstimateDebounced = () => { clearTimeout(regionEstTimer); regionEstTimer = window.setTimeout(updateRegionEstimate, 200); };
-for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ]) el.addEventListener('input', updateRegionEstimateDebounced);
+for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR]) el.addEventListener('input', updateRegionEstimateDebounced);
 $('voxel-size').addEventListener('input', updateRegionEstimateDebounced);
 
 $('region-coarsen').onclick = () => {
@@ -1693,7 +1732,7 @@ collisionRun.onclick = () => {
     const input = collisionInput.value;
     if (!input) return showToast('Pick an input file first', true);
     if (!panelValid('panel-collision')) return;
-    if (regionBoxOn() && regionRiskLevel === 'danger' &&
+    if ((regionBoxOn() || regionSphereOn()) && regionRiskLevel === 'danger' &&
         !confirm('This region may exceed splat-transform\'s marching-cubes vertex limit (RangeError: Map maximum size exceeded). Shrink the region or raise the voxel size to be safe. Generate anyway?')) return;
     void runJob(() => api.startCollision({
         input,
@@ -1789,11 +1828,6 @@ const camRotateBtn = $<HTMLButtonElement>('cam-rotate');
 camMoveBtn.onclick = () => { viewer?.setCameraGizmoMode('move'); camMoveBtn.classList.add('active'); camRotateBtn.classList.remove('active'); };
 camRotateBtn.onclick = () => { viewer?.setCameraGizmoMode('rotate'); camRotateBtn.classList.add('active'); camMoveBtn.classList.remove('active'); };
 
-const regionMoveBtn = $<HTMLButtonElement>('region-move');
-const regionResizeBtn = $<HTMLButtonElement>('region-resize');
-regionMoveBtn.onclick = () => { viewer?.setRegionGizmoMode('move'); regionMoveBtn.classList.add('active'); regionResizeBtn.classList.remove('active'); };
-regionResizeBtn.onclick = () => { viewer?.setRegionGizmoMode('resize'); regionResizeBtn.classList.add('active'); regionMoveBtn.classList.remove('active'); };
-
 // the Collision panel is "selected" when its tab is the shown one in its group
 // (isVisible is always true under 'always', and isActive is the single globally
 // focused panel — so compare the group's active tab)
@@ -1812,7 +1846,10 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
     { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
     { id: 'voxels', label: 'Voxels', icon: '🧊', gizmo: false, has: () => !!viewer?.hasVoxels },
     // collision region box only while setting up collision (Collision tab + region on)
-    { id: 'collision-region', label: 'Collision region', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && $<HTMLInputElement>('region-box-on').checked },
+    // listed whenever their toggle is on (the box/sphere stays visible on other tabs, so the
+    // selection + gizmo must survive tab switches too)
+    { id: 'collision-region', label: 'Collision region box', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-box-on').checked },
+    { id: 'collision-sphere', label: 'Collision region sphere', icon: '◯', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-sphere-on').checked },
     // capsule only while actively setting up collision carving (Collision tab + carve on)
     { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && carveBox.checked },
     // render camera only when a WebP render is actually being set up
@@ -1821,6 +1858,8 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
 
 function rebuildSceneList(): void {
     if (!viewer) return;
+    // getting-started overlay lives while the viewport is empty
+    $('viewport-welcome').classList.toggle('hidden', viewer.hasSplat || viewer.hasCollision || viewer.hasVoxels);
     const items = SCENE_ITEMS.filter((it) => it.has());
     // if the selected object is no longer listed (e.g. capsule when collision
     // hidden, render camera when leaving WebP), clear the selection + its gizmo
@@ -1851,7 +1890,6 @@ function rebuildSceneList(): void {
         sceneList.appendChild(li);
     }
     $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
-    $('region-gizmo-mode').classList.toggle('hidden', sel !== 'collision-region');
 }
 
 function selectScene(id: SelId): void {
@@ -2316,6 +2354,11 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             for (const el of [...ownerBoxFields(), ...ownerSphFields()]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncCropViz();
         };
+        // crop face/radius handles -> set just the dragged value (blank sides stay unbounded)
+        v.onCropBoxFace = (axis, sign, value) => {
+            ownerBoxFields()[(sign > 0 ? 3 : 0) + axis].value = String(value);
+        };
+        v.onCropSphereRadius = (r) => { ownerSphFields()[3].value = String(r); };
         // region box gizmo -> reflect absolute corners into the fields (live), persist on release
         v.onRegionBoxChange = (min, max) => {
             regMinX.value = String(min.x); regMinY.value = String(min.y); regMinZ.value = String(min.z);
@@ -2326,6 +2369,17 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             syncRegionViz();
             updateRegionEstimate();
         };
+        // region sphere gizmo/knob -> reflect centre + radius into the fields (live), persist on release
+        v.onRegionSphereChange = (c, r) => {
+            regSphX.value = String(c.x); regSphY.value = String(c.y); regSphZ.value = String(c.z);
+            regSphR.value = String(r);
+        };
+        v.onRegionSphereEnd = () => {
+            for (const el of [regSphX, regSphY, regSphZ, regSphR]) el.dispatchEvent(new Event('change', { bubbles: true }));
+            syncRegionViz();
+            updateRegionEstimate();
+        };
+        v.setRegionFaceOpacity(Number(regionShadeEl.value));
         v.setBoundsVisible($<HTMLInputElement>('show-bounds').checked);
         // live measure readout + active-marker highlight as points are clicked in
         v.onMeasureChange = (d) => { if (measureToggle.checked) updateMeasureReadout(d); };
@@ -2335,8 +2389,8 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         // gizmo drive the WebP camera/look-at fields
         v.onSelectionChange = () => rebuildSceneList();
         v.onRenderCameraMove = (cam, look) => {
-            $<HTMLInputElement>('webp-camera').value = `${cam.x},${cam.y},${cam.z}`;
-            $<HTMLInputElement>('webp-lookat').value = `${look.x},${look.y},${look.z}`;
+            writeVecField('webp-camera', `${cam.x},${cam.y},${cam.z}`);
+            writeVecField('webp-lookat', `${look.x},${look.y},${look.z}`);
             updateRenderFrustum();
         };
         v.setCameraMode($<HTMLSelectElement>('camera-mode').value as 'fly' | 'orbit');
@@ -2475,8 +2529,12 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         if (target === 'collision_region') {
             setCheck('region-box-on', enabled == null ? true : !!enabled);
             if (Array.isArray(box)) setBoxFields('region', box as Array<number | string>);
-            if (gizmoMode === 'move' || gizmoMode === 'resize') document.getElementById(gizmoMode === 'resize' ? 'region-resize' : 'region-move')?.click();
-            return { region: 'collision_region' };
+            return { region: 'collision_region', note: gizmoMode ? 'gizmoMode ignored — move + resize handles are always active' : undefined };
+        }
+        if (target === 'collision_sphere') {
+            setCheck('region-sphere-on', enabled == null ? true : !!enabled);
+            if (Array.isArray(sphere)) { const s = sphere as number[]; setField('region-sphere-x', s[0]); setField('region-sphere-y', s[1]); setField('region-sphere-z', s[2]); setField('region-sphere-r', s[3]); }
+            return { region: 'collision_sphere' };
         }
         return editorError('bad-input', `unknown region target "${target}"`);
     },
@@ -2497,8 +2555,8 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     render_pose: ({ action, camera, lookAt }) => {
         if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');
         if (action === 'set') {
-            if (Array.isArray(camera)) setField('webp-camera', (camera as number[]).join(','));
-            if (Array.isArray(lookAt)) setField('webp-lookat', (lookAt as number[]).join(','));
+            if (Array.isArray(camera)) (camera as number[]).forEach((n, i) => setField(vecFieldIds('webp-camera')[i], n));
+            if (Array.isArray(lookAt)) (lookAt as number[]).forEach((n, i) => setField(vecFieldIds('webp-lookat')[i], n));
             return { ok: true };
         }
         return editorError('bad-input', `unknown render_pose action "${action}"`);

@@ -241,7 +241,7 @@ async function run() {
         await js(`window.__doc.clear();
             var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true}));
             window.__doc.rail('camera-view');
-            (function(){var v=window.__viewer; if(!v||!v.splatEntity)return; var a=v.splatEntity.gsplat.customAabb, wt=v.splatEntity.getWorldTransform(); var C=wt.transformPoint(a.center.clone()), r=a.halfExtents.length(); v.camera.setPosition(C.x+r*1.1,C.y+r*0.6,C.z+r*1.1); v.camera.lookAt(C); var p=v.cameraRenderPose(); document.getElementById('webp-camera').value=p.camera; document.getElementById('webp-lookat').value=p.lookAt; document.getElementById('convert-format').dispatchEvent(new Event('change',{bubbles:true}));})();`);
+            (function(){var v=window.__viewer; if(!v||!v.splatEntity)return; var a=v.splatEntity.gsplat.customAabb, wt=v.splatEntity.getWorldTransform(); var C=wt.transformPoint(a.center.clone()), r=a.halfExtents.length(); v.camera.setPosition(C.x+r*1.1,C.y+r*0.6,C.z+r*1.1); v.camera.lookAt(C); var p=v.cameraRenderPose(); var setV=function(base,csv){var q=csv.split(','); ['x','y','z'].forEach(function(ax,i){document.getElementById(base+'-'+ax).value=String(Number(q[i])||0);});}; setV('webp-camera',p.camera); setV('webp-lookat',p.lookAt); document.getElementById('convert-format').dispatchEvent(new Event('change',{bubbles:true}));})();`);
         await sleep(1200); // let the render-to-texture readback fill the preview
         await js(`var c=document.querySelector('.camera-view-canvas'); window.__doc.hl(c?[c]:['.camera-view-panel'],{});`);
     });

@@ -670,6 +670,24 @@ body.dropping #viewport::after {
 #viewport { width: 100%; height: 100%; position: relative; }
 #gs-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 
+/* getting-started overlay — shown only while nothing is loaded */
+#viewport-welcome {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-align: center;
+    padding: 24px;
+    color: var(--text-dim);
+    pointer-events: none; /* drops still land on the window drop-zone */
+}
+#viewport-welcome .vw-title { font-size: 1.1em; color: var(--text); }
+#viewport-welcome .vw-line strong { color: var(--text); font-weight: 600; }
+#viewport-welcome.hidden { display: none; }
+
 #hud {
     position: absolute;
     bottom: 12px; /* bottom-left, clear of the top toolbar (which can wrap) */
