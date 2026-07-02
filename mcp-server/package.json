@@ -1,6 +1,6 @@
 {
   "name": "splat-studio-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "MCP server exposing Splat Studio (headless splat-transform pipeline + live PlayCanvas editor) to AI agents over stdio.",

@@ -31,9 +31,11 @@ markdown — the rule above is about internal planning/design/spec content.
 ## Operating & extending the app
 
 See `.claude/skills/`: `splat-studio-control` (drive it headlessly via the HTTP API),
+`splat-studio-mcp` (the MCP server contract), `splat-studio-workflows` (end-to-end MCP recipes),
 `splat-studio-test`, `splat-studio-add-feature`, `splat-studio-update-deps`,
 `splat-studio-update-docs`. The CLI command builders live in `server/commands.mjs`; routes,
-file-kinds, and safety in `server/index.mjs`; the viewer in `client/src/viewer.ts`.
+file-kinds, and safety in `server/index.mjs`; the viewer in `client/src/viewer.ts`; the MCP
+server in `mcp-server/`.
 
 ## Code style
 

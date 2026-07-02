@@ -1069,6 +1069,21 @@ export class SplatViewer {
         return this.mA.getPosition().distance(this.mB.getPosition());
     }
 
+    /** Marker positions (world), the active marker, and the A–B span. */
+    measureState(): { a: number[] | null; b: number[] | null; active: 'a' | 'b'; distance: number } {
+        const pos = (e: pc.Entity, on: boolean): number[] | null => {
+            if (!on) return null;
+            const p = e.getPosition();
+            return [round(p.x), round(p.y), round(p.z)];
+        };
+        return { a: pos(this.mA, this.placed.a), b: pos(this.mB, this.placed.b), active: this.activeMarker, distance: this.measureDistance() };
+    }
+
+    /** Drop the active marker at an explicit world point (same path as clicking). */
+    placeMarkerAt(world: [number, number, number]): void {
+        this.placeActiveMarker(new pc.Vec3(world[0], world[1], world[2]));
+    }
+
     /**
      * The --translate vector that makes marker A the splat's origin. The splat
      * renders under sceneRoot's R_x(180), so raw = (x, -y, -z) of the world point,
@@ -1241,10 +1256,12 @@ export class SplatViewer {
     }
 
     /** One-shot PNG of the main camera (base64, no data: prefix) via an offscreen RT. */
-    async captureScreenshot(): Promise<{ png: string; width: number; height: number }> {
+    async captureScreenshot(maxWidth = 1920): Promise<{ png: string; width: number; height: number }> {
         const device = this.app.graphicsDevice;
-        const w = Math.min(device.width || 1280, 1920);
-        const h = Math.min(device.height || 720, 1080);
+        const dw = device.width || 1280, dh = device.height || 720;
+        const k = Math.min(1, 1920 / dw, 1080 / dh, Math.max(64, maxWidth) / dw);
+        const w = Math.max(1, Math.round(dw * k));
+        const h = Math.max(1, Math.round(dh * k));
         // allocate inside the try so a throw mid-setup still hits the cleanup path
         let tex: pc.Texture | null = null, rt: pc.RenderTarget | null = null, cam: pc.Entity | null = null;
         try {

@@ -2449,8 +2449,11 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         }
         return editorError('bad-input', `unknown layout action "${action}"`);
     },
-    load_into_viewport: async ({ action, file }) => {
+    load_into_viewport: async ({ action, project, file }) => {
         if (action === 'clear') { removeSplat(); removeCollision(); removeVoxels(); return { cleared: true }; }
+        if (project != null && String(project) !== projectSelect.value) {
+            return editorError('bad-input', `project "${project}" is not the app's current project ("${projectSelect.value}") — the viewport loads from the current project only`);
+        }
         const name = need(file as string, 'load needs file');
         const as: api.ViewKind = /\.voxel\.json$/i.test(name) ? 'voxel' : /collision\.glb$/i.test(name) ? 'collision' : 'splat';
         const ok = await viewFile(name, as);
@@ -2469,7 +2472,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         if (action === 'set') { v.setCamera(need(eye as number[], 'set needs eye'), need(target as number[], 'set needs target')); return v.getCamera(); }
         return editorError('bad-input', `unknown camera action "${action}"`);
     },
-    viewport_screenshot: async () => await need(viewer, 'viewer not ready').captureScreenshot(),
+    viewport_screenshot: async ({ maxWidth }) => await need(viewer, 'viewer not ready').captureScreenshot(Number(maxWidth) || undefined),
     viewport_click: ({ x, y }) => {
         const v = need(viewer, 'viewer not ready');
         const canvas = v.canvas;
@@ -2490,6 +2493,8 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
             loadedSplat: currentSplatName,
             activePanels,
             selection: viewer?.selection ?? 'none',
+            items: viewer ? SCENE_ITEMS.filter((it) => it.has()).map((it) => it.id) : [],
+            editTool: measureToggle.checked ? 'measure' : originToggle.checked ? 'origin' : 'none',
             layers: { ...layerVisible },
             camera: viewer?.getCamera() ?? null
         };
@@ -2539,18 +2544,35 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         return editorError('bad-input', `unknown region target "${target}"`);
     },
     set_origin: ({ point }) => {
-        need(viewer, 'viewer not ready');
+        const v = need(viewer, 'viewer not ready');
         setCheck('origin-toggle', true);
-        void point;
-        return { ok: true, note: 'origin mode on — place the point with viewport_click' };
+        if (Array.isArray(point)) v.placeMarkerAt(point as [number, number, number]);
+        if (!v.markersPlaced) return { placed: false, note: 'origin mode on — place the point with viewport_click or pass point' };
+        const t = v.originTranslateCli();
+        return { placed: true, translate: [t.x, t.y, t.z] };
     },
-    measure: ({ action, length }) => {
+    measure: ({ action, length, points }) => {
+        const v = need(viewer, 'viewer not ready');
         if (action === 'set_length') {
             if (!(Number(length) > 0)) return editorError('bad-input', 'length must be > 0');
             setField('measure-length', Number(length));
             return { length };
         }
-        return { note: 'enable Measure mode + place A/B with viewport_click while the Edit panel is active' };
+        if (Array.isArray(points) && points.length) {
+            setCheck('measure-toggle', true);
+            if (points.length === 2) v.setActiveMarker('a');
+            for (const p of points as number[][]) v.placeMarkerAt(p as [number, number, number]);
+        }
+        const st = v.measureState();
+        const len = Number($<HTMLInputElement>('measure-length').value);
+        return { ...st, ...(st.distance > 0 && len > 0 ? { scale: r4(len / st.distance) } : {}) };
+    },
+    history: ({ action }) => {
+        if (action !== 'get' && undoApplying) return editorError('bad-input', 'a previous undo/redo is still applying — retry in a moment');
+        if (action === 'undo') { if (!canUndo()) return editorError('bad-input', 'nothing to undo'); doUndo(); }
+        else if (action === 'redo') { if (!canRedo()) return editorError('bad-input', 'nothing to redo'); doRedo(); }
+        else if (action !== 'get') return editorError('bad-input', `unknown history action "${action}"`);
+        return { canUndo: canUndo(), canRedo: canRedo(), applying: undoApplying };
     },
     render_pose: ({ action, camera, lookAt }) => {
         if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');
