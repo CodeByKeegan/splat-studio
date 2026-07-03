@@ -37,7 +37,7 @@
     "@playcanvas/splat-transform": "^2.7.1",
     "dockview-core": "^7.0.2",
     "electron-updater": "^6.8.9",
-    "express": "^4.21.2",
+    "express": "^5.2.1",
     "ws": "^8.21.0"
   },
   "devDependencies": {
