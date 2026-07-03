@@ -20,7 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          persist-credentials: false
+          # the tag step below pushes with the checkout's GITHUB_TOKEN credentials
+          persist-credentials: true
 
       - uses: actions/setup-node@v6
         with:
@@ -43,6 +44,14 @@ jobs:
 
       - name: Build client
         run: npm run build
+
+      - name: Push release tag
+        # electron-builder 26 creates the release as published, which GitHub
+        # rejects (422) unless the tag ref already exists
+        shell: bash
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Package and publish to GitHub Releases
         env:
