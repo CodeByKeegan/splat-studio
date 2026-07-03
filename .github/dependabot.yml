@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # App dependencies (root). PRs target dev, per the contributing model.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
+    open-pull-requests-limit: 10
+    groups:
+      dev-tooling:
+        patterns: ["@types/*", "typescript", "vite", "esbuild", "concurrently"]
+
+  # MCP server has its own package.json.
+  - package-ecosystem: "npm"
+    directory: "/mcp-server"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
+
+  # GitHub Actions pinned in workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
