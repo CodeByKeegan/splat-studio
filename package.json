@@ -48,7 +48,7 @@
     "playcanvas": "^2.20.4",
     "png-to-ico": "^2.1.8",
     "pngjs": "^7.0.0",
-    "rcedit": "^4.0.1",
+    "rcedit": "^5.0.2",
     "typescript": "^5.9.2",
     "vite": "^7.3.6"
   },
