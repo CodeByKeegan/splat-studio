@@ -606,6 +606,7 @@
                     <button class="settings-nav-item" data-page="viewport" title="3D viewport overlay colors">🧊 Viewport</button>
                     <button class="settings-nav-item" data-page="workspace" title="Workspace folder">📁 Workspace</button>
                     <button class="settings-nav-item" data-page="agent" title="MCP agent control of the editor">🤖 Agent (MCP)</button>
+                    <button class="settings-nav-item" data-page="updates" title="Release channel + check for updates">⬇️ Updates</button>
                     <button class="settings-nav-item" data-page="about" title="Component versions">ℹ️ About</button>
                 </nav>
                 <div class="settings-pages">
@@ -666,6 +667,20 @@
                         <label class="check" title="Let a connected MCP agent drive the LIVE editor (camera, panels, gizmos, tools). Off by default. The headless pipeline tools (convert, collision, render, trim) work regardless of this toggle."><input type="checkbox" id="mcp-control" /> Allow agent (MCP) control of the editor</label>
                         <span class="hint" id="mcp-status">Editor bridge: connecting…</span>
                         <span class="hint">When on, an MCP client on this machine can observe and drive the editor. Loopback-only; turn it off to revoke access instantly.</span>
+                    </section>
+                    <section class="settings-page hidden" data-page="updates">
+                        <div class="group">Updates</div>
+                        <label class="field" title="Stable: tested releases. Beta: early builds from the dev branch — newer, less tested.">
+                            <span>Release channel</span>
+                            <select id="update-channel">
+                                <option value="stable">Stable</option>
+                                <option value="beta">Beta (early access)</option>
+                            </select>
+                        </label>
+                        <div class="field-row">
+                            <button id="check-updates" title="Check GitHub for a newer release now">Check for updates</button>
+                        </div>
+                        <span class="hint">Updates download in the background and install when you restart (or on next quit). Beta builds come from the <code>dev</code> branch — newer, with rougher edges. Update checks run in the installed app only.</span>
                     </section>
                     <section class="settings-page hidden" data-page="about">
                         <div class="group">About</div>

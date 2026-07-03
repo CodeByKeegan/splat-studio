@@ -1,6 +1,6 @@
-// Minimal, safe bridge for renderer -> main (contextIsolation on). Only the
-// native folder picker and workspace persistence are exposed; the actual
-// workspace switch goes through the loopback API like everything else.
+// Minimal, safe bridge for renderer -> main (contextIsolation on). Only the native
+// folder picker, workspace persistence, and update-channel controls are exposed; the
+// actual workspace switch goes through the loopback API like everything else.
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
@@ -11,5 +11,13 @@ contextBridge.exposeInMainWorld('desktop', {
     // reveal the current workspace folder in the OS file browser
     openWorkspace: () => ipcRenderer.invoke('workspace:open'),
     // File > Change Workspace Folder… routes here so the renderer runs one flow
-    onChooseWorkspace: (cb) => ipcRenderer.on('menu:choose-workspace', () => cb())
+    onChooseWorkspace: (cb) => ipcRenderer.on('menu:choose-workspace', () => cb()),
+
+    // ----- updates -----
+    // user-initiated update check (shows up-to-date / error dialogs)
+    checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+    // current channel: 'stable' | 'beta'
+    getUpdateChannel: () => ipcRenderer.invoke('updates:get-channel'),
+    // switch channel; persists and re-checks. Resolves to the applied channel.
+    setUpdateChannel: (channel) => ipcRenderer.invoke('updates:set-channel', channel)
 });

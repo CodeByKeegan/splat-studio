@@ -56,6 +56,7 @@
     "appId": "com.codebykeegan.splatstudio",
     "productName": "Splat Studio",
     "asar": false,
+    "generateUpdatesFilesForAllChannels": true,
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -78,6 +79,7 @@
         "provider": "github",
         "owner": "CodeByKeegan",
         "repo": "splat-studio",
+        "vPrefixedTagName": true,
         "releaseType": "release"
       }
     ],

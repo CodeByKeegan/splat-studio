@@ -2241,6 +2241,36 @@ initThemeSettings({ promptText, showToast });
 // the viewport toolbar's ⚙ opens the settings dialog
 $<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 
+// ---------- Settings ▸ Updates (channel switch + manual check) ----------
+// Only meaningful in the packaged desktop app; drop the page in the browser dev build.
+void (async () => {
+    const bridge = (window as unknown as { desktop?: {
+        checkForUpdates?: () => Promise<void>;
+        getUpdateChannel?: () => Promise<'stable' | 'beta'>;
+        setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
+    } }).desktop;
+    const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
+    const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
+    if (!bridge?.getUpdateChannel) { navItem?.remove(); page?.remove(); return; }
+
+    const channelSel = $<HTMLSelectElement>('update-channel');
+    const checkBtn = $<HTMLButtonElement>('check-updates');
+    try { channelSel.value = await bridge.getUpdateChannel(); } catch { /* keep default */ }
+
+    channelSel.addEventListener('change', async () => {
+        channelSel.disabled = true;
+        try { await bridge.setUpdateChannel?.(channelSel.value as 'stable' | 'beta'); }
+        finally { channelSel.disabled = false; }
+    });
+    checkBtn.addEventListener('click', async () => {
+        checkBtn.disabled = true;
+        const label = checkBtn.textContent;
+        checkBtn.textContent = 'Checking…';
+        try { await bridge.checkForUpdates?.(); }
+        finally { checkBtn.disabled = false; checkBtn.textContent = label ?? 'Check for updates'; }
+    });
+})();
+
 // ---------- per-workspace layout persistence ----------
 async function bootLayout(): Promise<void> {
     let saved: api.Layout | null = null;

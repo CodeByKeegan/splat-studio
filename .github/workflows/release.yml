@@ -1,17 +1,18 @@
 name: Release
 
-# Every push/merge to main builds the Windows app and publishes a GitHub Release.
+# Push to main -> STABLE release  (clean version, latest.yml).
+# Push to dev  -> BETA prerelease (X.Y.Z-beta.N, beta.yml + latest.yml).
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# never let two releases race for the same tag
+# per-branch group so a stable (main) and a beta (dev) build never cancel each other
 concurrency:
-  group: release
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -31,13 +32,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Set release version (0.1.<run number>)
+      - name: Resolve channel + version
         shell: bash
         run: |
-          VERSION="0.1.${{ github.run_number }}"
+          if [ "${{ github.ref_name }}" = "dev" ]; then
+            CHANNEL=beta
+            # -beta.<run> so successive betas compare as increasing semver, and the
+            # prerelease tag makes electron-builder write beta.yml (+ latest.yml via
+            # generateUpdatesFilesForAllChannels)
+            VERSION="0.0.${{ github.run_number }}-beta.${{ github.run_number }}"
+            PRERELEASE_FLAG="--prerelease"
+          else
+            CHANNEL=stable
+            VERSION="0.0.${{ github.run_number }}"
+            PRERELEASE_FLAG=""
+          fi
           npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Building Splat Studio v$VERSION"
+          echo "PRERELEASE_FLAG=$PRERELEASE_FLAG" >> "$GITHUB_ENV"
+          echo "Building Splat Studio v$VERSION ($CHANNEL)"
 
       - name: Stage bundled Node runtime
         run: npm run fetch-node
@@ -46,17 +60,17 @@ jobs:
         run: npm run build
 
       - name: Push release tag + draft release
-        # electron-builder 26 publishes the release directly (GitHub rejects
-        # that without an existing tag ref) and its parallel upload tasks race
-        # creating the release, splitting assets across duplicates — pre-create
-        # the tag and a draft so every task reuses the same release
+        # electron-builder 26 publishes the release directly (GitHub rejects that
+        # without an existing tag ref) and its parallel upload tasks race creating the
+        # release, splitting assets across duplicates — pre-create the tag and a draft
+        # (marked prerelease for beta) so every task reuses the same release.
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git tag "v$VERSION"
           git push origin "v$VERSION"
-          gh release create "v$VERSION" --draft --title "$VERSION" --notes "Uploading artifacts..."
+          gh release create "v$VERSION" --draft $PRERELEASE_FLAG --title "$VERSION" --notes "Uploading artifacts..."
 
       - name: Package and publish to GitHub Releases
         env:
@@ -67,7 +81,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "v$VERSION" --draft=false
+        run: gh release edit "v$VERSION" --draft=false $PRERELEASE_FLAG
 
       - name: Annotate release with versions + changelog
         shell: bash
@@ -92,7 +106,7 @@ jobs:
           fi
 
           {
-            echo "Built with **PlayCanvas $PC** and **@playcanvas/splat-transform $ST**."
+            echo "**Channel: $CHANNEL** — built with **PlayCanvas $PC** and **@playcanvas/splat-transform $ST**."
             echo
             echo "### Downloads (Windows)"
             # list the .exe assets electron-builder actually uploaded (drift-proof)
@@ -106,4 +120,4 @@ jobs:
 
       - name: Summary
         shell: bash
-        run: echo "Published release v$VERSION (NSIS installer + portable exe)." >> "$GITHUB_STEP_SUMMARY"
+        run: echo "Published $CHANNEL release v$VERSION (NSIS installer + portable exe)." >> "$GITHUB_STEP_SUMMARY"
