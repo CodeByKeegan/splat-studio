@@ -1,0 +1,4 @@
+# The maintainer owns the whole tree, so every PR requires their review.
+# (Combined with a branch ruleset that requires CODEOWNERS review, this makes
+# @CodeByKeegan the sole approver.)
+* @CodeByKeegan
