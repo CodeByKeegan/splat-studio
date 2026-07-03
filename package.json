@@ -46,7 +46,7 @@
     "electron": "^39.8.5",
     "electron-builder": "^26.15.6",
     "playcanvas": "^2.20.4",
-    "png-to-ico": "^2.1.8",
+    "png-to-ico": "^3.0.1",
     "pngjs": "^7.0.0",
     "rcedit": "^4.0.1",
     "typescript": "^5.9.2",
