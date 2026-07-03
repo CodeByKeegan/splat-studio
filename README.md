@@ -31,7 +31,7 @@ workspace.
 
 - [Features](#features)
 - [Download & install](#download--install)
-- [Run from source](#run-from-source)
+- [Getting started](#getting-started)
 - [Usage](#usage)
 - [Analyze & procedural generators](#analyze--procedural-generators)
 - [Render to image (WebP) & output options](#render-to-image-webp--output-options)
@@ -91,24 +91,48 @@ in the background (progress shows on the taskbar icon) and, when ready, it offer
 time via **Help → Check for Updates**. (The NSIS installer self-updates; the portable
 exe does not.)
 
-## Run from source
+## Getting started
+
+Want to run from source — to develop, or to build the app yourself?
+
+**Prerequisites:** [Node.js](https://nodejs.org) **22+** and npm. Windows is required to
+build the desktop app; the dev server itself runs anywhere. A WebGPU-capable GPU unlocks
+voxelization, collision, and GPU renders — SOG compression falls back to CPU without one.
+
+**Clone, install, and launch with a synthetic scan** so you see it working end to end:
 
 ```bash
+git clone https://github.com/CodeByKeegan/splat-studio.git
+cd splat-studio
 npm install
-npm run demo   # generates workspace/demo-room.ply (synthetic room scan)
-npm run dev    # server on :5174, UI on http://localhost:5173
+npm run demo   # writes workspace/demo-room.ply — a synthetic room scan
+npm run dev    # API on :5174, UI on http://localhost:5173
 ```
 
-To build the desktop app yourself:
+Open **http://localhost:5173**. `demo-room.ply` is already listed in the **Files** panel —
+click **view** to load it into the 3D viewer, then run your first job with
+**Convert → SOG (bundled)**. Output streams into the **Job** panel and the new file flashes
+in the list.
+
+The workspace defaults to `./workspace`, where each top-level subfolder is a project; point
+it elsewhere with the `SPLAT_WORKSPACE` environment variable.
+
+### Build the desktop app
 
 ```bash
-npm install
-npm run make-icon   # regenerate build/icon.ico (committed; only needed if changed)
-npm run dist:win    # build dist/ and package to release/
+npm run dist:win     # build + package the NSIS installer and portable exe into release/
+npm run pack:dir     # faster: unpacked release/win-unpacked/Splat Studio.exe, no installer
 ```
 
-`npm run pack:dir` produces an unpacked `release/win-unpacked/Splat Studio.exe`
-for a quick smoke test without building the installers.
+(`npm run make-icon` regenerates `build/icon.ico` — committed, only needed if the icon changes.)
+
+### Run the tests
+
+```bash
+npm run typecheck          # tsc --noEmit
+npm test                   # tests/e2e.mjs — black-box regression suite
+SKIP_GPU=1 npm test        # skip the GPU-only checks (collision, WebP render)
+```
 
 ## Usage
 
