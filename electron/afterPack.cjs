@@ -7,7 +7,7 @@ const path = require('node:path');
 
 module.exports = async function afterPack(context) {
     if (context.electronPlatformName !== 'win32') return;
-    const rcedit = require('rcedit');
+    const { rcedit } = require('rcedit');
     const productName = context.packager.appInfo.productFilename; // "Splat Studio"
     const exe = path.join(context.appOutDir, `${productName}.exe`);
     const icon = path.join(context.packager.info.projectDir, 'build', 'icon.ico');
