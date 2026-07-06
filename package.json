@@ -43,7 +43,7 @@
   "devDependencies": {
     "@types/node": "^25.9.3",
     "concurrently": "^9.2.3",
-    "electron": "^39.8.5",
+    "electron": "^43.0.0",
     "electron-builder": "^26.15.6",
     "playcanvas": "^2.20.6",
     "png-to-ico": "^3.0.1",
