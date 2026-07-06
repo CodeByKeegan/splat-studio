@@ -6,8 +6,9 @@ description: Autonomous maintenance — check whether @playcanvas/splat-transfor
 # Keeping Splat Studio current
 
 This is the routine the scheduled agent runs. It is idempotent: if nothing
-changed, it makes no changes. Always work on a fresh branch + worktree and open
-a PR — never commit dependency bumps straight to `main`.
+changed, it makes no changes. Always work on a fresh branch + worktree off `dev`
+and open a PR **against `dev`** (the beta channel) — never commit straight to
+`dev` or `main`; `main` only moves by promoting `dev`.
 
 ## 1. Detect updates
 ```
@@ -19,12 +20,33 @@ or `package.json`). If neither is newer, **stop — report "up to date" and exit
 
 ## 2. Branch + bump
 ```
-git worktree add -b chore/bump-<pkg>-<version> ../splat-studio-bump origin/main
+git worktree add -b chore/bump-<pkg>-<version> ../splat-studio-bump origin/dev
 # junction node_modules from a sibling checkout, or npm install
 npm install @playcanvas/splat-transform@latest   # and/or playcanvas@latest
 ```
 
-## 3. Diff the CLI surface (splat-transform bumps)
+## 3. Read the release — not just the flag list
+**For every bump (both packages), actually read what the release does**: the GitHub
+release notes / CHANGELOG for each version between installed and latest. You are
+looking for more than new CLI flags:
+
+- **Behavior/API changes** to things we call: the CLI invocations built in
+  `server/commands.mjs` (flag semantics, defaults, output naming), and the engine
+  APIs used in `client/src/viewer.ts` / `client/src/main.ts` (gsplat loading,
+  cameras, gizmos, render targets).
+- **Recommended usage changes & optimizations**: deprecations we should migrate off,
+  new preferred APIs or flags that would improve quality/perf (e.g. a better
+  compression default, a faster loader path, a new LOD strategy), and perf notes
+  that suggest re-tuning our defaults.
+- **Fixes that let us remove workarounds**: check whether anything in our code
+  exists to paper over an upstream bug the release fixed (search comments near the
+  relevant call sites).
+
+Apply small recommended changes in this same PR (with a test or visual check);
+for anything large, open a GitHub issue describing the recommendation and its
+expected benefit so it's tracked instead of lost.
+
+## 3b. Diff the CLI surface (splat-transform bumps)
 ```
 node node_modules/@playcanvas/splat-transform/bin/cli.mjs --help
 ```
@@ -85,8 +107,10 @@ binary failed to install, set `ELECTRON_OVERRIDE_DIST_PATH` to the main checkout
 
 ## 6. Ship
 Commit (author CodeByKeegan; Claude attribution comes from repo settings — leave it),
-push, open a PR titled `chore: bump <pkg> to <version> (+ N new flags wired)`, with
-a Verification section listing the `npm test` result and any new flags surfaced.
+push, open a PR **against `dev`** titled `chore: bump <pkg> to <version> (+ N new flags wired)`,
+with a Verification section listing the `npm test` result, any new flags surfaced, and
+a **Release-notes review** line summarizing what the upstream release changed and any
+usage/optimization recommendations adopted (or issue links for deferred ones).
 End the PR body with: *Authored autonomously by the weekly dependency-update routine.*
 Never include claude.ai session links.
 
