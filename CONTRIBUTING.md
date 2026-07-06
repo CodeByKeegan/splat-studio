@@ -26,7 +26,8 @@ clone → install → `npm run dev` quickstart.
 
 ## Making a change
 
-1. Fork, then branch off `dev` (e.g. `feat/my-thing` or `fix/the-bug`).
+1. Fork, then branch off `dev`, named `<type>/<kebab-summary>` — types: `feat`, `fix`,
+   `chore`, `docs`, `ci`, `refactor` (e.g. `feat/lod-auto-tune`, `fix/region-gizmo-detach`).
 2. Keep it focused — one feature or fix per PR.
 3. Match the existing style: **brief, what-not-why code comments**; new `splat-transform`
    CLI flags get a GUI control **with a tooltip that names the flag** and a `check(...)`

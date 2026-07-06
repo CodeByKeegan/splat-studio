@@ -20,12 +20,18 @@ check first and STOP immediately if nothing changed.
 2. **If one is newer** — branch `chore/bump-<pkg>-<version>` off `dev`, then
    `npm install <pkg>@latest` for the updated package(s).
 
-3. **For a `splat-transform` bump** — diff the CLI `--help` against the flags already wired
-   in `server/commands.mjs` and the client. For each new or changed user-facing flag, run a
-   UX pass: discover its purpose, design it to mesh with the existing design system (never
-   surface raw sentinel values; pair related numerics), and implement end-to-end per the
-   `splat-studio-add-feature` skill with a `check(...)` in `tests/e2e.mjs`. Record it on the
-   coverage board. For a `playcanvas` bump: re-run the suite and smoke-test the viewer.
+3. **Read the release, then wire it** — for every bump, read the upstream release notes /
+   CHANGELOG for each version crossed (both packages). Beyond new CLI flags, look for:
+   behavior/API changes affecting `server/commands.mjs` invocations or the engine usage in
+   `client/src/viewer.ts`; deprecations and newly recommended usage; optimizations worth
+   adopting; and fixed upstream bugs that let a local workaround be removed. Apply small
+   recommendations in the same PR; open a GitHub issue for large ones. Then, for a
+   `splat-transform` bump, diff the CLI `--help` against the flags already wired. For each
+   new or changed user-facing flag, run a UX pass: discover its purpose, design it to mesh
+   with the existing design system (never surface raw sentinel values; pair related
+   numerics), and implement end-to-end per the `splat-studio-add-feature` skill with a
+   `check(...)` in `tests/e2e.mjs`. Record it on the coverage board. For a `playcanvas`
+   bump: re-run the suite and smoke-test the viewer.
 
 4. **Verify** — `npm run typecheck` and `npm test` must pass (the e2e suite is the safety
    net). For any new or changed UI control, verify it visually via `npm run docs:capture`
