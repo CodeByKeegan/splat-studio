@@ -45,7 +45,7 @@
     "concurrently": "^9.2.3",
     "electron": "^39.8.5",
     "electron-builder": "^26.15.6",
-    "playcanvas": "^2.20.4",
+    "playcanvas": "^2.20.5",
     "png-to-ico": "^2.1.8",
     "pngjs": "^7.0.0",
     "rcedit": "^4.0.1",
