@@ -72,7 +72,7 @@
                     <span>Input</span>
                     <select id="convert-input"></select>
                 </label>
-                <label class="field hidden" id="row-lod-select" title="LCC / LCC2 input: comma-separated LOD levels to read (-O/--lod-select), e.g. 0,1,2. Empty reads all">
+                <label class="field hidden" id="row-lod-select" title="LCC / LCC2 input: comma-separated LOD levels to read (--select-lod), e.g. 0,1,2. Empty reads all">
                     <span>LCC LOD levels <em>(.lcc / .lcc2 input only)</em></span>
                     <input type="text" id="convert-lod-select" placeholder="e.g. 0,1,2 — empty = all" />
                 </label>
@@ -106,20 +106,20 @@
                         <option value="3">3</option>
                     </select>
                 </label>
-                <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (-F/--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
+                <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
                     <span>Decimate to (count or %)</span>
                     <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
                 </label>
 
                 <div class="hidden" id="html-rows">
-                    <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (-U/--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
-                    <label class="field" title="HTML viewer settings JSON file in this project (-E/--viewer-settings). Upload it first, then type its name here. Optional">
+                    <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
+                    <label class="field" title="HTML viewer settings JSON file in this project (--viewer-settings). Upload it first, then type its name here. Optional">
                         <span>Viewer settings (.json)</span>
                         <input type="text" id="convert-viewer-settings" placeholder="e.g. settings.json — optional" />
                     </label>
                 </div>
 
-                <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by -L/--list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU">
+                <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU">
                     <span>Device</span>
                     <select id="convert-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
@@ -181,18 +181,18 @@
                             </label>
                         </div>
                     </div>
-                    <label class="check" title="Remove gaussians that don't contribute to any solid voxel — stray floaters (-G/--filter-floaters). Runs on the GPU."><input type="checkbox" id="filter-floaters-on" /> Remove floaters</label>
+                    <label class="check" title="Remove gaussians that don't contribute to any solid voxel — stray floaters (--filter-floaters). Runs on the GPU."><input type="checkbox" id="filter-floaters-on" /> Remove floaters</label>
                     <span class="hint" title="GPU pass — incompatible with 'CPU only'. Leave the fields blank to use the CLI defaults (voxel 0.05, opacity 0.1, min 0.004).">GPU pass — leave fields blank for defaults</span>
                     <div class="field-row hidden" id="filter-floaters-rows">
                         <label class="field half" title="Voxel size in world units for the floater test (default 0.05)"><span>Voxel size</span><input type="number" id="ff-size" step="0.01" min="0.001" placeholder="0.05" title="Voxel size (default 0.05)" /></label>
                         <label class="field half" title="Opacity cutoff (default 0.1)"><span>Opacity</span><input type="number" id="ff-op" step="0.05" min="0" max="1" placeholder="0.1" title="Opacity cutoff (default 0.1)" /></label>
                         <label class="field half" title="Minimum contribution (default 0.004)"><span>Min contrib</span><input type="number" id="ff-min" step="0.001" min="0" placeholder="0.004" title="Min contribution (default 0.004)" /></label>
                     </div>
-                    <label class="check" title="Reorder gaussians along a Morton / Z-order curve for better spatial locality and faster streaming (-M/--morton-order). Applied last, after any transforms and filters."><input type="checkbox" id="convert-morton" /> Reorder (Morton / Z-order)</label>
+                    <label class="check" title="Reorder gaussians along a Morton / Z-order curve for better spatial locality and faster streaming (--morton-order). Applied last, after any transforms and filters."><input type="checkbox" id="convert-morton" /> Reorder (Morton / Z-order)</label>
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
-                    <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --mem)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
+                    <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --memory)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
                 <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Job panel">Export</button>
@@ -230,7 +230,7 @@
                         <span>LOD levels</span>
                         <input type="number" id="lod-levels" value="3" min="1" max="8" required />
                     </label>
-                    <label class="field half" title="Each successive level keeps this percentage of the previous one (-F/--decimate, GPU-accelerated)">
+                    <label class="field half" title="Each successive level keeps this percentage of the previous one (--decimate, GPU-accelerated)">
                         <span>Keep per level (%)</span>
                         <input type="number" id="lod-keep" value="50" min="5" max="95" required />
                     </label>
@@ -241,16 +241,16 @@
                     <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
                 </div>
                 <div class="field-row" id="row-lod-chunks">
-                    <label class="field half" title="Approximate gaussians per streamed chunk, in thousands (-C/--lod-chunk-count). Default 512">
+                    <label class="field half" title="Approximate gaussians per streamed chunk, in thousands (--lod-chunk-count). Default 512">
                         <span>Chunk size (K splats)</span>
                         <input type="number" id="lod-chunk-count" value="512" min="16" max="8192" required />
                     </label>
-                    <label class="field half" title="Approximate world-space size of a chunk in meters (-X/--lod-chunk-extent, whole meters). Default 16">
+                    <label class="field half" title="Approximate world-space size of a chunk in meters (--lod-chunk-extent, whole meters). Default 16">
                         <span>Chunk extent (m)</span>
                         <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
                     </label>
                 </div>
-                <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by -L/--list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower)">
+                <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower)">
                     <span>Device</span>
                     <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
@@ -265,7 +265,7 @@
                     <select id="render-input"></select>
                 </label>
                 <div class="group">Render camera</div>
-                <div class="field" title="Camera position in world space (--camera). The 📷 button grabs the current viewer camera; drag the Render camera gizmo in the viewport to adjust">
+                <div class="field" title="Camera position in world space (--camera-pos). The 📷 button grabs the current viewer camera; drag the Render camera gizmo in the viewport to adjust">
                     <div class="label-row"><span>Camera <em>(x, y, z)</em></span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
                     <div class="field-row">
                         <label class="axis"><span>x</span><input type="number" id="webp-camera-x" value="2" step="0.1" required title="Camera X" /></label>
@@ -273,7 +273,7 @@
                         <label class="axis"><span>z</span><input type="number" id="webp-camera-z" value="-2" step="0.1" required title="Camera Z" /></label>
                     </div>
                 </div>
-                <div class="field" title="Camera target point (--look-at)">
+                <div class="field" title="Camera target point (--camera-target)">
                     <div class="label-row"><span>Look at <em>(x, y, z)</em></span></div>
                     <div class="field-row">
                         <label class="axis"><span>x</span><input type="number" id="webp-lookat-x" value="0" step="0.1" required title="Look-at X" /></label>
@@ -282,7 +282,7 @@
                     </div>
                 </div>
                 <div class="field-row">
-                    <label class="field half" title="Vertical field of view in degrees (--fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
+                    <label class="field half" title="Vertical field of view in degrees (--camera-fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
                     <label class="field half" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
                 </div>
                 <div class="field-row">
@@ -297,12 +297,12 @@
                     <label class="field half" title="Focus plane distance in world units (--focus-distance). Empty = distance to look-at"><span>Focus dist</span><input type="number" id="webp-focus" step="0.1" min="0.001" placeholder="look-at" /></label>
                 </div>
                 <div class="group">Motion blur</div>
-                <label class="field" title="End camera position (--camera-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
+                <label class="field" title="End camera position (--camera-pos-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
                 <div class="field-row">
                     <label class="field half" title="Shutter fraction 0..1 (--shutter). 1=full, 0.5=180°"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
                     <label class="field half" title="Sub-frames accumulated (--motion-samples). Cost is N× a render"><span>Samples</span><input type="number" id="webp-motionsamples" value="16" min="1" max="256" /></label>
                 </div>
-                <label class="field" id="row-render-device" title="GPU adapter for GPU operations (-g, listed by -L/--list-gpus). The render needs a GPU rasterizer; 'Auto' picks the default">
+                <label class="field" id="row-render-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). The render needs a GPU rasterizer; 'Auto' picks the default">
                     <span>Device</span>
                     <select id="render-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
@@ -310,12 +310,12 @@
             </section>
 
             <section class="panel" id="panel-analyze">
-                <h2 title="Print per-column statistics for a splat without writing any file (-m/--summary)">Analyze</h2>
+                <h2 title="Print per-column statistics for a splat without writing any file (--stats)">Analyze</h2>
                 <label class="field" title="File to summarize — any splat source, including .mjs generators">
                     <span>Input</span>
                     <select id="analyze-input"></select>
                 </label>
-                <button id="analyze-run" class="primary" title="Run -m/--summary as a background job: per-column min · max · median · mean · stdDev, NaN/Inf counts and a histogram. Results render below and persist. Writes nothing (analysis-only, null output)">Summarize stats</button>
+                <button id="analyze-run" class="primary" title="Run --stats as a background job: per-column min · max · median · mean · stdDev, NaN/Inf counts and a histogram. Results render below and persist. Writes nothing (analysis-only, null output)">Summarize stats</button>
                 <div id="analyze-result" class="analyze-result hidden">
                     <div class="result-head">
                         <span id="analyze-result-name" class="result-name" title="The summarized file"></span>
@@ -427,16 +427,16 @@
 
                 <div class="group">Voxelize</div>
                 <div class="field-row">
-                    <label class="field half" title="Voxel edge length in meters (--voxel-params). Smaller = more detail but more memory/time; 0.05 m = 5 cm voxels">
+                    <label class="field half" title="Voxel edge length in meters (--voxel-size). Smaller = more detail but more memory/time; 0.05 m = 5 cm voxels">
                         <span>Voxel size (m)</span>
                         <input type="number" id="voxel-size" value="0.05" step="0.005" min="0.001" required />
                     </label>
-                    <label class="field half" title="Gaussians with opacity below this are ignored when voxelizing (--voxel-params). Raise it to ignore wispy fog/floaters">
+                    <label class="field half" title="Gaussians with opacity below this are ignored when voxelizing (--voxel-opacity). Raise it to ignore wispy fog/floaters">
                         <span>Opacity cutoff (0–1)</span>
                         <input type="number" id="voxel-opacity" value="0.1" step="0.05" min="0" max="1" required />
                     </label>
                 </div>
-                <label class="check" title="Keep only the cluster of splats connected to the seed position, removing disconnected floaters before voxelizing (-D/--filter-cluster). GPU-only. On multi-million-gaussian scenes this pass can exceed the Windows GPU watchdog and kill the job (DEVICE_HUNG)"><input type="checkbox" id="filter-cluster" checked />
+                <label class="check" title="Keep only the cluster of splats connected to the seed position, removing disconnected floaters before voxelizing (--filter-cluster). GPU-only. On multi-million-gaussian scenes this pass can exceed the Windows GPU watchdog and kill the job (DEVICE_HUNG)"><input type="checkbox" id="filter-cluster" checked />
                     Filter to connected cluster at seed</label>
                 <span class="hint" title="The cluster filter runs one long GPU dispatch per region; Windows resets the GPU if a dispatch exceeds ~2 s">GPU pass — uncheck for multi-million-splat scenes (watchdog risk)</span>
                 <div class="field" title="A point inside the scene (--seed-pos) used by the cluster filter, hole sealing and carving. For a room: ~1 m above the floor">
@@ -523,7 +523,7 @@
                 </div>
 
                 <div class="group">Mesh</div>
-                <label class="field" title="How the triangle mesh is extracted from the voxels (-K/--collision-mesh)">
+                <label class="field" title="How the triangle mesh is extracted from the voxels (--collision-mesh)">
                     <span>Mesh style</span>
                     <select id="mesh-shape">
                         <option value="smooth" selected title="Marching cubes with lossless coplanar merging — fewer, smoother triangles">Smooth (marching cubes)</option>

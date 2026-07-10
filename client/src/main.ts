@@ -1484,20 +1484,19 @@ groupApplyRegionBtn.onclick = async () => {
 // ---------- analyze panel + persistent stats card ----------
 interface StatRow { col: string; min: string; max: string; median: string; mean: string; std: string; nans: string; infs: string; hist: string; }
 
-// parse the Markdown table the CLI's -m/--summary prints to stdout (job log)
+// parse the CLI's --stats text output (job log): a "gaussians: N" header then a
+// | Column | min | max | median | mean | stdDev | nans | infs | histogram | table
 const parseSummary = (log: string): { rowCount: number; rows: StatRow[] } | null => {
-    const start = log.indexOf('# Summary');
-    if (start < 0) return null;
-    const block = log.slice(start);
-    const rc = block.match(/Row Count:\*\*\s*(\d+)/);
+    const rc = log.match(/^gaussians:\s*(\d+)/m);
+    if (!rc) return null;
     const rows: StatRow[] = [];
-    for (const line of block.split('\n')) {
+    for (const line of log.split('\n')) {
         if (!line.trim().startsWith('|')) continue;
         const c = line.split('|').slice(1, -1).map((s) => s.trim());
         if (c.length < 9 || c[0] === 'Column' || /^-+$/.test(c[0])) continue;
         rows.push({ col: c[0], min: c[1], max: c[2], median: c[3], mean: c[4], std: c[5], nans: c[6], infs: c[7], hist: c[8] });
     }
-    return rows.length ? { rowCount: rc ? Number(rc[1]) : NaN, rows } : null;
+    return rows.length ? { rowCount: Number(rc[1]), rows } : null;
 };
 
 const fmtNum = (s: string): string => {
@@ -1512,7 +1511,8 @@ const renderSummaryCard = (name: string, log: string): void => {
     const result = $('analyze-result');
     const summary = parseSummary(log);
     if (!summary) { result.classList.add('hidden'); showToast('Could not parse summary output', true); return; }
-    lastSummaryMarkdown = log.slice(log.indexOf('# Summary')).trim();
+    const head = log.search(/^gaussian:/m);
+    lastSummaryMarkdown = (head >= 0 ? log.slice(head) : log).trim();
     $('analyze-result-name').textContent = name;
 
     const extent = (col: string): number => {

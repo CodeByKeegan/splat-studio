@@ -141,28 +141,27 @@ const listFiles = async (projectDir) => {
 };
 
 // ---------- per-file stats (cached) ----------
-// Gaussian count + x/y/z extents from the CLI summary (-m), for LOD auto-tune.
+// Gaussian count + x/y/z extents from the CLI --stats table, for LOD auto-tune.
 // Cached per (absolute path, mtime) so repeated auto-tunes don't re-run the scan.
 const statsCache = new Map();
 const parseStats = (log) => {
-    const start = log.indexOf('# Summary');
-    if (start < 0) return null;
-    const block = log.slice(start);
-    const rc = block.match(/Row Count:\*\*\s*(\d+)/);
+    // 3.0.0 --stats text: a "gaussians: N" header then a | Column | min | max | ... | table
+    const rc = log.match(/^gaussians:\s*(\d+)/m);
+    if (!rc) return null;
     const minMax = {};
-    for (const line of block.split('\n')) {
+    for (const line of log.split('\n')) {
         if (!line.trim().startsWith('|')) continue;
         const c = line.split('|').slice(1, -1).map((s) => s.trim());
         if (c.length < 3 || c[0] === 'Column' || /^-+$/.test(c[0])) continue;
         minMax[c[0]] = [Number(c[1]), Number(c[2])];
     }
     const extent = (k) => (minMax[k] ? minMax[k][1] - minMax[k][0] : NaN);
-    const result = { count: rc ? Number(rc[1]) : NaN, extents: [extent('x'), extent('y'), extent('z')] };
-    // a partial/garbled summary parse → treat as failure (don't 200 + cache a NaN)
+    const result = { count: Number(rc[1]), extents: [extent('x'), extent('y'), extent('z')] };
+    // a partial/garbled parse → treat as failure (don't 200 + cache a NaN)
     return Number.isFinite(result.count) ? result : null;
 };
 const runStats = (absInput) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '-m', 'null'], { windowsHide: true, timeout: 120000 });
+    const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '--stats', 'text', 'null'], { windowsHide: true, timeout: 120000 });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { out += d; });
@@ -391,9 +390,9 @@ app.post('/api/summary', json, (req, res) => startJob(res, buildSummaryCommand, 
 // region trim (carve out / keep inside a box/sphere) → a new .ply, via the Node worker
 app.post('/api/trim', json, (req, res) => startJob(res, buildTrimCommand, req.body ?? {}));
 
-// list GPU adapters (-L/--list-gpus) so the UI can offer a device dropdown
+// list GPU adapters (--list-gpus) so the UI can offer a device dropdown
 const listGpus = () => new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliPath, '--no-tty', '-L'], { windowsHide: true, timeout: 15000 });
+    const child = spawn(process.execPath, [cliPath, '--no-tty', '--list-gpus'], { windowsHide: true, timeout: 15000 });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     child.on('error', () => resolve([]));
