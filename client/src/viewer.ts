@@ -269,6 +269,22 @@ export class SplatViewer {
         });
         app.root.addChild(this.camera);
 
+        // CameraControls only wheel-zooms in orbit mode; in fly mode feed the
+        // wheel to its fly controller as a forward dolly, scaled to the scene.
+        // dt=0 shifts only the damped target; the per-frame update glides there.
+        const wheelFrame = new pc.InputFrame({ move: [0, 0, 0], rotate: [0, 0, 0] });
+        canvas.addEventListener('wheel', (e: WheelEvent) => {
+            e.preventDefault();
+            if (!this.controls.enabled || this.controls.enableOrbit) return;
+            const fly = (this.controls as any)._flyController; // fails safe if renamed
+            if ((this.controls as any)._mode !== 'fly' || typeof fly?.update !== 'function') return;
+            const radius = this.sceneBounds()?.radius ?? 5;
+            const notches = (e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY) / 100;
+            const speed = e.shiftKey ? 0.2 : e.ctrlKey ? 0.01 : 0.05;
+            wheelFrame.deltas.move.append([0, 0, -notches * radius * speed]);
+            fly.update(wheelFrame, 0);
+        }, { passive: false });
+
         // headlight for the solid collision mode (gsplats/wireframes are unlit)
         const light = new pc.Entity('headlight');
         light.addComponent('light', {

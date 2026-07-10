@@ -46,8 +46,8 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
   to rearrange; drag a tab out to float it in its own window. **Settings** opens as
   its own dialog (⚙ in the viewport toolbar, or **Window ▸ Settings…**).
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
-  its top. The default camera is **fly** (mouse-look + WASD); right-drag pans, scroll
-  zooms. Switch to orbit from the toolbar.
+  its top. The default camera is **fly** (mouse-look + WASD); scroll zooms (Shift
+  fast, Ctrl slow). Switch to orbit from the toolbar.
 
 Every control has a tooltip — hover to see what it does and which CLI flag it maps to.
 
@@ -393,8 +393,8 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
 Display controls live in a **toolbar along the top of the Viewer 3D window**:
 
 - **Camera control** — **Fly** (default): mouse-look + **WASD** to move, ideal for
-  inspecting carved interiors. **Orbit**: drag to rotate around the focus point.
-  Right-drag pans and scroll zooms in both.
+  inspecting carved interiors. **Orbit**: drag to rotate around the focus point;
+  middle- or Shift-drag pans. Scroll zooms in both modes.
 - **Collision style** — *X-ray* (all edges through everything, for small meshes),
   *Hidden-line* (front edges only, for dense meshes), or *Solid + edges* (lit
   translucent surface — best for checking placement and inspecting carved interiors).
@@ -472,7 +472,7 @@ hint); closing the tab frees its GPU memory.
 ## The 3D viewport
 
 - **Fly** (default) — mouse-look + WASD · **Orbit** (toolbar) — left-drag ·
-  **Pan** — right-drag · **Zoom** — scroll.
+  **Pan** — middle-drag (orbit) · **Zoom** — scroll (Shift fast, Ctrl slow).
 - The **chips** at the top-left show what's currently displayed (splat / collision /
   voxels); each **✕** removes that layer.
 - Drag the **borders** between dock tabs to resize, or drag a **tab** to re-dock or
