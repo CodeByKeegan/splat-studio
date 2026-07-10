@@ -1511,7 +1511,7 @@ const renderSummaryCard = (name: string, log: string): void => {
     const result = $('analyze-result');
     const summary = parseSummary(log);
     if (!summary) { result.classList.add('hidden'); showToast('Could not parse summary output', true); return; }
-    const head = log.search(/^gaussian:/m);
+    const head = log.search(/^gaussians:/m);
     lastSummaryMarkdown = (head >= 0 ? log.slice(head) : log).trim();
     $('analyze-result-name').textContent = name;
 
