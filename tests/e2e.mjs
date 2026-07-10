@@ -180,10 +180,29 @@ try {
         });
     }
 
-    await check('summary (-m) prints a stats table, writes nothing', async () => {
+    // decimate LOD mode pre-decimates each level to a temp .ply then combines them
+    // (splat-transform 3.0.0: --decimate must be a standalone final .ply action)
+    await check('streamed LOD (decimate, 3 levels) bakes + cleans temps', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 3, lodKeepPercent: 50 }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
+        assert(meta.lodLevels === 3, `expected 3 LOD levels, got ${meta.lodLevels}`);
+        assert(!fs.existsSync(path.join(projectDir, 'demo-room-lod-src')), 'temp decimate dir not cleaned up');
+    });
+
+    // 3.0.0: --decimate writes a PLY only — decimating to a non-PLY format is rejected up front
+    await check('decimate to a non-PLY format is rejected', async () => {
+        const { status, json } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'sog', options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' } });
+        assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);
+    });
+
+    await check('summary (--stats) prints a stats table, writes nothing', async () => {
         const job = await runJob('/api/summary', { input: 'demo-room.ply' });
         assert(job.status === 'done', `job ${job.status}`);
-        assert(/# Summary/.test(job.log) && /Row Count:/.test(job.log), 'no summary table in log');
+        assert(/^gaussians:\s*\d+/m.test(job.log) && /\|\s*Column\s*\|/.test(job.log), 'no summary table in log');
         assert(job.outputs.length === 0, `summary wrote files: ${job.outputs}`);
     });
 
@@ -192,7 +211,7 @@ try {
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
         assert(fs.existsSync(path.join(projectDir, 'gen-grid.ply')), 'no generator output');
         const sum = await runJob('/api/summary', { input: 'gen-grid.ply' });
-        const rc = (sum.log.match(/Row Count:\*\*\s*(\d+)/) || [])[1];
+        const rc = (sum.log.match(/^gaussians:\s*(\d+)/m) || [])[1];
         assert(Number(rc) === 100, `expected 100 gaussians, got ${rc}`);
     });
 
@@ -211,16 +230,16 @@ try {
     });
 
     // ----- output options & device -----
-    await check('--verbose/--mem diagnostics flag', async () => {
+    await check('--verbose/--memory diagnostics flag', async () => {
         const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'ply', options: { verbose: true } });
-        assert(job.status === 'done' && /--verbose/.test(job.command) && /--mem/.test(job.command), `cmd: ${job.command}`);
+        assert(job.status === 'done' && /--verbose/.test(job.command) && /--memory\b/.test(job.command), `cmd: ${job.command}`);
     });
 
-    await check('HTML unbundled (-U) + viewer-settings (-E)', async () => {
+    await check('HTML unbundled (--unbundled) + viewer-settings (--viewer-settings)', async () => {
         await fsp.writeFile(path.join(projectDir, 'settings.json'), '{}');
         const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'html', options: { unbundled: true, viewerSettings: 'settings.json' } });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-        assert(/ -U\b/.test(job.command) && /-E settings\.json/.test(job.command), `cmd: ${job.command}`);
+        assert(/--unbundled\b/.test(job.command) && /--viewer-settings settings\.json/.test(job.command), `cmd: ${job.command}`);
     });
 
     await check('SOG encoder workers (--max-workers)', async () => {
@@ -252,7 +271,7 @@ try {
         assert(status === 400, `expected 400, got ${status}`);
     });
 
-    await check('lists GPU adapters (-L)', async () => {
+    await check('lists GPU adapters (--list-gpus)', async () => {
         const { json } = await api('GET', '/api/gpus');
         assert(Array.isArray(json.gpus), `gpus: ${JSON.stringify(json)}`);
     });
@@ -356,7 +375,7 @@ try {
 
     // ----- WebP image rendering (GPU rasterizer) -----
     if (!SKIP_GPU) {
-        await check('WebP render (--camera/--look-at/--fov)', async () => {
+        await check('WebP render (--camera-pos/--camera-target/--camera-fov)', async () => {
             const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { camera: '2,1,-2', lookAt: '0,0,0', fov: 60, resolution: '320x180' } } });
             assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
             assert(fs.existsSync(path.join(projectDir, 'demo-room.webp')), 'no webp output');
@@ -364,7 +383,7 @@ try {
         await check('WebP DoF + motion-blur flags assemble & render', async () => {
             const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '160x90', fStop: 2.8, focusDistance: 3, cameraEnd: '3,1,-2', shutter: 0.5, motionSamples: 2 } } });
             assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-            assert(/--f-stop 2.8/.test(job.command) && /--camera-end 3,1,-2/.test(job.command) && /--motion-samples 2/.test(job.command), `cmd: ${job.command}`);
+            assert(/--f-stop 2.8/.test(job.command) && /--camera-pos-end 3,1,-2/.test(job.command) && /--motion-samples 2/.test(job.command), `cmd: ${job.command}`);
         });
     } else {
         console.log('  - WebP render skipped (SKIP_GPU)');
