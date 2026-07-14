@@ -459,6 +459,7 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
     }
     if (isSplat || isGenerator) {
         items.push({ label: isRaw ? 'Export (other formats)…' : 'Export as…', hint: 'Open the Export panel with this file selected', run: () => { prefillSelect(convertInput, f.name); openPanel('panel-convert'); } });
+        items.push({ label: 'Inspect structure', hint: 'Fast structural peek (--info): gaussians, SH bands, LODs, columns', run: () => { prefillSelect(analyzeInput, f.name); openPanel('panel-analyze'); analyzeInspect.click(); } });
         items.push({ label: 'Analyze stats', hint: 'Run --stats and show the stats card', run: () => { prefillSelect(analyzeInput, f.name); openPanel('panel-analyze'); analyzeRun.click(); } });
     }
     if (isSplat) {
@@ -616,6 +617,7 @@ const lodRun = $<HTMLButtonElement>('lod-run');
 const renderRun = $<HTMLButtonElement>('render-run');
 const collisionRun = $<HTMLButtonElement>('collision-run');
 const analyzeRun = $<HTMLButtonElement>('analyze-run');
+const analyzeInspect = $<HTMLButtonElement>('analyze-inspect');
 // every run button is disabled together while a job runs (one GPU, one Job panel)
 const RUN_BUTTONS = [convertRun, lodRun, renderRun, collisionRun, analyzeRun];
 let activeJobId: string | null = null;
@@ -1505,6 +1507,62 @@ const fmtNum = (s: string): string => {
     return String(Math.round(n * 1000) / 1000);
 };
 
+// shared by the Inspect (structure) and Summarize (stats) cards
+const addTile = (label: string, value: string, cls = ''): void => {
+    const tiles = $('stat-tiles');
+    const t = document.createElement('div');
+    t.className = `tile ${cls}`.trim();
+    const v = document.createElement('span'); v.className = 'tile-val'; v.textContent = value;
+    const l = document.createElement('span'); l.className = 'tile-label'; l.textContent = label;
+    t.append(v, l);
+    tiles.appendChild(t);
+};
+
+// Inspect (--info): fast structural peek. No per-column crunch, so no table —
+// just the structure tiles + a layout readout. Shares the card with Summarize.
+const renderStructureCard = (name: string, info: api.FileInfo): void => {
+    $('analyze-result-name').textContent = name;
+    $('stat-tiles').innerHTML = '';
+    $('stats-copy').classList.add('hidden');
+    $('stats-table-wrap').classList.add('hidden');
+    const detail = $('structure-detail');
+    detail.innerHTML = '';
+
+    if (!info.gaussian) {
+        // a readable file that isn't a gaussian splat (e.g. a mesh .glb / .ply)
+        const note = document.createElement('div');
+        note.className = 'structure-note';
+        note.textContent = 'Not a Gaussian splat — no per-splat structure to show.';
+        detail.appendChild(note);
+        detail.classList.remove('hidden');
+        $('analyze-result').classList.remove('hidden');
+        return;
+    }
+
+    addTile('Gaussians', info.count.toLocaleString());
+    // SH bands: 0 = flat DC colour only; higher = more view-dependent colour data
+    addTile('SH bands', String(info.shBands));
+    addTile('LOD levels', String(info.lods));
+
+    const row = (label: string, value: string, titleText = ''): void => {
+        const r = document.createElement('div'); r.className = 'structure-row';
+        const l = document.createElement('span'); l.className = 'sr-label'; l.textContent = label;
+        const v = document.createElement('span'); v.className = 'sr-val'; v.textContent = value;
+        if (titleText) v.title = titleText;
+        r.append(l, v);
+        detail.appendChild(r);
+    };
+    if (info.lods > 1 && info.lodCounts.length) {
+        row('Per LOD', info.lodCounts.map((c) => c.toLocaleString()).join(' · '));
+    }
+    if (info.layers.length) row('Layers', info.layers.join(' · '));
+    if (info.columns.length) {
+        row('Columns', `${info.columns.length}`, info.columns.join(', '));
+    }
+    detail.classList.remove('hidden');
+    $('analyze-result').classList.remove('hidden');
+};
+
 let lastSummaryMarkdown = '';
 const renderSummaryCard = (name: string, log: string): void => {
     const result = $('analyze-result');
@@ -1512,6 +1570,9 @@ const renderSummaryCard = (name: string, log: string): void => {
     if (!summary) { result.classList.add('hidden'); showToast('Could not parse summary output', true); return; }
     lastSummaryMarkdown = log.trim();
     $('analyze-result-name').textContent = name;
+    $('structure-detail').classList.add('hidden');
+    $('stats-table-wrap').classList.remove('hidden');
+    $('stats-copy').classList.remove('hidden');
 
     const extent = (col: string): number => {
         const r = summary.rows.find((x) => x.col === col);
@@ -1520,20 +1581,11 @@ const renderSummaryCard = (name: string, log: string): void => {
     const [ex, ey, ez] = ['x', 'y', 'z'].map(extent);
     const issues = summary.rows.reduce((a, r) => a + (Number(r.nans) || 0) + (Number(r.infs) || 0), 0);
 
-    const tiles = $('stat-tiles');
-    tiles.innerHTML = '';
-    const tile = (label: string, value: string, cls = ''): void => {
-        const t = document.createElement('div');
-        t.className = `tile ${cls}`.trim();
-        const v = document.createElement('span'); v.className = 'tile-val'; v.textContent = value;
-        const l = document.createElement('span'); l.className = 'tile-label'; l.textContent = label;
-        t.append(v, l);
-        tiles.appendChild(t);
-    };
-    tile('Gaussians', Number.isFinite(summary.rowCount) ? summary.rowCount.toLocaleString() : '—');
-    tile('Extent (m)', [ex, ey, ez].every(Number.isFinite)
+    $('stat-tiles').innerHTML = '';
+    addTile('Gaussians', Number.isFinite(summary.rowCount) ? summary.rowCount.toLocaleString() : '—');
+    addTile('Extent (m)', [ex, ey, ez].every(Number.isFinite)
         ? `${fmtNum(String(ex))} × ${fmtNum(String(ey))} × ${fmtNum(String(ez))}` : '—');
-    tile(issues ? 'NaN / Inf' : 'Data', issues ? String(issues) : '✓ clean', issues ? 'bad' : 'good');
+    addTile(issues ? 'NaN / Inf' : 'Data', issues ? String(issues) : '✓ clean', issues ? 'bad' : 'good');
 
     const table = $<HTMLTableElement>('stats-table');
     table.innerHTML = '';
@@ -1561,6 +1613,19 @@ $<HTMLButtonElement>('stats-copy').onclick = () => {
     void navigator.clipboard.writeText(lastSummaryMarkdown)
         .then(() => showToast('Summary copied'))
         .catch(() => showToast('Copy failed', true));
+};
+
+analyzeInspect.onclick = async () => {
+    const input = analyzeInput.value;
+    if (!input) return showToast('Pick a file to inspect first', true);
+    analyzeInspect.disabled = true;
+    try {
+        renderStructureCard(input, await api.getInfo(input));
+    } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Inspect failed', true);
+    } finally {
+        analyzeInspect.disabled = false;
+    }
 };
 
 analyzeRun.onclick = async () => {

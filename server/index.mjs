@@ -170,6 +170,32 @@ const runStats = (absInput) => new Promise((resolve) => {
     child.on('close', () => resolve(parseStats(out)));
 });
 
+// ---------- structural info (fast peek) ----------
+// The CLI's --info reads only structural metadata (gaussian count, SH bands,
+// per-LOD counts, column layout) without the per-column crunch --stats does —
+// near-instant even on huge scenes. Powers the Analyze panel's Inspect action.
+const parseInfo = (out) => {
+    let data;
+    try { data = JSON.parse(out); } catch { return null; }
+    if (!data || typeof data.gaussian !== 'boolean') return null;
+    return {
+        gaussian: data.gaussian,
+        count: Number(data.numGaussians) || 0,
+        lods: Number(data.numLods) || 0,
+        lodCounts: Array.isArray(data.lodCounts) ? data.lodCounts : [],
+        shBands: Number(data.shBands) || 0,
+        layers: Array.isArray(data.layers) ? data.layers : [],
+        columns: Array.isArray(data.columns) ? data.columns : []
+    };
+};
+const runInfo = (absInput) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '--info', 'json', 'null'], { windowsHide: true, timeout: 120000 });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.on('error', () => resolve(null));
+    child.on('close', () => resolve(parseInfo(out)));
+});
+
 // ---------- loopback guard (CSRF + DNS-rebinding) ----------
 // The API can read/write files and spawn processes. It binds to 127.0.0.1, but a web
 // page the user visits could still POST to it cross-origin (CSRF), or point a rebound
@@ -424,6 +450,23 @@ app.get('/api/stats', async (req, res) => {
         if (!stats) return res.status(500).json({ error: `Could not analyze ${input}` });
         statsCache.set(abs, { mtime, stats });
         res.json(stats);
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// structural metadata for one splat (gaussian count, SH bands, LODs, columns) —
+// the Analyze panel's fast Inspect peek. Cheap (no per-column crunch), so not cached.
+app.get('/api/info', async (req, res) => {
+    try {
+        const projectDir = resolveProject(req.query.project);
+        const input = String(req.query.input ?? '');
+        if (!isSafeRelPath(input) || !existsSync(toAbs(projectDir, input))) {
+            return res.status(400).json({ error: `No such file: ${input}` });
+        }
+        const info = await runInfo(toAbs(projectDir, input));
+        if (!info) return res.status(500).json({ error: `Could not read ${input}` });
+        res.json(info);
     } catch (err) {
         res.status(400).json({ error: err.message });
     }

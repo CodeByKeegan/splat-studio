@@ -305,6 +305,17 @@ try {
         assert(bad.status === 400, `missing file should 400, got ${bad.status}`);
     });
 
+    await check('info endpoint (--info) returns structure without a per-column crunch', async () => {
+        const { status, json } = await api('GET', `/api/info?project=${PROJECT}&input=demo-room.ply`);
+        assert(status === 200, `status ${status}: ${JSON.stringify(json)}`);
+        assert(json.gaussian === true, `gaussian: ${json.gaussian}`);
+        assert(Number.isFinite(json.count) && json.count > 1000, `count ${json.count}`);
+        assert(Number.isFinite(json.shBands) && json.lods >= 1, `shBands ${json.shBands} lods ${json.lods}`);
+        assert(Array.isArray(json.columns) && json.columns.includes('x'), `columns ${JSON.stringify(json.columns)}`);
+        const bad = await api('GET', `/api/info?project=${PROJECT}&input=does-not-exist.ply`);
+        assert(bad.status === 400, `missing file should 400, got ${bad.status}`);
+    });
+
     await check('trim (carve out) removes gaussians inside a box; remove+keep partitions', async () => {
         const keptOf = (log) => {
             const m = log.match(/kept ([\d,]+) of ([\d,]+)/);

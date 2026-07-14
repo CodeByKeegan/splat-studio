@@ -315,14 +315,18 @@
                     <span>Input</span>
                     <select id="analyze-input"></select>
                 </label>
-                <button id="analyze-run" class="primary" title="Run --stats as a background job: per-column min · max · median · mean · stdDev, NaN/Inf counts and a histogram. Results render below and persist. Writes nothing (analysis-only, null output)">Summarize stats</button>
+                <div class="field-row" id="row-analyze-actions">
+                    <button id="analyze-inspect" title="Structural peek without crunching the data (--info): gaussian count, spherical-harmonic bands, LOD levels and column layout. Near-instant even on huge scenes — use it before committing to the full stats crunch">Inspect</button>
+                    <button id="analyze-run" class="primary" title="Run --stats as a background job: per-column min · max · median · mean · stdDev, NaN/Inf counts and a histogram. Results render below and persist. Writes nothing (analysis-only, null output)">Summarize stats</button>
+                </div>
                 <div id="analyze-result" class="analyze-result hidden">
                     <div class="result-head">
-                        <span id="analyze-result-name" class="result-name" title="The summarized file"></span>
-                        <button type="button" class="link" id="stats-copy" title="Copy the raw Markdown summary to the clipboard">copy</button>
+                        <span id="analyze-result-name" class="result-name" title="The inspected file"></span>
+                        <button type="button" class="link hidden" id="stats-copy" title="Copy the raw Markdown summary to the clipboard">copy</button>
                     </div>
                     <div class="stat-tiles" id="stat-tiles"></div>
-                    <div class="stats-table-wrap">
+                    <div id="structure-detail" class="structure-detail hidden"></div>
+                    <div class="stats-table-wrap hidden" id="stats-table-wrap">
                         <table class="stats-table" id="stats-table"></table>
                     </div>
                 </div>

@@ -790,6 +790,7 @@ body.dropping #viewport::after {
 #group-apply:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ----- analyze stats card ----- */
+#row-analyze-actions button { flex: 1; margin-top: 4px; }
 .analyze-result { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .result-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .result-name { font-size: var(--fs-sm); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -799,6 +800,11 @@ body.dropping #viewport::after {
 .tile-label { font-size: var(--fs-xs); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 .tile.good .tile-val { color: var(--ok); }
 .tile.bad .tile-val { color: var(--error); }
+.structure-detail { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 2px; }
+.structure-row { display: flex; gap: 8px; font-size: var(--fs-sm); align-items: baseline; }
+.structure-row .sr-label { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--fs-xs); flex-shrink: 0; min-width: 56px; }
+.structure-row .sr-val { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.structure-note { font-size: var(--fs-sm); color: var(--text-dim); }
 .stats-table-wrap { overflow-x: auto; max-height: 320px; }
 .stats-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 .stats-table th, .stats-table td { padding: 3px 6px; text-align: right; white-space: nowrap; }

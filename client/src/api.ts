@@ -259,6 +259,19 @@ export interface FileStats { count: number; extents: [number, number, number]; }
 export const getStats = async (input: string): Promise<FileStats> =>
     jsonOrThrow(await fetch(`/api/stats?${pq()}&input=${encodeURIComponent(input)}`));
 
+/** Fast structural peek (--info): gaussian count, SH bands, LODs, columns. No per-column crunch. */
+export interface FileInfo {
+    gaussian: boolean;
+    count: number;
+    lods: number;
+    lodCounts: number[];
+    shBands: number;
+    layers: string[];
+    columns: string[];
+}
+export const getInfo = async (input: string): Promise<FileInfo> =>
+    jsonOrThrow(await fetch(`/api/info?${pq()}&input=${encodeURIComponent(input)}`));
+
 /** A .mjs generator's advertised param schema, or null if it exposes none. */
 export const getGeneratorParams = async (input: string): Promise<GenParam[] | null> =>
     (await jsonOrThrow(await fetch(`/api/generator-params?${pq()}&input=${encodeURIComponent(input)}`))).params;
