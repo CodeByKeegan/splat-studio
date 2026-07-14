@@ -195,13 +195,17 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         (workspaceDir && !priorOutputs.has(name) && existsSync(path.join(workspaceDir, ...name.split('/'))));
     if (collides(output)) output = makeName(`${base}-converted`);
 
-    const args = [cliPath, '--no-tty', '-w'];
-    if (options.verbose) args.push('--verbose', '--memory'); // diagnostics
-    // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus)
-    if (options.device === 'cpu') args.push('-g', 'cpu');
+    // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus). 3.0.0's
+    // --decimate creates a GPU device like SOG/voxel work, so every spawned
+    // invocation — including the LOD pre-decimate preCommands below — needs it.
+    const deviceArgs = [];
+    if (options.device === 'cpu') deviceArgs.push('-g', 'cpu');
     else if (options.device != null && options.device !== '' && options.device !== 'auto') {
-        args.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
+        deviceArgs.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
     }
+
+    const args = [cliPath, '--no-tty', '-w', ...deviceArgs];
+    if (options.verbose) args.push('--verbose', '--memory'); // diagnostics
     if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
         args.push('-i', String(Math.round(num(options.iterations, 10, 1, 100))));
         // SOG encoder worker threads (--max-workers); 0 = inline/serial
@@ -286,7 +290,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         const preCommands = [];
         for (let level = 1; level < levels; level++) {
             const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
-            const a = [cliPath, '--no-tty', '-w', '-q', input];
+            const a = [cliPath, '--no-tty', '-w', ...deviceArgs, '-q', input];
             if (options.filterNaN) a.push('-N');
             a.push('--decimate', `${pct}%`, tmp(level)); // decimate is the final action, .ply output
             preCommands.push({ args: a });
