@@ -255,16 +255,21 @@ the [Camera view](#camera-view) tab) so you can see exactly what it will capture
 
 ![Analyze panel](screenshots/analyze-panel.png)
 
-Analyze prints per-column statistics without writing any file (`--stats`).
+Analyze has two actions on the chosen **Input**, both write-free:
 
-1. Pick an **Input** and click **Summarize stats**.
-2. The result renders below and persists: summary **tiles** (gaussian count, SH
-   bands, etc.) and a **table** of per-column `min · max · median · mean · stdDev`
-   with NaN/Inf counts.
-3. **copy** puts the raw Markdown summary on the clipboard.
+- **Inspect** (`--info`) — a fast structural peek that reads only the file's
+  metadata (gaussian count, spherical-harmonic bands, LOD levels, and column
+  layout) *without* crunching every column, so it's near-instant even on huge
+  scenes. Reach for it first to answer "what is this file?" — e.g. how many
+  gaussians, whether it carries view-dependent (SH) colour, how many LOD levels —
+  before committing to the full stats pass.
+- **Summarize stats** (`--stats`) — the deep dive. The result renders below and
+  persists: summary **tiles** (gaussian count, extent, a clean/NaN flag) and a
+  **table** of per-column `min · max · median · mean · stdDev` with NaN/Inf
+  counts. **copy** puts the raw Markdown summary on the clipboard.
 
-Use it to sanity-check a splat before converting — spot NaNs, extreme extents from
-floaters, or unexpected SH bands.
+Use them to sanity-check a splat before converting — spot NaNs, extreme extents
+from floaters, or unexpected SH bands.
 
 ---
 
