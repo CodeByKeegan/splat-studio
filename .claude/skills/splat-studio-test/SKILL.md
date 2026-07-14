@@ -22,7 +22,7 @@ checkout) and a real Node (the CLI's WebGPU device won't run inside Electron).
 ## What it covers
 health · projects · file-kind classification · convert → every format
 (ply / compressed-ply / spz / glb / csv / html / sog / sog-unbundled / streamed
-LOD) · `-m/--summary` (asserts the stats table, no file written) · `.mjs`
+LOD) · `--stats` (asserts the stats table, no file written) · `.mjs`
 generator + `-p/--params` (asserts the synthesized gaussian count) ·
 `/api/generator-params` slider schema · path-traversal rejection · collision
 presets (object, indoor).

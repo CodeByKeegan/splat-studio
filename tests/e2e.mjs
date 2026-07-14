@@ -180,10 +180,48 @@ try {
         });
     }
 
-    await check('summary (-m) prints a stats table, writes nothing', async () => {
+    await check('decimate (-d/--decimate) to .ply reduces the gaussian count', async () => {
+        const before = await runJob('/api/summary', { input: 'demo-room.ply' });
+        const beforeCount = Number((before.log.match(/^gaussians:\s*(\d+)/m) || [])[1]);
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        const after = await runJob('/api/summary', { input: 'demo-room-converted.ply' });
+        const afterCount = Number((after.log.match(/^gaussians:\s*(\d+)/m) || [])[1]);
+        assert(afterCount > 0 && afterCount < beforeCount, `expected fewer than ${beforeCount}, got ${afterCount}`);
+    });
+
+    await check('decimate + non-ply format (--decimate must be final action + .ply output, v3) splits into a two-step pipeline', async () => {
+        // decimate to a non-ply target can't share one CLI invocation with the
+        // format conversion (v3.0.0 requires --decimate to be the pipeline's
+        // final action with a .ply output) — this exercises the decimate-then-
+        // convert split in buildConvertCommand.
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'compressed-ply',
+            options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(fs.existsSync(path.join(projectDir, 'demo-room.compressed.ply')), 'missing output demo-room.compressed.ply');
+        // the intermediate decimated .ply must not linger once the job ends
+        const leftovers = fs.readdirSync(projectDir).filter((f) => f.startsWith('.tmp-decimate-'));
+        assert(leftovers.length === 0, `leftover temp files: ${leftovers}`);
+    });
+
+    await check('decimate + morton-order (both need to be the final action) splits into a two-step pipeline', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', mortonOrder: true, device: SKIP_GPU ? 'cpu' : 'auto' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/--morton-order/.test(job.command), `cmd missing --morton-order: ${job.command}`);
+    });
+
+    await check('summary (--stats) prints a stats table, writes nothing', async () => {
         const job = await runJob('/api/summary', { input: 'demo-room.ply' });
         assert(job.status === 'done', `job ${job.status}`);
-        assert(/# Summary/.test(job.log) && /Row Count:/.test(job.log), 'no summary table in log');
+        assert(/^gaussians:/m.test(job.log) && /\|\s*Column\s*\|/.test(job.log), 'no summary table in log');
         assert(job.outputs.length === 0, `summary wrote files: ${job.outputs}`);
     });
 
@@ -192,7 +230,7 @@ try {
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
         assert(fs.existsSync(path.join(projectDir, 'gen-grid.ply')), 'no generator output');
         const sum = await runJob('/api/summary', { input: 'gen-grid.ply' });
-        const rc = (sum.log.match(/Row Count:\*\*\s*(\d+)/) || [])[1];
+        const rc = (sum.log.match(/^gaussians:\s*(\d+)/m) || [])[1];
         assert(Number(rc) === 100, `expected 100 gaussians, got ${rc}`);
     });
 
@@ -211,16 +249,16 @@ try {
     });
 
     // ----- output options & device -----
-    await check('--verbose/--mem diagnostics flag', async () => {
+    await check('--verbose/--memory diagnostics flag', async () => {
         const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'ply', options: { verbose: true } });
-        assert(job.status === 'done' && /--verbose/.test(job.command) && /--mem/.test(job.command), `cmd: ${job.command}`);
+        assert(job.status === 'done' && /--verbose/.test(job.command) && /--memory/.test(job.command), `cmd: ${job.command}`);
     });
 
-    await check('HTML unbundled (-U) + viewer-settings (-E)', async () => {
+    await check('HTML unbundled (--unbundled) + viewer-settings (--viewer-settings)', async () => {
         await fsp.writeFile(path.join(projectDir, 'settings.json'), '{}');
         const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'html', options: { unbundled: true, viewerSettings: 'settings.json' } });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-        assert(/ -U\b/.test(job.command) && /-E settings\.json/.test(job.command), `cmd: ${job.command}`);
+        assert(/--unbundled\b/.test(job.command) && /--viewer-settings settings\.json/.test(job.command), `cmd: ${job.command}`);
     });
 
     await check('SOG encoder workers (--max-workers)', async () => {
@@ -252,7 +290,7 @@ try {
         assert(status === 400, `expected 400, got ${status}`);
     });
 
-    await check('lists GPU adapters (-L)', async () => {
+    await check('lists GPU adapters (--list-gpus)', async () => {
         const { json } = await api('GET', '/api/gpus');
         assert(Array.isArray(json.gpus), `gpus: ${JSON.stringify(json)}`);
     });
@@ -356,7 +394,7 @@ try {
 
     // ----- WebP image rendering (GPU rasterizer) -----
     if (!SKIP_GPU) {
-        await check('WebP render (--camera/--look-at/--fov)', async () => {
+        await check('WebP render (--camera-pos/--camera-target/--camera-fov)', async () => {
             const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { camera: '2,1,-2', lookAt: '0,0,0', fov: 60, resolution: '320x180' } } });
             assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
             assert(fs.existsSync(path.join(projectDir, 'demo-room.webp')), 'no webp output');
@@ -364,7 +402,7 @@ try {
         await check('WebP DoF + motion-blur flags assemble & render', async () => {
             const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '160x90', fStop: 2.8, focusDistance: 3, cameraEnd: '3,1,-2', shutter: 0.5, motionSamples: 2 } } });
             assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-            assert(/--f-stop 2.8/.test(job.command) && /--camera-end 3,1,-2/.test(job.command) && /--motion-samples 2/.test(job.command), `cmd: ${job.command}`);
+            assert(/--f-stop 2.8/.test(job.command) && /--camera-pos-end 3,1,-2/.test(job.command) && /--motion-samples 2/.test(job.command), `cmd: ${job.command}`);
         });
     } else {
         console.log('  - WebP render skipped (SKIP_GPU)');

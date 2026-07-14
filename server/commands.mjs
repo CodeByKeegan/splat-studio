@@ -152,7 +152,7 @@ const pushConvertActions = (args, options) => {
         if (options.device === 'cpu') throw new Error('Remove floaters needs the GPU — uncheck "CPU only"');
         const has = (x) => x != null && String(x).trim() !== '';
         if (!has(ff.size) && !has(ff.opacity) && !has(ff.min)) {
-            args.push('-G'); // bare flag → CLI defaults (0.05, 0.1, 0.004)
+            args.push('--filter-floaters'); // bare flag → CLI defaults (0.05, 0.1, 0.004)
         } else {
             const size = has(ff.size) ? Number(ff.size) : 0.05;
             const op = has(ff.opacity) ? Number(ff.opacity) : 0.1;
@@ -160,17 +160,110 @@ const pushConvertActions = (args, options) => {
             if (!(size > 0)) throw new Error('filter-floaters: voxel size must be greater than 0');
             if (!Number.isFinite(op) || op < 0 || op > 1) throw new Error('filter-floaters: opacity must be in [0, 1]');
             if (!Number.isFinite(min) || min < 0) throw new Error('filter-floaters: min contribution must be >= 0');
-            args.push('-G', `${size},${op},${min}`);
+            args.push('--filter-floaters', `${size},${op},${min}`);
         }
     }
 
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
-        args.push('-F', d);
+        args.push('--decimate', d);
     }
 
-    if (options.mortonOrder) args.push('-M'); // reorder last, after geometry is final
+    if (options.mortonOrder) args.push('--morton-order'); // reorder last, after geometry is final
+};
+
+// SOG/HTML/SPZ output-encoder settings. Shared by the single-invocation convert
+// path and the decimate-split's final (real-output-producing) invocation below.
+const pushOutputEncoderFlags = (args, format, options) => {
+    if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
+        args.push('-i', String(Math.round(num(options.iterations, 10, 1, 100))));
+        // SOG encoder worker threads (--max-workers); 0 = inline/serial
+        if (options.maxWorkers != null && options.maxWorkers !== '') {
+            args.push('--max-workers', String(Math.round(num(options.maxWorkers, 4, 0, 64))));
+        }
+    }
+    if (format === 'html') {
+        if (options.unbundled) args.push('--unbundled'); // separate files instead of one .html
+        if (options.viewerSettings) { // --viewer-settings settings.json (project-relative)
+            const vs = String(options.viewerSettings).trim();
+            if (!/^[A-Za-z0-9()._ /-]+\.json$/i.test(vs) || vs.includes('..')) {
+                throw new Error(`Invalid viewer-settings path: ${vs}`);
+            }
+            args.push('--viewer-settings', vs);
+        }
+    }
+    if (format === 'spz') {
+        const v = Number(options.spzVersion ?? 4);
+        if (v !== 3 && v !== 4) throw new Error(`Invalid SPZ version: ${options.spzVersion}`);
+        args.push('--spz-version', String(v));
+    }
+};
+
+// WebP image render: camera + projection + DoF + motion blur, before output.
+// Shared by the single-invocation convert path and the decimate-split's final
+// invocation below.
+const pushWebpArgs = (args, options) => {
+    const img = options.image ?? {};
+    const equirect = img.projection === 'equirect';
+    if (equirect) args.push('--projection', 'equirect');
+    args.push('--camera-pos', csv(img.camera ?? '2,1,-2', 'camera', 3));
+    args.push('--camera-target', csv(img.lookAt ?? '0,0,0', 'look-at', 3));
+    args.push('--camera-up', csv(img.up ?? '0,1,0', 'up', 3));
+    if (!equirect && img.fov) args.push('--camera-fov', String(num(img.fov, 60, 1, 179)));
+    if (img.resolution) {
+        const r = String(img.resolution).trim().toLowerCase();
+        if (!/^\d{2,5}x\d{2,5}$/.test(r)) throw new Error(`Invalid resolution: ${r} (use WxH like 1920x1080)`);
+        args.push('--resolution', r);
+    }
+    if (img.near) args.push('--camera-near', String(num(img.near, 0.2, 0.0001, 1000)));
+    if (img.background) args.push('--background', csv(img.background, 'background', 3));
+    if (!equirect && img.fStop) { // depth of field (pinhole only)
+        args.push('--f-stop', String(num(img.fStop, 2.8, 0.5, 64)));
+        if (img.focusDistance) args.push('--focus-distance', String(num(img.focusDistance, 1, 0.001, 10000)));
+        if (img.sensorSize) args.push('--sensor-size', String(num(img.sensorSize, 0.024, 0.0001, 1000)));
+    }
+    if (img.cameraEnd) { // camera motion blur
+        args.push('--camera-pos-end', csv(img.cameraEnd, 'camera-end', 3));
+        if (img.lookAtEnd) args.push('--camera-target-end', csv(img.lookAtEnd, 'look-at-end', 3));
+        if (img.upEnd) args.push('--camera-up-end', csv(img.upEnd, 'up-end', 3));
+        if (img.shutter != null && img.shutter !== '') args.push('--shutter', String(num(img.shutter, 1, 0, 1)));
+        if (img.motionSamples) args.push('--motion-samples', String(Math.round(num(img.motionSamples, 16, 1, 256))));
+    }
+};
+
+// Per-input actions shared by both the single-invocation convert path and the
+// decimate-split's first (decimate-to-temp-.ply) invocation below: generator
+// params, LCC LOD select, and the Edit-panel's viewport-driven transform.
+const pushInputActions = (args, input, options) => {
+    args.push(input);
+    if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
+        const p = String(options.params).trim();
+        if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
+            throw new Error(`Invalid generator params: ${p} (use key=val,key=val)`);
+        }
+        args.push('-p', p);
+    }
+    // LCC / LCC2 input: which LOD levels to read (--select-lod n,n,...), a per-input action
+    if (/\.lcc2?$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
+        const sel = String(options.lodSelect).trim();
+        if (!/^\d+(,\d+)*$/.test(sel)) throw new Error(`Invalid LOD select: ${sel} (use comma-separated levels like 0,1,2)`);
+        args.push('--select-lod', sel);
+    }
+    // Edit panel (viewport-driven): uniform scale (-s) and translate (-t). Distinct
+    // from the Convert-panel transforms handled by pushConvertActions; a given
+    // request sets one path or the other.
+    if (options.transform) {
+        const t = options.transform;
+        if (t.scale != null && t.scale !== '' && Number(t.scale) !== 1) {
+            args.push('-s', String(num(t.scale, 1, 1e-4, 1e5)));
+        }
+        if (t.translate != null && t.translate !== '') {
+            const v = String(t.translate).trim();
+            if (!/^-?\d*\.?\d+(,-?\d*\.?\d+){2}$/.test(v)) throw new Error(`Invalid translate: ${v} (use x,y,z)`);
+            args.push('-t', v);
+        }
+    }
 };
 
 // CLI grammar: splat-transform [GLOBAL] input [ACTIONS] output [ACTIONS]
@@ -188,39 +281,32 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     if (collides(output)) output = makeName(`${base}-converted`);
 
     const args = [cliPath, '--no-tty', '-w'];
-    if (options.verbose) args.push('--verbose', '--mem'); // diagnostics
-    // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus)
-    if (options.device === 'cpu') args.push('-g', 'cpu');
+    if (options.verbose) args.push('--verbose', '--memory'); // diagnostics
+    // device: 'cpu' | 'auto' | a GPU adapter index (from --list-gpus). Kept as its
+    // own fragment (not just pushed into `args`) so the LOD decimate-mode pipeline
+    // below can reuse it on its standalone per-level decimate invocations too.
+    const gpuArgs = [];
+    if (options.device === 'cpu') gpuArgs.push('-g', 'cpu');
     else if (options.device != null && options.device !== '' && options.device !== 'auto') {
-        args.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
+        gpuArgs.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
     }
-    if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
-        args.push('-i', String(Math.round(num(options.iterations, 10, 1, 100))));
-        // SOG encoder worker threads (--max-workers); 0 = inline/serial
-        if (options.maxWorkers != null && options.maxWorkers !== '') {
-            args.push('--max-workers', String(Math.round(num(options.maxWorkers, 4, 0, 64))));
-        }
-    }
-    if (format === 'html') {
-        if (options.unbundled) args.push('-U'); // separate files instead of one .html
-        if (options.viewerSettings) { // -E settings.json (project-relative)
-            const vs = String(options.viewerSettings).trim();
-            if (!/^[A-Za-z0-9()._ /-]+\.json$/i.test(vs) || vs.includes('..')) {
-                throw new Error(`Invalid viewer-settings path: ${vs}`);
-            }
-            args.push('-E', vs);
-        }
-    }
-    if (format === 'spz') {
-        const v = Number(options.spzVersion ?? 4);
-        if (v !== 3 && v !== 4) throw new Error(`Invalid SPZ version: ${options.spzVersion}`);
-        args.push('--spz-version', String(v));
-    }
+    args.push(...gpuArgs);
+
+    // v3.0.0 requires --decimate to be the pipeline's final action with a .ply
+    // output. A non-ply target, or morton-order (which must run after
+    // decimation), can't share one invocation with it — see the decimate-split
+    // branch further down. Output-encoder flags (SOG/HTML/SPZ settings) belong
+    // on whichever invocation actually produces `output`, so they're pushed
+    // into `args` now only when this single invocation IS that producer.
+    const wantsDecimate = options.decimate != null && options.decimate !== '';
+    const wantsMorton = !!options.mortonOrder;
+    const needsDecimateSplit = format !== 'lod' && wantsDecimate && (format !== 'ply' || wantsMorton);
+    if (!needsDecimateSplit) pushOutputEncoderFlags(args, format, options);
 
     if (format === 'lod') {
-        args.push('-C', String(Math.round(num(options.lodChunkCount, 512, 16, 8192))));
-        // the CLI parses -X with parseInteger; fractional input must be rounded
-        args.push('-X', String(Math.round(num(options.lodChunkExtent, 16, 1, 1000))));
+        args.push('--lod-chunk-count', String(Math.round(num(options.lodChunkCount, 512, 16, 8192))));
+        // the CLI parses --lod-chunk-extent with parseInteger; fractional input must be rounded
+        args.push('--lod-chunk-extent', String(Math.round(num(options.lodChunkExtent, 16, 1, 1000))));
 
         const rawFiles = Array.isArray(options.lodFiles) ? options.lodFiles : null;
         const rawEnv = Array.isArray(options.lodEnvFlags) ? options.lodEnvFlags : [];
@@ -265,90 +351,81 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             };
         }
 
-        // decimate mode: the input is read once per level, each instance
-        // decimated to keep%^level of the original and tagged -l <n>
+        // decimate mode: each level > 0 is the input decimated to keep%^level of
+        // the original, tagged -l <n>. The CLI requires --decimate to be a
+        // pipeline's final action with a .ply output, so it can't be interleaved
+        // with -l tagging in one invocation: each level > 0 is first decimated to
+        // its own standalone .ply (one invocation each), then a final invocation
+        // tags every level (including the untouched level-0 input) and combines
+        // them into the streamed bundle. The per-level temp files are scratch —
+        // deleted once the job ends either way.
         const levels = Math.round(num(options.lodLevels, 3, 1, 8));
         const keep = num(options.lodKeepPercent, 50, 5, 95);
-        for (let level = 0; level < levels; level++) {
-            args.push(input);
-            if (options.filterNaN) args.push('-N');
-            if (level > 0) {
-                const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
-                args.push('-F', `${pct}%`);
-            }
-            args.push('-l', String(level));
+        const outDir = output.split('/')[0];
+        // run token: keeps this job's scratch files from aliasing another
+        // concurrent job's if both target the same outDir (e.g. two overlapping
+        // bakes of the same input) — doesn't by itself prevent one job's
+        // start-of-run cleanDirs from deleting another's in-flight output.
+        const runToken = Date.now().toString(36);
+        const decimateSteps = [];
+        const tempFiles = [];
+        for (let level = 1; level < levels; level++) {
+            const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
+            const tempFile = `${outDir}/.tmp-lod-${level}-${runToken}.ply`;
+            const stepArgs = [cliPath, '--no-tty', '-w', ...gpuArgs, input];
+            if (options.filterNaN) stepArgs.push('-N');
+            stepArgs.push('--decimate', `${pct}%`, tempFile);
+            decimateSteps.push(stepArgs);
+            tempFiles.push(tempFile);
         }
+        args.push(input);
+        if (options.filterNaN) args.push('-N');
+        args.push('-l', '0');
+        tempFiles.forEach((file, i) => args.push(file, '-l', String(i + 1)));
         args.push(output);
         return {
             title: `Streamed LOD (${levels} levels) ${input} → ${output}`,
-            args,
+            steps: [...decimateSteps, args],
             expectedOutputs: [output],
             viewables: viewableOutputs([output]),
-            cleanDirs: [output.split('/')[0]]
+            cleanDirs: [outDir],
+            cleanupFiles: tempFiles
         };
     }
 
-    args.push(input);
-    // .mjs generator parameters (-p key=val,...); a per-input action, so it must
-    // sit right after the input token, before the transform/filter actions.
-    if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
-        const p = String(options.params).trim();
-        if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
-            throw new Error(`Invalid generator params: ${p} (use key=val,key=val)`);
-        }
-        args.push('-p', p);
+    // Decimate-split path: decimate to a temp .ply first, then a second
+    // invocation converts that temp file to the real target (morton-order
+    // applied there, once decimation is done). The temp file is scratch —
+    // deleted once the job ends either way.
+    if (needsDecimateSplit) {
+        const decimateArgs = [cliPath, '--no-tty', '-w', ...gpuArgs];
+        if (options.verbose) decimateArgs.push('--verbose', '--memory');
+        pushInputActions(decimateArgs, input, options);
+        pushConvertActions(decimateArgs, { ...options, mortonOrder: false }); // ends in --decimate
+        const tempFile = `.tmp-decimate-${Date.now().toString(36)}.ply`;
+        decimateArgs.push(tempFile);
+
+        const finalArgs = [cliPath, '--no-tty', '-w', ...gpuArgs];
+        if (options.verbose) finalArgs.push('--verbose', '--memory');
+        pushOutputEncoderFlags(finalArgs, format, options);
+        finalArgs.push(tempFile);
+        if (wantsMorton) finalArgs.push('--morton-order');
+        if (format === 'webp') pushWebpArgs(finalArgs, options);
+        finalArgs.push(output);
+
+        return {
+            title: `Convert ${input} → ${output}`,
+            steps: [decimateArgs, finalArgs],
+            expectedOutputs: [output],
+            viewables: viewableOutputs([output]),
+            cleanupFiles: [tempFile]
+        };
     }
-    // LCC / LCC2 input: which LOD levels to read (-O n,n,...), a per-input action
-    if (/\.lcc2?$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
-        const sel = String(options.lodSelect).trim();
-        if (!/^\d+(,\d+)*$/.test(sel)) throw new Error(`Invalid LOD select: ${sel} (use comma-separated levels like 0,1,2)`);
-        args.push('-O', sel);
-    }
-    // Edit panel (viewport-driven): uniform scale (-s) and translate (-t). Distinct
-    // from the Convert-panel transforms handled by pushConvertActions below; a given
-    // request sets one path or the other.
-    if (options.transform) {
-        const t = options.transform;
-        if (t.scale != null && t.scale !== '' && Number(t.scale) !== 1) {
-            args.push('-s', String(num(t.scale, 1, 1e-4, 1e5)));
-        }
-        if (t.translate != null && t.translate !== '') {
-            const v = String(t.translate).trim();
-            if (!/^-?\d*\.?\d+(,-?\d*\.?\d+){2}$/.test(v)) throw new Error(`Invalid translate: ${v} (use x,y,z)`);
-            args.push('-t', v);
-        }
-    }
+
+    pushInputActions(args, input, options);
     // Convert-panel transforms/filters + filterNaN + decimate + morton-order
     pushConvertActions(args, options);
-    // WebP image render: camera + projection + DoF + motion blur, before output
-    if (format === 'webp') {
-        const img = options.image ?? {};
-        const equirect = img.projection === 'equirect';
-        if (equirect) args.push('--projection', 'equirect');
-        args.push('--camera', csv(img.camera ?? '2,1,-2', 'camera', 3));
-        args.push('--look-at', csv(img.lookAt ?? '0,0,0', 'look-at', 3));
-        args.push('--up', csv(img.up ?? '0,1,0', 'up', 3));
-        if (!equirect && img.fov) args.push('--fov', String(num(img.fov, 60, 1, 179)));
-        if (img.resolution) {
-            const r = String(img.resolution).trim().toLowerCase();
-            if (!/^\d{2,5}x\d{2,5}$/.test(r)) throw new Error(`Invalid resolution: ${r} (use WxH like 1920x1080)`);
-            args.push('--resolution', r);
-        }
-        if (img.near) args.push('--near', String(num(img.near, 0.2, 0.0001, 1000)));
-        if (img.background) args.push('--background', csv(img.background, 'background', 3));
-        if (!equirect && img.fStop) { // depth of field (pinhole only)
-            args.push('--f-stop', String(num(img.fStop, 2.8, 0.5, 64)));
-            if (img.focusDistance) args.push('--focus-distance', String(num(img.focusDistance, 1, 0.001, 10000)));
-            if (img.sensorSize) args.push('--sensor-size', String(num(img.sensorSize, 0.024, 0.0001, 1000)));
-        }
-        if (img.cameraEnd) { // camera motion blur
-            args.push('--camera-end', csv(img.cameraEnd, 'camera-end', 3));
-            if (img.lookAtEnd) args.push('--look-at-end', csv(img.lookAtEnd, 'look-at-end', 3));
-            if (img.upEnd) args.push('--up-end', csv(img.upEnd, 'up-end', 3));
-            if (img.shutter != null && img.shutter !== '') args.push('--shutter', String(num(img.shutter, 1, 0, 1)));
-            if (img.motionSamples) args.push('--motion-samples', String(Math.round(num(img.motionSamples, 16, 1, 256))));
-        }
-    }
+    if (format === 'webp') pushWebpArgs(args, options);
     args.push(output);
 
     return {
@@ -380,7 +457,8 @@ export const buildCollisionCommand = ({ input, options = {} }) => {
     pushCropFilters(args, options);
 
     args.push(voxelOut);
-    args.push('--voxel-params', `${num(options.voxelSize, 0.05, 0.001, 10)},${num(options.opacity, 0.1, 0, 1)}`);
+    args.push('--voxel-size', String(num(options.voxelSize, 0.05, 0.001, 10)));
+    args.push('--voxel-opacity', String(num(options.opacity, 0.1, 0, 1)));
     if (options.fillMode === 'external') {
         args.push('--voxel-external-fill', String(num(options.fillSize, 1.6, 0, 100)));
     } else if (options.fillMode === 'floor') {
@@ -389,7 +467,7 @@ export const buildCollisionCommand = ({ input, options = {} }) => {
     if (options.carve) {
         args.push('--voxel-carve', `${num(options.carveHeight, 1.6, 0.01, 100)},${num(options.carveRadius, 0.2, 0.01, 100)}`);
     }
-    args.push('-K', options.meshShape === 'faces' ? 'faces' : 'smooth');
+    args.push('--collision-mesh', options.meshShape === 'faces' ? 'faces' : 'smooth');
 
     return {
         title: `Collision for ${input}`,
@@ -399,9 +477,9 @@ export const buildCollisionCommand = ({ input, options = {} }) => {
     };
 };
 
-// Analysis-only: print per-column statistics (-m) with a `null` output so no
-// file is written. -q drops the progress chrome, leaving a clean Markdown stats
-// table in the job log. For a .mjs generator input, params shape the scene first.
+// Analysis-only: print per-column statistics (--stats) with a `null` output so no
+// file is written. -q drops the progress chrome, leaving a clean stats table in
+// the job log. For a .mjs generator input, params shape the scene first.
 export const buildSummaryCommand = ({ input, options = {} }) => {
     const args = [cliPath, '--no-tty', '-q', input];
     if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
@@ -411,7 +489,7 @@ export const buildSummaryCommand = ({ input, options = {} }) => {
         }
         args.push('-p', p);
     }
-    args.push('-m', 'null');
+    args.push('--stats', 'text', 'null');
     return {
         title: `Summary of ${input}`,
         args,

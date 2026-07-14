@@ -68,10 +68,10 @@ export interface ConvertRequest {
         /** 'auto' | 'cpu' | a GPU adapter index (string) */
         device?: string;
         verbose?: boolean;
-        /** HTML output: separate files (-U) + a viewer-settings.json (-E) */
+        /** HTML output: separate files (--unbundled) + a viewer-settings.json (--viewer-settings) */
         unbundled?: boolean;
         viewerSettings?: string;
-        /** LCC input: comma-separated LOD levels to read (-O) */
+        /** LCC input: comma-separated LOD levels to read (-L/--select-lod) */
         lodSelect?: string;
         // Convert-panel transform/filter actions applied to the working set before
         // writing (not applied to LOD bakes). translate/rotate are [x,y,z].
@@ -161,7 +161,7 @@ export const saveGroup = async (group: LocationGroup): Promise<void> => {
     }));
 };
 
-/** GPU adapters (-L/--list-gpus) for the device dropdown. */
+/** GPU adapters (--list-gpus) for the device dropdown. */
 export const listGpus = async (): Promise<Gpu[]> =>
     (await jsonOrThrow(await fetch('/api/gpus'))).gpus;
 
@@ -246,7 +246,7 @@ export const startTrim = async (req: TrimRequest): Promise<string> =>
         body: JSON.stringify({ ...req, project })
     }))).jobId;
 
-/** Analysis-only run: per-column stats (-m) to the job log, no file written. */
+/** Analysis-only run: per-column stats (--stats) to the job log, no file written. */
 export const startAnalyze = async (input: string): Promise<string> =>
     (await jsonOrThrow(await fetch('/api/summary', {
         method: 'POST',

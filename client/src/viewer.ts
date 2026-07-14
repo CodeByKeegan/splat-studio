@@ -1109,7 +1109,7 @@ export class SplatViewer {
     }
 
     /**
-     * Camera pose for the WebP renderer's --camera/--look-at, as "x,y,z" strings.
+     * Camera pose for the WebP renderer's --camera-pos/--camera-target, as "x,y,z" strings.
      * The splat renders under sceneRoot's 180° X flip, so raw-splat space = viewer
      * space mapped (x, -y, -z); look-at is a point one unit ahead of the camera.
      * A starting point the user can fine-tune.

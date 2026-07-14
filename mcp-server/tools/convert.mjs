@@ -34,7 +34,7 @@ const filterFloaters = z
         opacity: z.number().min(0).max(1).optional(),
         min: z.number().min(0).optional()
     })
-    .describe('GPU-only floater removal (-G). Empty {} = CLI defaults (0.05,0.1,0.004). With device "cpu" the server rejects it up front (bad-input); with no usable GPU the job fails as gpu-required.');
+    .describe('GPU-only floater removal (-F/--filter-floaters). Empty {} = CLI defaults (0.05,0.1,0.004). With device "cpu" the server rejects it up front (bad-input); with no usable GPU the job fails as gpu-required.');
 
 export function register(server) {
     server.registerTool('convert', {
@@ -59,13 +59,13 @@ export function register(server) {
             filterBox: filterBox.optional(),
             filterSphere: filterSphere.optional(),
             filterNaN: z.boolean().optional().describe('Drop NaN/Inf gaussians (-N).'),
-            decimate: z.string().regex(/^\d+%?$/).optional().describe('Decimate to a count or percentage like "50%" (-F).'),
-            mortonOrder: z.boolean().optional().describe('Morton-reorder (-M).'),
+            decimate: z.string().regex(/^\d+%?$/).optional().describe('Decimate to a count or percentage like "50%" (-d/--decimate). Must be the CLI pipeline\'s final action with a .ply output — the server auto-splits into a decimate-then-convert pipeline when format isn\'t ply or mortonOrder is also set.'),
+            mortonOrder: z.boolean().optional().describe('Morton-reorder (-m/--morton-order).'),
             verbose: z.boolean().optional(),
             params: z.string().regex(/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/).optional().describe('Generator params key=val,key=val (.mjs inputs only).'),
-            lodSelect: z.string().regex(/^\d+(,\d+)*$/).optional().describe('LCC LOD select -O (.lcc/.lcc2 inputs).'),
-            unbundled: z.boolean().optional().describe('HTML viewer: unbundled output (-U).'),
-            viewerSettings: z.string().optional().describe('HTML viewer: viewer-settings json path (-E).')
+            lodSelect: z.string().regex(/^\d+(,\d+)*$/).optional().describe('LCC LOD select (-L/--select-lod) (.lcc/.lcc2 inputs).'),
+            unbundled: z.boolean().optional().describe('HTML viewer: unbundled output (--unbundled).'),
+            viewerSettings: z.string().optional().describe('HTML viewer: viewer-settings json path (--viewer-settings).')
         }
     }, headless(async ({ project, input, format, ...options }) => await apiPost('/api/convert', { project, input, format, options })));
 
@@ -82,8 +82,8 @@ export function register(server) {
             lodKeepPercent: z.number().min(5).max(95).optional().describe('decimate: percent kept per level (default 50).'),
             lodFiles: z.array(z.string()).optional().describe('combine: additional level files in detail order (each lighter than the last).'),
             lodEnvFlags: z.array(z.boolean()).optional().describe('combine: per lodFiles entry, true = always-visible backdrop (LOD -1). Needs >=1 non-env level.'),
-            lodChunkCount: z.number().int().min(16).max(8192).optional().describe('approx gaussians per chunk in K (-C, default 512).'),
-            lodChunkExtent: z.number().int().min(1).max(1000).optional().describe('approx chunk size in meters (-X, default 16).'),
+            lodChunkCount: z.number().int().min(16).max(8192).optional().describe('approx gaussians per chunk in K (--lod-chunk-count, no short flag, default 512).'),
+            lodChunkExtent: z.number().int().min(1).max(1000).optional().describe('approx chunk size in meters (--lod-chunk-extent, no short flag, default 16).'),
             iterations: z.number().int().min(1).max(100).optional(),
             maxWorkers: z.number().int().min(0).max(64).optional(),
             device: device.optional()
@@ -144,7 +144,7 @@ export function register(server) {
             fillMode: z.enum(['external', 'floor']).optional().describe('optional solid fill: external shell or floor.'),
             fillSize: z.number().min(0).max(100).optional().describe('fill size (default 1.6).'),
             carve: z.object({ height: z.number().min(0.01).max(100), radius: z.number().min(0.01).max(100) }).optional().describe('carve a player tunnel (--voxel-carve height,radius).'),
-            meshShape: z.enum(['smooth', 'faces']).optional().describe('-K mesh style (default smooth).'),
+            meshShape: z.enum(['smooth', 'faces']).optional().describe('--collision-mesh style, no short flag (default smooth).'),
             seedPos: vec3.optional().describe('--seed-pos [x,y,z] in VOXEL space (viewer [x,y,z] -> [-x,y,-z]; Y-up, 1m above floor = [0,1,0]).'),
             filterCluster: z.boolean().optional().describe('--filter-cluster (GPU; can TDR on very large scans).'),
             filterBox: filterBox.optional().describe('crop the collision region to a box before voxelizing (SPLAT frame, same as convert/trim).'),

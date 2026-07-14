@@ -84,4 +84,4 @@ live sliders. Sample: `examples/gen-grid.mjs`.
 - UI + viewer: `client/src/{main.ts,viewer.ts,api.ts}`, `client/index.html`.
 
 Tooltips are native `title=` attributes naming the CLI flag in parens, e.g.
-`(-m/--summary)`. Match that convention for any new control.
+`(--stats)`. Match that convention for any new control.

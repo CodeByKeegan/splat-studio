@@ -131,7 +131,7 @@ const listFiles = async (projectDir) => {
             const rel = prefix ? `${prefix}/${e.name}` : e.name;
             if (e.isDirectory()) {
                 if (depth < 4 && isSafeSegment(e.name)) await walk(path.join(dir, e.name), rel, depth + 1);
-            } else if (isSafeSegment(e.name) && fileKind(rel) !== 'other') {
+            } else if (!e.name.startsWith('.') && isSafeSegment(e.name) && fileKind(rel) !== 'other') {
                 out.push(await statEntry(rel));
             }
         }
@@ -141,31 +141,31 @@ const listFiles = async (projectDir) => {
 };
 
 // ---------- per-file stats (cached) ----------
-// Gaussian count + x/y/z extents from the CLI summary (-m), for LOD auto-tune.
+// Gaussian count + x/y/z extents from the CLI's --stats json, for LOD auto-tune.
 // Cached per (absolute path, mtime) so repeated auto-tunes don't re-run the scan.
 const statsCache = new Map();
-const parseStats = (log) => {
-    const start = log.indexOf('# Summary');
-    if (start < 0) return null;
-    const block = log.slice(start);
-    const rc = block.match(/Row Count:\*\*\s*(\d+)/);
-    const minMax = {};
-    for (const line of block.split('\n')) {
-        if (!line.trim().startsWith('|')) continue;
-        const c = line.split('|').slice(1, -1).map((s) => s.trim());
-        if (c.length < 3 || c[0] === 'Column' || /^-+$/.test(c[0])) continue;
-        minMax[c[0]] = [Number(c[1]), Number(c[2])];
-    }
-    const extent = (k) => (minMax[k] ? minMax[k][1] - minMax[k][0] : NaN);
-    const result = { count: rc ? Number(rc[1]) : NaN, extents: [extent('x'), extent('y'), extent('z')] };
-    // a partial/garbled summary parse → treat as failure (don't 200 + cache a NaN)
-    return Number.isFinite(result.count) ? result : null;
+const parseStats = (out) => {
+    let data;
+    try { data = JSON.parse(out); } catch { return null; }
+    if (!data || !Number.isFinite(data.numGaussians)) return null;
+    // combine per-LOD min/max (multi-LOD inputs report one stats entry per level)
+    const extent = (col) => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const s of data.stats ?? []) {
+            const i = s.columns.indexOf(col);
+            if (i < 0) continue;
+            lo = Math.min(lo, s.data.min[i]);
+            hi = Math.max(hi, s.data.max[i]);
+        }
+        return Number.isFinite(lo) && Number.isFinite(hi) ? hi - lo : NaN;
+    };
+    return { count: data.numGaussians, extents: ['x', 'y', 'z'].map(extent) };
 };
 const runStats = (absInput) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '-m', 'null'], { windowsHide: true, timeout: 120000 });
+    const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '--stats', 'json', 'null'], { windowsHide: true, timeout: 120000 });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
-    child.stderr.on('data', (d) => { out += d; });
     child.on('error', () => resolve(null));
     child.on('close', () => resolve(parseStats(out)));
 });
@@ -391,9 +391,9 @@ app.post('/api/summary', json, (req, res) => startJob(res, buildSummaryCommand, 
 // region trim (carve out / keep inside a box/sphere) → a new .ply, via the Node worker
 app.post('/api/trim', json, (req, res) => startJob(res, buildTrimCommand, req.body ?? {}));
 
-// list GPU adapters (-L/--list-gpus) so the UI can offer a device dropdown
+// list GPU adapters (--list-gpus) so the UI can offer a device dropdown
 const listGpus = () => new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliPath, '--no-tty', '-L'], { windowsHide: true, timeout: 15000 });
+    const child = spawn(process.execPath, [cliPath, '--no-tty', '--list-gpus'], { windowsHide: true, timeout: 15000 });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     child.on('error', () => resolve([]));

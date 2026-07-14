@@ -184,13 +184,13 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
   (`-H`, e.g. keep only band 0 for flat color).
 - **Filter by value** — keep/drop by a property comparison (`-V`); pick the property,
   comparator, and threshold.
-- **Remove floaters** — strip disconnected specks (`-G`); a GPU pass with optional
+- **Remove floaters** — strip disconnected specks (`-F`/`--filter-floaters`); a GPU pass with optional
   voxel size / opacity / min-contribution overrides.
-- **Reorder (Morton / Z-order)** — spatially sort for better compression (`-M`).
+- **Reorder (Morton / Z-order)** — spatially sort for better compression (`-m`/`--morton-order`).
 - **Decimate to (count or %)** — reduce the gaussian count to a number or percentage
-  (`-F`).
+  (`-d`/`--decimate`).
 - **Filter NaN** — drop non-finite gaussians (`-N`).
-- **Verbose** — print memory/timing diagnostics in the job log (`--verbose --mem`).
+- **Verbose** — print memory/timing diagnostics in the job log (`--verbose --memory`).
 
 ---
 
@@ -255,7 +255,7 @@ the [Camera view](#camera-view) tab) so you can see exactly what it will capture
 
 ![Analyze panel](screenshots/analyze-panel.png)
 
-Analyze prints per-column statistics without writing any file (`-m/--summary`).
+Analyze prints per-column statistics without writing any file (`--stats`).
 
 1. Pick an **Input** and click **Summarize stats**.
 2. The result renders below and persists: summary **tiles** (gaussian count, SH
