@@ -139,6 +139,10 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
 
 1. **Input** — pick any source in the project (including formats the viewer can't
    display, like `.spz`/`.splat`/`.ksplat`/`.lcc`/`.lcc2`, and `.mjs` generators).
+   For `.lcc`/`.lcc2` or a streamed-LOD `lod-meta.json` bundle (including one this
+   app baked in the [LOD panel](#lod-streamed-multi-lod)), a **LOD levels** field
+   appears to read back only a subset of levels (`--select-lod`, comma-separated,
+   e.g. `0,1`; empty reads all).
 2. **Output format** — choose the target:
 
    | Format | Notes |
