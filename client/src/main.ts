@@ -164,12 +164,16 @@ const refreshFiles = async (highlight?: Set<string>) => {
     const files = await api.listFiles();
 
     // anything the CLI can read (incl. .spz/.splat/.ksplat/.lcc/.lcc2), not just
-    // what the engine can render; lod-meta.json is viewable but not a CLI input
-    const splatFiles = files.filter((f) => f.kind === 'splat' && !f.name.endsWith('lod-meta.json'));
+    // what the engine can render
+    const splatFiles = files.filter((f) => f.kind === 'splat');
     splatFileNames = splatFiles.map((f) => f.name);
     // .mjs generators are valid convert/analyze inputs, but not collision/LOD sources
     const generatorNames = files.filter((f) => f.kind === 'generator').map((f) => f.name);
-    const convertNames = [...splatFileNames, ...generatorNames];
+    // 3.1.0: lod-meta.json (our own streamed-SOG output) is now a valid convert/analyze
+    // INPUT too (--select-lod reads back a subset of levels), but not a collision/LOD/
+    // render/edit source — those keep taking only actual splat files
+    const lodMetaNames = files.filter((f) => f.kind === 'lod').map((f) => f.name);
+    const convertNames = [...splatFileNames, ...generatorNames, ...lodMetaNames];
     fillSelect(convertInput, convertNames);
     fillSelect(analyzeInput, convertNames);
     fillSelect(genInput, generatorNames);
@@ -862,7 +866,7 @@ lodAutotuneBtn.onclick = () => {
 // ----- generator + input-driven rows -----
 // Keys off the selected INPUT (not the output format): a .mjs source → generator
 // params (live sliders if the generator advertises a `params` schema, else a
-// freeform field) + Generate & view; an .lcc source → LOD-select.
+// freeform field) + Generate & view; an .lcc / .lcc2 / lod-meta.json source → LOD-select.
 let genSchema: api.GenParam[] | null = null;
 let genSchemaFor = '';
 const generateViewBtn = $<HTMLButtonElement>('generate-view');
@@ -903,7 +907,7 @@ const currentGenParams = (): string => {
 
 const updateInputRows = (): void => {
     const lower = convertInput.value.toLowerCase();
-    $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2')));
+    $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2') || lower.endsWith('lod-meta.json')));
 };
 convertInput.onchange = updateInputRows;
 

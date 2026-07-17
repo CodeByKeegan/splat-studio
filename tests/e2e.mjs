@@ -180,6 +180,17 @@ try {
         });
     }
 
+    // 3.1.0: lod-meta.json (our own streamed-SOG output) is now a valid INPUT too,
+    // same --select-lod capability already offered for .lcc/.lcc2 input
+    await check('--select-lod reads back a subset of a streamed-SOG (lod-meta.json) bundle', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room-lod/lod-meta.json', format: 'ply',
+            options: { lodSelect: '0' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/--select-lod 0\b/.test(job.command), `no --select-lod 0 in cmd: ${job.command}`);
+    });
+
     // decimate LOD mode pre-decimates each level to a temp .ply then combines them
     // (splat-transform 3.0.0: --decimate must be a standalone final .ply action)
     await check('streamed LOD (decimate, 3 levels) bakes + cleans temps', async () => {

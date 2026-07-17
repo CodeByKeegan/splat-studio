@@ -69,6 +69,17 @@ const vec3Arg = (v, name) => {
     });
 };
 
+// device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus). Shared by the
+// main command and the LOD decimate pre-commands, which spawn their own CLI process
+// and must honor the same device choice (--decimate defaults to trying GPU init
+// otherwise, even though it runs fine on CPU).
+const pushDeviceFlag = (args, options) => {
+    if (options.device === 'cpu') args.push('-g', 'cpu');
+    else if (options.device != null && options.device !== '' && options.device !== 'auto') {
+        args.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
+    }
+};
+
 // -B/-S spatial crop, shared by convert and collision. They are per-input filter
 // actions, so callers push them between the input token and the output token.
 const pushCropFilters = (args, options) => {
@@ -197,11 +208,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
 
     const args = [cliPath, '--no-tty', '-w'];
     if (options.verbose) args.push('--verbose', '--memory'); // diagnostics
-    // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus)
-    if (options.device === 'cpu') args.push('-g', 'cpu');
-    else if (options.device != null && options.device !== '' && options.device !== 'auto') {
-        args.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
-    }
+    pushDeviceFlag(args, options);
     if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
         args.push('-i', String(Math.round(num(options.iterations, 10, 1, 100))));
         // SOG encoder worker threads (--max-workers); 0 = inline/serial
@@ -286,7 +293,9 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         const preCommands = [];
         for (let level = 1; level < levels; level++) {
             const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
-            const a = [cliPath, '--no-tty', '-w', '-q', input];
+            const a = [cliPath, '--no-tty', '-w', '-q'];
+            pushDeviceFlag(a, options);
+            a.push(input);
             if (options.filterNaN) a.push('-N');
             a.push('--decimate', `${pct}%`, tmp(level)); // decimate is the final action, .ply output
             preCommands.push({ args: a });
@@ -320,8 +329,8 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         }
         args.push('-p', p);
     }
-    // LCC / LCC2 input: which LOD levels to read (--select-lod n,n,...), a per-input action
-    if (/\.lcc2?$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
+    // LCC / LCC2 / streamed-SOG (lod-meta.json) input: which LOD levels to read (--select-lod n,n,...), a per-input action
+    if (/\.lcc2?$|lod-meta\.json$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
         const sel = String(options.lodSelect).trim();
         if (!/^\d+(,\d+)*$/.test(sel)) throw new Error(`Invalid LOD select: ${sel} (use comma-separated levels like 0,1,2)`);
         args.push('--select-lod', sel);
