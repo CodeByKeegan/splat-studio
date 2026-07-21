@@ -92,9 +92,15 @@ jobs:
           PC=$(ver playcanvas)
           ST=$(ver @playcanvas/splat-transform)
 
-          # most recent release that isn't the one we just published (for the changelog diff)
-          PREV=$(gh release list --limit 30 --json tagName \
-            -q "[.[] | select(.tagName != \"v$VERSION\")] | first | .tagName")
+          # changelog diff base: stable diffs against the last stable (so notes cover
+          # every promoted change, not just since the latest beta); beta against any release
+          if [ "$CHANNEL" = "stable" ]; then
+            PREV_FILTER='select(.isPrerelease | not)'
+          else
+            PREV_FILTER='.'
+          fi
+          PREV=$(gh release list --limit 100 --json tagName,isPrerelease \
+            -q "[.[] | select(.tagName != \"v$VERSION\") | $PREV_FILTER] | first | .tagName")
 
           # GitHub's auto-generated changelog (merged PRs / commits since PREV)
           if [ -n "$PREV" ] && [ "$PREV" != "null" ]; then
