@@ -38,7 +38,7 @@
     "dockview-core": "^7.0.2",
     "electron-updater": "^6.8.9",
     "express": "^5.2.1",
-    "ws": "^8.21.0"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
