@@ -20,7 +20,9 @@ const pruneFinished = () => {
     }
 };
 
-export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], onOutputs, onStatus }) => {
+const cancelledIds = new Set();
+
+export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], preCommands = [], tempDirs = [], onOutputs, onStatus }) => {
     pruneFinished();
     const id = String(nextId++);
     const job = {
@@ -37,56 +39,78 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
     };
     jobs.set(id, job);
 
-    // process.execPath is a real Node binary in every mode — `node` in dev, the
-    // bundled node.exe in the packaged app (the Electron main process launches
-    // the server with it, not via ELECTRON_RUN_AS_NODE, because the CLI's native
-    // WebGPU/Dawn device crashes when hosted inside the Electron binary).
-    const child = spawn(process.execPath, args, { cwd, windowsHide: true });
-    children.set(id, child);
-
     // Idle watchdog: reap a job only after IDLE_TIMEOUT_MS with no output. A
     // healthy job (even a multi-hour LOD bake) keeps printing progress, so this
     // fires only on a genuine stall — never on a job that's merely slow.
     let idleTimer;
     let lastOutputAt = Date.now();
-    const armIdleTimer = () => {
-        clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => {
-            const mins = Math.round((Date.now() - lastOutputAt) / 60000);
-            job.log += `\nNo output for ${mins} min — process appears stuck, killing it.\n`;
-            child.kill();
-        }, IDLE_TIMEOUT_MS);
-    };
-    armIdleTimer();
-
     const append = (chunk) => {
         lastOutputAt = Date.now();
-        armIdleTimer();
         job.log += chunk.toString();
         if (job.log.length > MAX_LOG) job.log = `…(truncated)\n${job.log.slice(-MAX_LOG / 2)}`;
     };
-    child.stdout.on('data', append);
-    child.stderr.on('data', append);
-    child.on('error', (err) => {
-        clearTimeout(idleTimer);
-        children.delete(id);
-        job.status = 'error';
-        job.log += `\nFailed to launch: ${err.message}\n`;
-        job.endedAt = Date.now();
-        onStatus?.(job);
+
+    // Run one CLI step to completion. Resolves on exit code 0, rejects otherwise.
+    // process.execPath is a real Node binary in every mode — `node` in dev, the
+    // bundled node.exe in the packaged app (the Electron main process launches
+    // the server with it, not via ELECTRON_RUN_AS_NODE, because the CLI's native
+    // WebGPU/Dawn device crashes when hosted inside the Electron binary).
+    const runStep = (stepArgs) => new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, stepArgs, { cwd, windowsHide: true });
+        children.set(id, child);
+        const arm = () => {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+                const mins = Math.round((Date.now() - lastOutputAt) / 60000);
+                job.log += `\nNo output for ${mins} min — process appears stuck, killing it.\n`;
+                child.kill();
+            }, IDLE_TIMEOUT_MS);
+        };
+        arm();
+        const onData = (chunk) => { append(chunk); arm(); };
+        child.stdout.on('data', onData);
+        child.stderr.on('data', onData);
+        child.on('error', (err) => { clearTimeout(idleTimer); children.delete(id); reject({ launch: err }); });
+        child.on('close', (code) => {
+            clearTimeout(idleTimer);
+            children.delete(id);
+            if (code === 0) resolve();
+            else reject({ code });
+        });
     });
-    child.on('close', (code) => {
-        clearTimeout(idleTimer);
-        children.delete(id);
-        if (job.status === 'error') return;
-        const exists = (rel) => fs.existsSync(path.join(cwd, ...rel.split('/')));
-        job.outputs = expectedOutputs.filter(exists);
-        job.viewables = viewables.filter((v) => exists(v.name));
-        job.status = code === 0 ? 'done' : 'error';
-        if (code !== 0) job.log += `\nProcess exited with code ${code}\n`;
+
+    const finish = (status) => {
+        if (job.status !== 'running') return;
+        if (status === 'done') {
+            const exists = (rel) => fs.existsSync(path.join(cwd, ...rel.split('/')));
+            job.outputs = expectedOutputs.filter(exists);
+            job.viewables = viewables.filter((v) => exists(v.name));
+        }
+        // best-effort: clear temp scratch dirs (e.g. pre-decimated LOD sources)
+        for (const d of tempDirs) {
+            try { fs.rmSync(path.join(cwd, ...d.split('/')), { recursive: true, force: true }); } catch { /* ignore */ }
+        }
+        cancelledIds.delete(id);
+        job.status = status;
         job.endedAt = Date.now();
-        if (job.status === 'done') onOutputs?.(job.outputs);
+        if (status === 'done') onOutputs?.(job.outputs);
         onStatus?.(job);
+    };
+
+    // Run the pre-decimate steps in order, then the main command. A failed or
+    // cancelled step rejects and stops the chain, so the main step never runs on
+    // a partial temp.
+    (async () => {
+        for (const pre of preCommands) {
+            if (cancelledIds.has(id)) return;
+            await runStep(pre.args);
+        }
+        if (cancelledIds.has(id)) return;
+        await runStep(args);
+    })().then(() => finish('done')).catch((e) => {
+        if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
+        else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;
+        finish('error');
     });
 
     return job;
@@ -96,10 +120,11 @@ export const getJob = (id) => jobs.get(id);
 
 export const cancelJob = (id) => {
     const child = children.get(id);
-    if (!child) return false;
     const job = jobs.get(id);
-    if (job) job.log += '\nCancelled by user\n';
-    child.kill();
+    if (!job || job.status !== 'running') return false;
+    cancelledIds.add(id); // stop the step chain from advancing past the kill
+    job.log += '\nCancelled by user\n';
+    child?.kill();
     return true;
 };
 

@@ -164,12 +164,16 @@ const refreshFiles = async (highlight?: Set<string>) => {
     const files = await api.listFiles();
 
     // anything the CLI can read (incl. .spz/.splat/.ksplat/.lcc/.lcc2), not just
-    // what the engine can render; lod-meta.json is viewable but not a CLI input
-    const splatFiles = files.filter((f) => f.kind === 'splat' && !f.name.endsWith('lod-meta.json'));
+    // what the engine can render
+    const splatFiles = files.filter((f) => f.kind === 'splat');
     splatFileNames = splatFiles.map((f) => f.name);
     // .mjs generators are valid convert/analyze inputs, but not collision/LOD sources
     const generatorNames = files.filter((f) => f.kind === 'generator').map((f) => f.name);
-    const convertNames = [...splatFileNames, ...generatorNames];
+    // 3.1.0: lod-meta.json (our own streamed-SOG output) is now a valid convert/analyze
+    // INPUT too (--select-lod reads back a subset of levels), but not a collision/LOD/
+    // render/edit source — those keep taking only actual splat files
+    const lodMetaNames = files.filter((f) => f.kind === 'lod').map((f) => f.name);
+    const convertNames = [...splatFileNames, ...generatorNames, ...lodMetaNames];
     fillSelect(convertInput, convertNames);
     fillSelect(analyzeInput, convertNames);
     fillSelect(genInput, generatorNames);
@@ -862,7 +866,7 @@ lodAutotuneBtn.onclick = () => {
 // ----- generator + input-driven rows -----
 // Keys off the selected INPUT (not the output format): a .mjs source → generator
 // params (live sliders if the generator advertises a `params` schema, else a
-// freeform field) + Generate & view; an .lcc source → LOD-select.
+// freeform field) + Generate & view; an .lcc / .lcc2 / lod-meta.json source → LOD-select.
 let genSchema: api.GenParam[] | null = null;
 let genSchemaFor = '';
 const generateViewBtn = $<HTMLButtonElement>('generate-view');
@@ -903,7 +907,7 @@ const currentGenParams = (): string => {
 
 const updateInputRows = (): void => {
     const lower = convertInput.value.toLowerCase();
-    $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2')));
+    $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2') || lower.endsWith('lod-meta.json')));
 };
 convertInput.onchange = updateInputRows;
 
@@ -1484,20 +1488,19 @@ groupApplyRegionBtn.onclick = async () => {
 // ---------- analyze panel + persistent stats card ----------
 interface StatRow { col: string; min: string; max: string; median: string; mean: string; std: string; nans: string; infs: string; hist: string; }
 
-// parse the Markdown table the CLI's -m/--summary prints to stdout (job log)
+// parse the CLI's --stats text output (job log): a "gaussians: N" header then a
+// | Column | min | max | median | mean | stdDev | nans | infs | histogram | table
 const parseSummary = (log: string): { rowCount: number; rows: StatRow[] } | null => {
-    const start = log.indexOf('# Summary');
-    if (start < 0) return null;
-    const block = log.slice(start);
-    const rc = block.match(/Row Count:\*\*\s*(\d+)/);
+    const rc = log.match(/^gaussians:\s*(\d+)/m);
+    if (!rc) return null;
     const rows: StatRow[] = [];
-    for (const line of block.split('\n')) {
+    for (const line of log.split('\n')) {
         if (!line.trim().startsWith('|')) continue;
         const c = line.split('|').slice(1, -1).map((s) => s.trim());
         if (c.length < 9 || c[0] === 'Column' || /^-+$/.test(c[0])) continue;
         rows.push({ col: c[0], min: c[1], max: c[2], median: c[3], mean: c[4], std: c[5], nans: c[6], infs: c[7], hist: c[8] });
     }
-    return rows.length ? { rowCount: rc ? Number(rc[1]) : NaN, rows } : null;
+    return rows.length ? { rowCount: Number(rc[1]), rows } : null;
 };
 
 const fmtNum = (s: string): string => {
@@ -1512,7 +1515,8 @@ const renderSummaryCard = (name: string, log: string): void => {
     const result = $('analyze-result');
     const summary = parseSummary(log);
     if (!summary) { result.classList.add('hidden'); showToast('Could not parse summary output', true); return; }
-    lastSummaryMarkdown = log.slice(log.indexOf('# Summary')).trim();
+    const head = log.search(/^gaussians:/m);
+    lastSummaryMarkdown = (head >= 0 ? log.slice(head) : log).trim();
     $('analyze-result-name').textContent = name;
 
     const extent = (col: string): number => {

@@ -7,7 +7,7 @@ all in a dockable, Unity/Unreal-style tab editor you can rearrange and save per
 workspace.
 
 <!-- versions: the "Built with" line below is kept in sync by the weekly dependency-update routine -->
-**Built with [PlayCanvas](https://github.com/playcanvas/engine) `2.20.4` · [@playcanvas/splat-transform](https://github.com/playcanvas/splat-transform) `2.7.1`**
+**Built with [PlayCanvas](https://github.com/playcanvas/engine) `2.21.0` · [@playcanvas/splat-transform](https://github.com/playcanvas/splat-transform) `3.1.6`**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue.svg)

@@ -46,8 +46,8 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
   to rearrange; drag a tab out to float it in its own window. **Settings** opens as
   its own dialog (⚙ in the viewport toolbar, or **Window ▸ Settings…**).
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
-  its top. The default camera is **fly** (mouse-look + WASD); right-drag pans, scroll
-  zooms. Switch to orbit from the toolbar.
+  its top. The default camera is **fly** (mouse-look + WASD); scroll zooms (Shift
+  fast, Ctrl slow). Switch to orbit from the toolbar.
 
 Every control has a tooltip — hover to see what it does and which CLI flag it maps to.
 
@@ -139,6 +139,10 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
 
 1. **Input** — pick any source in the project (including formats the viewer can't
    display, like `.spz`/`.splat`/`.ksplat`/`.lcc`/`.lcc2`, and `.mjs` generators).
+   For `.lcc`/`.lcc2` or a streamed-LOD `lod-meta.json` bundle (including one this
+   app baked in the [LOD panel](#lod-streamed-multi-lod)), a **LOD levels** field
+   appears to read back only a subset of levels (`--select-lod`, comma-separated,
+   e.g. `0,1`; empty reads all).
 2. **Output format** — choose the target:
 
    | Format | Notes |
@@ -184,13 +188,13 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
   (`-H`, e.g. keep only band 0 for flat color).
 - **Filter by value** — keep/drop by a property comparison (`-V`); pick the property,
   comparator, and threshold.
-- **Remove floaters** — strip disconnected specks (`-G`); a GPU pass with optional
+- **Remove floaters** — strip disconnected specks (`--filter-floaters`); a GPU pass with optional
   voxel size / opacity / min-contribution overrides.
-- **Reorder (Morton / Z-order)** — spatially sort for better compression (`-M`).
+- **Reorder (Morton / Z-order)** — spatially sort for better compression (`--morton-order`).
 - **Decimate to (count or %)** — reduce the gaussian count to a number or percentage
-  (`-F`).
+  (`--decimate`).
 - **Filter NaN** — drop non-finite gaussians (`-N`).
-- **Verbose** — print memory/timing diagnostics in the job log (`--verbose --mem`).
+- **Verbose** — print memory/timing diagnostics in the job log (`--verbose --memory`).
 
 ---
 
@@ -255,7 +259,7 @@ the [Camera view](#camera-view) tab) so you can see exactly what it will capture
 
 ![Analyze panel](screenshots/analyze-panel.png)
 
-Analyze prints per-column statistics without writing any file (`-m/--summary`).
+Analyze prints per-column statistics without writing any file (`--stats`).
 
 1. Pick an **Input** and click **Summarize stats**.
 2. The result renders below and persists: summary **tiles** (gaussian count, SH
@@ -393,8 +397,8 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
 Display controls live in a **toolbar along the top of the Viewer 3D window**:
 
 - **Camera control** — **Fly** (default): mouse-look + **WASD** to move, ideal for
-  inspecting carved interiors. **Orbit**: drag to rotate around the focus point.
-  Right-drag pans and scroll zooms in both.
+  inspecting carved interiors. **Orbit**: drag to rotate around the focus point;
+  middle- or Shift-drag pans. Scroll zooms in both modes.
 - **Collision style** — *X-ray* (all edges through everything, for small meshes),
   *Hidden-line* (front edges only, for dense meshes), or *Solid + edges* (lit
   translucent surface — best for checking placement and inspecting carved interiors).
@@ -472,7 +476,7 @@ hint); closing the tab frees its GPU memory.
 ## The 3D viewport
 
 - **Fly** (default) — mouse-look + WASD · **Orbit** (toolbar) — left-drag ·
-  **Pan** — right-drag · **Zoom** — scroll.
+  **Pan** — middle-drag (orbit) · **Zoom** — scroll (Shift fast, Ctrl slow).
 - The **chips** at the top-left show what's currently displayed (splat / collision /
   voxels); each **✕** removes that layer.
 - Drag the **borders** between dock tabs to resize, or drag a **tab** to re-dock or
