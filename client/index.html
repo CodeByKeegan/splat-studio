@@ -191,7 +191,7 @@
                     <label class="check" title="Reorder gaussians along a Morton / Z-order curve for better spatial locality and faster streaming (-m/--morton-order). Applied last, after any transforms and filters."><input type="checkbox" id="convert-morton" /> Reorder (Morton / Z-order)</label>
                 </div>
                 <div class="field-row">
-                    <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
+                    <label class="check" title="Drop gaussians with NaN, most Infinity values, or a zero-norm rotation quaternion (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
                     <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --memory)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>

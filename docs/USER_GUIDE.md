@@ -189,7 +189,7 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`-m`/`--morton-order`).
 - **Decimate to (count or %)** — reduce the gaussian count to a number or percentage
   (`-d`/`--decimate`).
-- **Filter NaN** — drop non-finite gaussians (`-N`).
+- **Filter NaN** — drop gaussians with NaN, most Infinity values, or a zero-norm rotation quaternion (`-N`).
 - **Verbose** — print memory/timing diagnostics in the job log (`--verbose --memory`).
 
 ---
@@ -264,7 +264,7 @@ Analyze prints per-column statistics without writing any file (`--stats`).
 3. **copy** puts the raw Markdown summary on the clipboard.
 
 Use it to sanity-check a splat before converting — spot NaNs, extreme extents from
-floaters, or unexpected SH bands.
+floaters, unexpected SH bands, or a high fill/overdraw ratio (flags GPU-hostile scenes).
 
 ---
 
