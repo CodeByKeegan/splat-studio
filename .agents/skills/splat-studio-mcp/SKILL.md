@@ -34,7 +34,7 @@ server (or the packaged app picking a new dynamic port) recovers without a resta
 
 **Headless (always available, no consent):** `workspace` (get|set — set can `create`) ·
 `projects` (list|create) · `files` (list|delete) · `import_file` ·
-`inspect` (stats|generator_params|gpus|health|versions|**editor_status**) · `get_summary` ·
+`inspect` (stats|generator_params|lod_recipe|gpus|health|versions|**editor_status**) · `get_summary` ·
 `jobs` (get|list|cancel|wait) · `convert` · `build_lod` · `render_image` · `generate_collision` ·
 `trim_region` · `suggest_lod_settings`.
 
