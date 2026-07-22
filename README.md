@@ -154,7 +154,7 @@ Then in the browser:
    anywhere in the window (or use the generated `demo-room.ply`). Click
    **view** to display a splat; **✕** asks twice before deleting. Uploads show
    a progress bar; job outputs flash blue in the list. Panel headers
-   collapse/expand on click (state persists), the Job panel stays pinned to
+   collapse/expand on click (state persists), the Jobs panel stays pinned to
    the bottom of the sidebar, and all form values survive a reload.
 2. **Export** — pick an output format. SOG bundling is filename-driven in
    splat-transform: *SOG (bundled)* writes `name.sog`, *SOG (unbundled)* writes

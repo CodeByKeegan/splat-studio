@@ -41,8 +41,8 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
 - **Top menu bar** — the app title, the **Window** and **Layout** menus, and the
   project picker.
 - **Dock** — the default layout puts the panel tabs (Files, Export, Generate, LOD, Render,
-  Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Job** panel
-  (live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
+  Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Jobs** panel
+  (the job queue + live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
   to rearrange; drag a tab out to float it in its own window. **Settings** opens as
   its own dialog (⚙ in the viewport toolbar, or **Window ▸ Settings…**).
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
@@ -61,7 +61,7 @@ Every control has a tooltip — hover to see what it does and which CLI flag it 
   typing in a field. Running a job or deleting a file is **not** undoable (those write to
   disk), and the history resets when you switch projects.
 - **Window** — lists every panel with a checkmark for the ones that are open. Click to
-  **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Job** tabs
+  **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Jobs** tabs
   can't be closed.) **Settings…** at the bottom opens the settings dialog.
 - **Layout** — **Reset to default** restores the standard arrangement; **Save layout**
   checkpoints the current one. The layout is **saved per workspace**, so each workspace
@@ -163,8 +163,11 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
    paired **SH iterations** / **Encoder workers** row — iterations trade quality
    for speed, while Encoder workers (`--max-workers`) only changes encode speed,
    not the output (`0` = serial). Other formats surface SPZ version, HTML viewer
-   options, etc. Then click **Export**. The exact CLI command and live output appear
-   in the **Job** panel. With **Load result into viewport** checked (default), any
+   options, etc. Then click **Export**. The job lands in the **Jobs** panel — click it
+   there for its exact CLI command and live output. Jobs queue up and run one at a
+   time by default; the panel's **parallel** field raises how many may run at once
+   (keep it at 1 for GPU-heavy jobs like collision), and **✕** on a row cancels a
+   queued or running job. With **Load result into viewport** checked (default), any
    viewable result loads automatically when the job finishes.
 
 ## Generate: procedural .mjs generators

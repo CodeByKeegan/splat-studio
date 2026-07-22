@@ -66,7 +66,7 @@ export function register(server) {
     server.registerTool('jobs', {
         title: 'Jobs',
         description:
-            'Inspect or control fire-and-poll jobs. action="list" -> all jobs (no logs); "get" -> one full job record incl log; "cancel" -> kill a running job; "wait" -> block until the job is done/error or the deadline (on timeout the job KEEPS RUNNING server-side; timeout != cancelled). Only the last ~50 finished jobs are retained. Jobs run concurrently as subprocesses — avoid overlapping GPU-heavy jobs.',
+            'Inspect or control fire-and-poll jobs. action="list" -> all jobs (no logs) + the concurrency cap; "get" -> one full job record incl log; "cancel" -> kill a running job or drop a queued one; "wait" -> block until the job is done/error or the deadline (on timeout the job KEEPS RUNNING server-side; timeout != cancelled). Only the last ~50 finished jobs are retained. Jobs queue FIFO server-side and run up to the concurrency cap at once (default 1 — safe for GPU-heavy jobs; SPLAT_JOB_CONCURRENCY or POST /api/jobs/concurrency raises it), so a fresh job may sit status="queued" before it runs.',
         annotations: SAFE,
         inputSchema: {
             action: z.enum(['get', 'list', 'cancel', 'wait']),

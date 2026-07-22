@@ -13,14 +13,42 @@ const MAX_FINISHED_JOBS = 50;
 // chunk every few seconds. Override with SPLAT_JOB_IDLE_TIMEOUT_MS.
 const IDLE_TIMEOUT_MS = Number(process.env.SPLAT_JOB_IDLE_TIMEOUT_MS) || 10 * 60 * 1000;
 
+// How many jobs may run at once; the rest wait in a FIFO queue. One GPU:
+// concurrent GPU-heavy jobs (collision, cluster filter) multiply the TDR risk,
+// so the default is serial. Raise via the Jobs panel or SPLAT_JOB_CONCURRENCY.
+const MAX_CONCURRENCY = 8;
+const clampConcurrency = (n) => Math.min(MAX_CONCURRENCY, Math.max(1, Math.round(n)));
+let concurrency = clampConcurrency(Number(process.env.SPLAT_JOB_CONCURRENCY) || 1);
+
+export const getConcurrency = () => concurrency;
+export const setConcurrency = (n) => {
+    if (!Number.isFinite(n)) throw new Error('concurrency must be a number');
+    concurrency = clampConcurrency(n);
+    pump(); // a raised cap frees slots for queued jobs
+    return concurrency;
+};
+
 const pruneFinished = () => {
-    const finished = [...jobs.values()].filter((j) => j.status !== 'running');
+    const finished = [...jobs.values()].filter((j) => j.status === 'done' || j.status === 'error');
     for (let i = 0; i < finished.length - MAX_FINISHED_JOBS; i++) {
         jobs.delete(finished[i].id);
     }
 };
 
 const cancelledIds = new Set();
+
+// FIFO of { id, start } waiting for a free slot
+const queue = [];
+let running = 0;
+
+const pump = () => {
+    while (running < concurrency && queue.length) {
+        const next = queue.shift();
+        if (cancelledIds.has(next.id)) { cancelledIds.delete(next.id); continue; }
+        running++;
+        next.start();
+    }
+};
 
 export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], preCommands = [], tempDirs = [], finalize, onOutputs, onStatus }) => {
     pruneFinished();
@@ -29,14 +57,15 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
     const job = {
         id,
         title,
-        status: 'running',
+        status: 'queued',
         // non-CLI jobs (e.g. the PLY trim worker) pass a readable command label;
         // pre-steps (LOD pre-decimates) get their own line each
         command: command ?? [...preCommands.map((p) => cliLine(p.args)), cliLine(args)].join('\n'),
         log: '',
         outputs: [],
         viewables: [],
-        startedAt: Date.now(),
+        queuedAt: Date.now(),
+        startedAt: null,
         endedAt: null
     };
     jobs.set(id, job);
@@ -97,27 +126,37 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         job.endedAt = Date.now();
         if (status === 'done') onOutputs?.(job.outputs);
         onStatus?.(job);
+        running--;
+        pump();
     };
 
     // Run the pre-decimate steps in order, then the main command. A failed or
     // cancelled step rejects and stops the chain, so the main step never runs on
     // a partial temp.
-    (async () => {
-        for (const pre of preCommands) {
+    const start = () => {
+        job.status = 'running';
+        job.startedAt = Date.now();
+        lastOutputAt = Date.now();
+        onStatus?.(job);
+        (async () => {
+            for (const pre of preCommands) {
+                if (cancelledIds.has(id)) return;
+                await runStep(pre.args);
+            }
             if (cancelledIds.has(id)) return;
-            await runStep(pre.args);
-        }
-        if (cancelledIds.has(id)) return;
-        await runStep(args);
-        // post-success hook before 'done'; a failure warns but doesn't fail the job
-        if (finalize && !cancelledIds.has(id)) {
-            try { await finalize(job); } catch (err) { append(`\nWarning: finalize failed: ${err?.message ?? err}\n`); }
-        }
-    })().then(() => finish('done')).catch((e) => {
-        if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
-        else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;
-        finish('error');
-    });
+            await runStep(args);
+            // post-success hook before 'done'; a failure warns but doesn't fail the job
+            if (finalize && !cancelledIds.has(id)) {
+                try { await finalize(job); } catch (err) { append(`\nWarning: finalize failed: ${err?.message ?? err}\n`); }
+            }
+        })().then(() => finish('done')).catch((e) => {
+            if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
+            else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;
+            finish('error');
+        });
+    };
+    queue.push({ id, start });
+    pump();
 
     return job;
 };
@@ -125,12 +164,20 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
 export const getJob = (id) => jobs.get(id);
 
 export const cancelJob = (id) => {
-    const child = children.get(id);
     const job = jobs.get(id);
-    if (!job || job.status !== 'running') return false;
+    if (!job) return false;
+    if (job.status === 'queued') {
+        // never started: pump() skips it via cancelledIds and drops the marker
+        cancelledIds.add(id);
+        job.log += 'Cancelled while queued\n';
+        job.status = 'error';
+        job.endedAt = Date.now();
+        return true;
+    }
+    if (job.status !== 'running') return false;
     cancelledIds.add(id); // stop the step chain from advancing past the kill
     job.log += '\nCancelled by user\n';
-    child?.kill();
+    children.get(id)?.kill();
     return true;
 };
 

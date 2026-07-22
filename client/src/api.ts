@@ -59,14 +59,18 @@ export interface GenParam {
 export interface Job {
     id: string;
     title: string;
-    status: 'running' | 'done' | 'error';
+    status: 'queued' | 'running' | 'done' | 'error';
     command: string;
     log: string;
     outputs: string[];
     viewables: Viewable[];
-    startedAt: number;
+    queuedAt: number;
+    startedAt: number | null;
     endedAt: number | null;
 }
+
+/** /api/jobs list entry — a Job without its log. */
+export type JobSummary = Omit<Job, 'log'>;
 
 /** WebP render camera/projection/DoF/motion-blur (CLI image-output options). */
 export interface ImageOptions {
@@ -301,16 +305,28 @@ export const getGeneratorParams = async (input: string): Promise<GenParam[] | nu
 export const getJob = async (id: string): Promise<Job> =>
     jsonOrThrow(await fetch(`/api/jobs/${id}`));
 
+/** All jobs (queued/running/finished, no logs) + the current concurrency cap. */
+export const getJobs = async (): Promise<{ jobs: JobSummary[]; concurrency: number }> =>
+    jsonOrThrow(await fetch('/api/jobs'));
+
+/** How many jobs may run at once (the rest queue FIFO); returns the clamped value. */
+export const setJobConcurrency = async (max: number): Promise<number> =>
+    (await jsonOrThrow(await fetch('/api/jobs/concurrency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max })
+    }))).concurrency;
+
 export const cancelJob = async (id: string): Promise<void> => {
     await jsonOrThrow(await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' }));
 };
 
-/** Polls until the job leaves 'running'; onUpdate fires on every poll. */
+/** Polls until the job finishes (done/error); onUpdate fires on every poll. */
 export const watchJob = async (id: string, onUpdate: (job: Job) => void): Promise<Job> => {
     for (;;) {
         const job = await getJob(id);
         onUpdate(job);
-        if (job.status !== 'running') return job;
+        if (job.status === 'done' || job.status === 'error') return job;
         await new Promise((r) => setTimeout(r, 700));
     }
 };
