@@ -424,6 +424,10 @@ buttons in the [Scene panel](#scene-hierarchy)**.
 - **Viewport** — the **wire / voxel colors & opacity** for the 3D overlays.
 - **Workspace** — the folder whose subfolders are your projects.
 - **Agent (MCP)** — agent control of the live editor (below).
+- **Advanced** — a **scratch directory for large decimations** (`--scratch-dir`): where
+  decimation spills temp files on very large scenes. Blank (the default) spills
+  alongside the output; point it at another drive only if the output drive is low on
+  space. Applies to Export **Decimate** runs and the decimated levels of **Streamed LOD**.
 - **About** — component versions.
 
 **Agent (MCP)** holds a single toggle that lets a connected AI agent drive the live
