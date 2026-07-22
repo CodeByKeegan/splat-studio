@@ -97,6 +97,8 @@ export interface ConvertRequest {
         maxWorkers?: number;
         spzVersion?: number;
         decimate?: string;
+        /** absolute dir for decimation spill files (--scratch-dir); blank = alongside the output */
+        scratchDir?: string;
         filterNaN?: boolean;
         /** 'auto' | 'cpu' | a GPU adapter index (string) */
         device?: string;

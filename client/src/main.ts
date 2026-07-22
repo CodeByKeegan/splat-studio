@@ -1349,6 +1349,7 @@ convertRun.onclick = () => {
             maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
             spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
             decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
             filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
             device: $<HTMLSelectElement>('convert-device').value,
             verbose: $<HTMLInputElement>('convert-verbose').checked,
@@ -1400,6 +1401,7 @@ lodRun.onclick = () => {
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
+            scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
             lodFiles,
             lodEnvFlags
         }
@@ -2741,6 +2743,21 @@ const wsOpenBtn = $<HTMLButtonElement>('ws-open');
 if (desktop?.openWorkspace) { wsOpenBtn.hidden = false; wsOpenBtn.onclick = () => void desktop.openWorkspace(); }
 desktop?.onChooseWorkspace(() => void chooseWorkspaceFolder());
 void api.getWorkspace().then((ws) => showWorkspace(ws.path)).catch(() => { /* server not up yet */ });
+
+// ---------- Settings ▸ Advanced: decimation scratch dir (--scratch-dir) ----------
+const scratchDirEl = $<HTMLInputElement>('scratch-dir');
+const setScratchDir = (v: string): void => {
+    scratchDirEl.value = v;
+    scratchDirEl.dispatchEvent(new Event('change', { bubbles: true })); // persist via formState
+};
+const chooseScratchDirFolder = async (): Promise<void> => {
+    const target = desktop?.pickFolder
+        ? await desktop.pickFolder(scratchDirEl.value || undefined)
+        : await promptText('Scratch directory (absolute path)', { value: scratchDirEl.value, okLabel: 'Set' });
+    if (target) setScratchDir(target);
+};
+$<HTMLButtonElement>('scratch-dir-change').onclick = () => void chooseScratchDirFolder();
+$<HTMLButtonElement>('scratch-dir-clear').onclick = () => setScratchDir('');
 
 // ---------- MCP consent toggle (Settings) + bridge startup ----------
 const mcpControl = $<HTMLInputElement>('mcp-control');
