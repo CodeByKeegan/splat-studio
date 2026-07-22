@@ -496,7 +496,10 @@ app.delete(/^\/api\/files\/(.+)$/, async (req, res) => {
 // An unreadable lod-meta.json just drops the counts — the recipe still writes.
 const writeBuildMeta = async (projectDir, { buildMeta, buildMetaName }) => {
     if (!isSafeRelPath(buildMetaName)) throw new Error(`Invalid build-meta path: ${buildMetaName}`);
-    const target = toAbs(projectDir, buildMetaName);
+    // containment barrier: resolved target must stay inside the project
+    const base = path.resolve(projectDir);
+    const target = path.resolve(base, ...buildMetaName.split('/'));
+    if (!target.startsWith(base + path.sep)) throw new Error(`Unsafe build-meta path: ${buildMetaName}`);
     const lodDir = path.dirname(target);
     const levels = buildMeta.levels.map((l) => ({ ...l }));
     try {
@@ -508,7 +511,10 @@ const writeBuildMeta = async (projectDir, { buildMeta, buildMetaName }) => {
         const envRows = levels.filter((l) => l.environment);
         if (envRows.length === 1 && typeof lodMeta.environment === 'string' && isSafeRelPath(lodMeta.environment)) {
             try {
-                const envMeta = JSON.parse(await fs.readFile(path.join(lodDir, ...lodMeta.environment.split('/')), 'utf8'));
+                // environment path comes from a workspace file — contain it too
+                const envPath = path.resolve(lodDir, ...lodMeta.environment.split('/'));
+                if (!envPath.startsWith(base + path.sep)) throw new Error('outside project');
+                const envMeta = JSON.parse(await fs.readFile(envPath, 'utf8'));
                 if (Number.isFinite(envMeta.count)) envRows[0].gaussians = envMeta.count;
             } catch { /* env meta unreadable — omit its count */ }
         }
