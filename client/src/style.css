@@ -377,7 +377,7 @@ body.dropping #viewport::after {
 }
 .file-list li {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto auto auto;
     align-items: center;
     gap: 6px;
     padding: 5px 2px;
@@ -414,6 +414,13 @@ body.dropping #viewport::after {
     font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
     text-align: right;
+}
+.file-list .count {
+    color: var(--text-dim);
+    font-size: var(--fs-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
 }
 .file-list .tag {
     font-size: var(--fs-xs);

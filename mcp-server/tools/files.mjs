@@ -46,7 +46,7 @@ export function register(server) {
     server.registerTool('files', {
         title: 'Files',
         description:
-            'List the primary assets in a project (each with kind + viewable tag; output bundles collapse to their entry point), or delete a file. Deleting a meta.json / lod-meta.json bundle entry point removes the whole folder. Deletes are NOT undoable.',
+            'List the primary assets in a project (each with kind + viewable tag; output bundles collapse to their entry point), or delete a file. Entries may carry `gaussians` — the total splat count from a cheap header/metadata read (absent when unknown) — and kind "lod" entries may add `lodCounts`, the per-LOD-level counts of a streamed LOD bundle. Deleting a meta.json / lod-meta.json bundle entry point removes the whole folder. Deletes are NOT undoable.',
         annotations: DEL,
         inputSchema: {
             action: z.enum(['list', 'delete']).describe('list = enumerate files; delete = remove a file (or its bundle folder)'),

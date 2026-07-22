@@ -86,7 +86,10 @@ To add splats:
 1. **Drop** files anywhere in the window, or click **browse**. Supported inputs:
    `.ply`, `.compressed.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`, `.lcc`, `.lcc2`,
    `meta.json`, and `.mjs` generators.
-2. The **file list** shows every source in the project. Click **view** to display a
+2. The **file list** shows every source in the project. Each splat row also shows its
+   **gaussian count**, read straight from the file's own metadata — instant, no analysis
+   run. Hover the count for the exact number; on LOD bundles it breaks down per level.
+   Click **view** to display a
    splat (or collision mesh / voxel octree) in the viewport, or **✕** to delete it.
 3. **Right-click any file** — or click its **⋯** button — for an actions menu of
    everything you can do with that file. The menu adapts to the file's type:
