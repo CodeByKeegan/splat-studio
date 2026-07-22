@@ -24,7 +24,7 @@
     <div id="panel-pool" hidden>
 
             <section class="panel" id="panel-files">
-                <h2 title="Files live in the local workspace/ folder. Click 'view' to display one in the 3D viewer.">Files</h2>
+                <h2 title="Files live in the local workspace/ folder. Click a row's eye to show it in the 3D viewer.">Files</h2>
                 <div id="drop-zone" title="Drop anywhere in the window — files land in the workspace">
                     Drop splat files anywhere or
                     <button type="button" class="link" id="browse-btn">browse</button>
@@ -33,6 +33,19 @@
                     <span class="hint">.ply · .compressed.ply · .sog · .spz · .splat · .ksplat · .lcc · .lcc2 · meta.json · .mjs generator</span>
                     <button type="button" class="link" id="add-sample-generator"
                         title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then run it from the Generate tab with params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
+                </div>
+                <!-- list-wide actions: select-all + Show/Hide all; bulk bar appears when rows are ticked -->
+                <div id="file-list-bar">
+                    <input type="checkbox" id="files-select-all" title="Select / clear every file (bulk actions appear while files are selected)" />
+                    <button type="button" id="files-show-all" title="Load and show every viewable splat file in this project (asks first above 20M gaussians)">Show all</button>
+                    <button type="button" id="files-hide-all" title="Hide every loaded file — keeps them loaded for instant re-show">Hide all</button>
+                    <div id="file-bulk-bar" class="hidden">
+                        <span id="bulk-count"></span>
+                        <button type="button" id="bulk-show" title="Load and show the selected splat files (asks first above 20M gaussians)">Show selected</button>
+                        <button type="button" id="bulk-hide" title="Hide the selected loaded files — keeps them loaded for instant re-show">Hide selected</button>
+                        <button type="button" id="bulk-group" title="Tick the selected splat files in the Linked group member list below">Add to linked group</button>
+                        <button type="button" id="bulk-delete" title="Delete every selected file from the workspace. Click twice.">Delete selected</button>
+                    </div>
                 </div>
                 <ul id="file-list" class="file-list"></ul>
 
