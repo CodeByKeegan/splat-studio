@@ -36,14 +36,13 @@ const jobLog = $<HTMLPreElement>('job-log');
 
 let viewer: SplatViewer | undefined;
 
-const showToast = (message: string, isError = false, pre = false) => {
+const showToast = (message: string, isError = false) => {
     const el = document.createElement('div');
     el.className = isError ? 'toast error' : 'toast';
-    if (pre) el.style.whiteSpace = 'pre-line'; // multi-line detail toast, longer dwell
     el.textContent = message;
     toastStack.appendChild(el);
     while (toastStack.children.length > 4) toastStack.firstChild?.remove();
-    setTimeout(() => el.remove(), pre ? 12000 : isError ? 8000 : 4000);
+    setTimeout(() => el.remove(), isError ? 8000 : 4000);
 };
 
 // In-app text prompt — Electron's renderer has no window.prompt(). Resolves the
@@ -121,6 +120,7 @@ const formState: Record<string, string | boolean> = (() => {
 document.addEventListener('change', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || !t.id) return;
+    if (t.id === 'files-select-all') return; // transient bulk-select state, not a form value
     formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
     localStorage.setItem(FORM_KEY, JSON.stringify(formState));
     scheduleUndoCapture(); // record an undo step for this committed change
@@ -138,9 +138,20 @@ const restoreFormState = () => {
 
 // ---------- file list ----------
 let splatFileNames: string[] = [];
-// the splat currently shown in the viewport — the live Convert preview only
+let lastFiles: api.FileEntry[] = [];
+// the ACTIVE splat (most recently shown) — the live Convert preview only
 // applies while this is the Convert input, so baked outputs aren't double-transformed
 let currentSplatName: string | null = null;
+// which files the single collision / voxel overlays were loaded from
+let currentCollisionName: string | null = null;
+let currentVoxelName: string | null = null;
+// rows with an open details card / a ticked checkbox — survive list re-renders
+const expandedFiles = new Set<string>();
+const selectedFiles = new Set<string>();
+// live row elements for the expandable (splat/lod) rows, rebuilt per render
+const fileRows = new Map<string, { li: HTMLLIElement; chev: HTMLButtonElement }>();
+// build-meta.json per LOD bundle, keyed name@mtime; null = none on disk (404)
+const lodMetaCache = new Map<string, api.LodBuildMeta | null>();
 
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
@@ -167,6 +178,11 @@ const fillSelect = (select: HTMLSelectElement, names: string[]) => {
 
 const refreshFiles = async (highlight?: Set<string>) => {
     const files = await api.listFiles();
+    lastFiles = files;
+    // drop expansion/selection state for names no longer listed
+    const listed = new Set(files.map((f) => f.name));
+    for (const n of [...expandedFiles]) if (!listed.has(n)) expandedFiles.delete(n);
+    for (const n of [...selectedFiles]) if (!listed.has(n)) selectedFiles.delete(n);
 
     // anything the CLI can read (incl. .spz/.splat/.ksplat/.lcc/.lcc2), not just
     // what the engine can render
@@ -218,15 +234,61 @@ const refreshFiles = async (highlight?: Set<string>) => {
     renderGroupMembers(new Set(checkedMembers())); // refresh the member list, keep ticks
 
     fileList.innerHTML = '';
+    fileRows.clear();
     let firstNew: HTMLLIElement | null = null;
     for (const f of files) {
         // derive voxel viewability client-side too, so a server started before
-        // this feature still gets the view button
+        // this feature still gets the eye toggle
         if (!f.viewable && f.name.endsWith('.voxel.json')) f.viewable = 'voxel';
         const li = document.createElement('li');
         if (highlight?.has(f.name)) {
             li.classList.add('new');
             firstNew ??= li;
+        }
+
+        // bulk-select checkbox
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.className = 'file-check';
+        check.title = 'Select for bulk actions';
+        check.checked = selectedFiles.has(f.name);
+        check.onchange = () => {
+            if (check.checked) selectedFiles.add(f.name);
+            else selectedFiles.delete(f.name);
+            updateBulkBar();
+        };
+        li.appendChild(check);
+
+        // details chevron (splat/lod rows only)
+        const expandable = f.kind === 'splat' || f.kind === 'lod';
+        if (expandable) {
+            const chev = document.createElement('button');
+            chev.className = 'file-chevron';
+            chev.title = 'Details (counts, dates, LOD build recipe)';
+            chev.textContent = expandedFiles.has(f.name) ? '▾' : '▸';
+            chev.onclick = () => toggleDetails(f);
+            li.appendChild(chev);
+            fileRows.set(f.name, { li, chev });
+        } else {
+            li.appendChild(document.createElement('span'));
+        }
+
+        if (f.viewable) {
+            const EYE_HINTS: Record<string, string> = {
+                splat: 'Show / hide this splat in the 3D viewer. First show loads it; the last shown splat is the active one (Edit / Analyze / Collision).',
+                collision: 'Show / hide this collision mesh as a wireframe overlay (loading replaces any other overlay)',
+                voxel: 'Show / hide this voxel octree as translucent boxes (loading replaces any other voxel layer)'
+            };
+            const eye = document.createElement('button');
+            eye.className = 'file-eye unloaded';
+            eye.textContent = '👁';
+            eye.dataset.name = f.name;
+            eye.dataset.view = f.viewable;
+            eye.title = EYE_HINTS[f.viewable];
+            eye.onclick = () => void toggleFileEye(eye, f.name, f.viewable!);
+            li.appendChild(eye);
+        } else {
+            li.appendChild(document.createElement('span')); // keep the grid aligned
         }
 
         const KIND_HINTS: Record<string, string> = {
@@ -284,21 +346,6 @@ const refreshFiles = async (highlight?: Set<string>) => {
         size.textContent = fmtSize(f.size);
         li.appendChild(size);
 
-        if (f.viewable) {
-            const VIEW_HINTS: Record<string, string> = {
-                splat: 'Load this splat in the 3D viewer (replaces the current splat)',
-                collision: 'Overlay this collision mesh as a wireframe (replaces the current overlay)',
-                voxel: 'Render the voxel octree as translucent boxes (replaces the current voxels)'
-            };
-            const view = document.createElement('button');
-            view.textContent = 'view';
-            view.title = VIEW_HINTS[f.viewable];
-            view.onclick = () => void viewFile(f.name, f.viewable!);
-            li.appendChild(view);
-        } else {
-            li.appendChild(document.createElement('span')); // keep ✕ in its grid column
-        }
-
         // ⋯ actions button (and right-click anywhere on the row) → file menu
         const more = document.createElement('button');
         more.className = 'row-more';
@@ -325,6 +372,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
             }
             clearTimeout(disarmTimer);
             try {
+                unloadDeleted(f.name);
                 await api.deleteFile(f.name);
                 await refreshFiles();
             } catch (err) {
@@ -333,8 +381,11 @@ const refreshFiles = async (highlight?: Set<string>) => {
         };
         li.appendChild(del);
 
+        if (expandable && expandedFiles.has(f.name)) li.appendChild(buildDetails(f));
         fileList.appendChild(li);
     }
+    updateFileEyes();
+    updateBulkBar();
     firstNew?.scrollIntoView({ block: 'nearest' });
 };
 
@@ -356,9 +407,10 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
     try {
         const url = api.fileUrl(name);
         const filename = name.split('/').pop()!;
-        showToast(`Loading ${name}…`);
+        if (!(as === 'splat' && v.isFileLoaded(name))) showToast(`Loading ${name}…`); // re-show is instant
+
         if (as === 'splat') {
-            if (!(await v.loadSplat(url, filename))) return false; // superseded by a newer load / remove
+            if (!(await v.showFile(name, url, filename))) return false; // superseded by an unload
             setChip(hudSplat, `splat: ${name}`);
             layerVisible.splat = true;
             v.setSplatVisible(true);
@@ -367,6 +419,7 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
             syncRegionViz(); updateRegionEstimate(); // re-fit/recompute the region box for the new splat
         } else if (as === 'collision') {
             if (!(await v.loadCollision(url, filename))) return false;
+            currentCollisionName = name;
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
             layerVisible.collision = true;
             v.setCollisionVisible(true);
@@ -380,6 +433,7 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
         } else {
             const { count, truncated, applied } = await v.loadVoxels(url);
             if (!applied) return false;
+            currentVoxelName = name;
             setChip(hudVoxel, `voxels: ${name} (${count.toLocaleString()} boxes)`);
             layerVisible.voxels = true;
             v.setVoxelsVisible(true);
@@ -393,6 +447,302 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
     } catch (err) {
         showToast(`Failed to load ${name}: ${err}`, true);
         return false;
+    }
+};
+
+// ---------- per-row eye toggles + Show all / Hide all ----------
+type EyeState = 'visible' | 'hidden' | 'unloaded';
+const fileEyeState = (name: string, as: api.ViewKind): EyeState => {
+    const v = viewer;
+    if (!v) return 'unloaded';
+    if (as === 'splat') return v.isFileLoaded(name) ? (v.isFileVisible(name) ? 'visible' : 'hidden') : 'unloaded';
+    if (as === 'collision') return name === currentCollisionName && v.hasCollision ? (layerVisible.collision ? 'visible' : 'hidden') : 'unloaded';
+    return name === currentVoxelName && v.hasVoxels ? (layerVisible.voxels ? 'visible' : 'hidden') : 'unloaded';
+};
+
+/** Repaint every row eye (bright = visible, dim = loaded + hidden, faint = not loaded). */
+const updateFileEyes = (): void => {
+    for (const b of fileList.querySelectorAll<HTMLButtonElement>('button.file-eye')) {
+        if (b.classList.contains('loading')) continue;
+        const state = fileEyeState(b.dataset.name!, b.dataset.view as api.ViewKind);
+        b.textContent = state === 'hidden' ? '🙈' : '👁';
+        b.classList.toggle('off', state === 'hidden');
+        b.classList.toggle('unloaded', state === 'unloaded');
+    }
+};
+
+const toggleFileEye = async (eye: HTMLButtonElement, name: string, as: api.ViewKind): Promise<void> => {
+    const v = viewer;
+    if (!v) return showToast('Viewer is still starting up', true);
+    if (fileEyeState(name, as) === 'visible') {
+        if (as === 'splat') {
+            v.hideFile(name);
+            if (name === v.activeSplatName) layerVisible.splat = false;
+        } else if (as === 'collision') {
+            layerVisible.collision = false;
+            applyLayerVisible('collision');
+        } else {
+            layerVisible.voxels = false;
+            applyLayerVisible('voxels');
+        }
+        rebuildSceneList();
+    } else {
+        // not loaded → load + show; loaded + hidden → show (either way it becomes active)
+        eye.classList.add('loading');
+        eye.textContent = '◌';
+        eye.disabled = true;
+        try { await viewFile(name, as); }
+        finally { eye.disabled = false; eye.classList.remove('loading'); }
+    }
+    updateFileEyes();
+};
+
+/** Reflect the viewer's active splat into the HUD chip + preview plumbing. */
+const syncActiveSplatChip = (): void => {
+    currentSplatName = viewer?.activeSplatName ?? null;
+    if (currentSplatName) setChip(hudSplat, `splat: ${currentSplatName}`);
+    else hideChip(hudSplat);
+};
+
+/** A deleted file must release whatever the viewer holds for it first. */
+const unloadDeleted = (name: string): void => {
+    const v = viewer;
+    if (v?.isFileLoaded(name)) {
+        v.unloadFile(name);
+        syncActiveSplatChip();
+        syncPreview();
+        rebuildSceneList();
+    }
+    if (name === currentCollisionName) removeCollision();
+    if (name === currentVoxelName) removeVoxels();
+};
+
+// two-stage >20M-gaussian confirm + sequential load, shared by Show all / Show selected
+const wireShowButton = (btn: HTMLButtonElement, label: string, pickTargets: () => api.FileEntry[]): void => {
+    let disarmTimer: ReturnType<typeof setTimeout> | undefined;
+    const disarm = (): void => {
+        clearTimeout(disarmTimer);
+        btn.classList.remove('armed');
+        btn.textContent = label;
+    };
+    btn.onclick = async () => {
+        const v = viewer;
+        if (!v) return showToast('Viewer is still starting up', true);
+        const targets = pickTargets();
+        if (!targets.length) return showToast('No viewable splat files to show', true);
+        // confirm when the files that would NEWLY load sum past 20M gaussians
+        const fresh = targets.filter((f) => !v.isFileLoaded(f.name));
+        const total = fresh.reduce((s, f) => s + (f.gaussians ?? 0), 0);
+        if (total > 20_000_000 && !btn.classList.contains('armed')) {
+            btn.classList.add('armed');
+            btn.textContent = `Load ~${fmtCount(total)} gaussians?`;
+            disarmTimer = setTimeout(disarm, 2500);
+            return;
+        }
+        disarm();
+        btn.disabled = true;
+        try {
+            for (const f of targets) await viewFile(f.name, 'splat');
+        } finally {
+            btn.disabled = false;
+            updateFileEyes();
+        }
+    };
+};
+wireShowButton($<HTMLButtonElement>('files-show-all'), 'Show all', () => lastFiles.filter((f) => f.viewable === 'splat'));
+
+$<HTMLButtonElement>('files-hide-all').onclick = () => {
+    const v = viewer;
+    if (!v) return;
+    for (const lf of v.loadedFiles()) if (lf.visible) v.hideFile(lf.name);
+    if (v.hasSplat) layerVisible.splat = false;
+    if (v.hasCollision && layerVisible.collision) { layerVisible.collision = false; applyLayerVisible('collision'); }
+    if (v.hasVoxels && layerVisible.voxels) { layerVisible.voxels = false; applyLayerVisible('voxels'); }
+    rebuildSceneList();
+};
+
+// ---------- row selection + bulk actions ----------
+const selectAllBox = $<HTMLInputElement>('files-select-all');
+const bulkBar = $<HTMLDivElement>('file-bulk-bar');
+const bulkCount = $<HTMLSpanElement>('bulk-count');
+const bulkDeleteBtn = $<HTMLButtonElement>('bulk-delete');
+
+let bulkDeleteDisarm: ReturnType<typeof setTimeout> | undefined;
+const disarmBulkDelete = (): void => {
+    clearTimeout(bulkDeleteDisarm);
+    bulkDeleteBtn.classList.remove('armed');
+    bulkDeleteBtn.textContent = 'Delete selected';
+};
+
+/** Sync the select-all tri-state + bulk bar to the current selection. */
+const updateBulkBar = (): void => {
+    const n = selectedFiles.size;
+    selectAllBox.checked = n > 0 && n === lastFiles.length;
+    selectAllBox.indeterminate = n > 0 && n < lastFiles.length;
+    bulkBar.classList.toggle('hidden', n === 0);
+    bulkCount.textContent = n ? `${n} selected` : '';
+    disarmBulkDelete();
+};
+
+selectAllBox.onchange = () => {
+    selectedFiles.clear();
+    if (selectAllBox.checked) for (const f of lastFiles) selectedFiles.add(f.name);
+    for (const box of fileList.querySelectorAll<HTMLInputElement>('input.file-check')) box.checked = selectAllBox.checked;
+    updateBulkBar();
+};
+
+wireShowButton($<HTMLButtonElement>('bulk-show'), 'Show selected',
+    () => lastFiles.filter((f) => f.viewable === 'splat' && selectedFiles.has(f.name)));
+
+$<HTMLButtonElement>('bulk-hide').onclick = () => {
+    const v = viewer;
+    if (!v) return;
+    for (const lf of v.loadedFiles()) if (lf.visible && selectedFiles.has(lf.name)) v.hideFile(lf.name);
+    if (v.activeSplatName && selectedFiles.has(v.activeSplatName)) layerVisible.splat = false;
+    if (currentCollisionName && selectedFiles.has(currentCollisionName) && layerVisible.collision) { layerVisible.collision = false; applyLayerVisible('collision'); }
+    if (currentVoxelName && selectedFiles.has(currentVoxelName) && layerVisible.voxels) { layerVisible.voxels = false; applyLayerVisible('voxels'); }
+    rebuildSceneList();
+};
+
+$<HTMLButtonElement>('bulk-group').onclick = () => {
+    const adds = [...selectedFiles].filter((n) => splatFileNames.includes(n));
+    if (!adds.length) return showToast('No splat files selected — only splat files can join a linked group', true);
+    renderGroupMembers(new Set([...checkedMembers(), ...adds]));
+    persistGroup();
+    showToast(`Added ${adds.length} file${adds.length > 1 ? 's' : ''} to the linked group`);
+};
+
+// two-stage delete, then unload + delete each selected file sequentially
+bulkDeleteBtn.onclick = async () => {
+    const names = lastFiles.filter((f) => selectedFiles.has(f.name)).map((f) => f.name);
+    if (!names.length) return;
+    if (!bulkDeleteBtn.classList.contains('armed')) {
+        bulkDeleteBtn.classList.add('armed');
+        bulkDeleteBtn.textContent = `Delete ${names.length} file${names.length > 1 ? 's' : ''}?`;
+        bulkDeleteDisarm = setTimeout(disarmBulkDelete, 2500);
+        return;
+    }
+    disarmBulkDelete();
+    bulkDeleteBtn.disabled = true;
+    try {
+        for (const name of names) {
+            unloadDeleted(name);
+            try {
+                await api.deleteFile(name);
+                selectedFiles.delete(name);
+            } catch (err) {
+                showToast(`Delete failed (${name}): ${err}`, true);
+            }
+        }
+    } finally {
+        bulkDeleteBtn.disabled = false;
+        await refreshFiles();
+    }
+};
+
+// ---------- row details card ----------
+const detailRow = (label: string, value: string): HTMLDivElement => {
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    const l = document.createElement('span');
+    l.textContent = label;
+    const v = document.createElement('span');
+    v.textContent = value;
+    row.append(l, v);
+    return row;
+};
+
+/** The bundle's sibling build-meta.json; null = none on disk. Cached per name+mtime. */
+const fetchLodMeta = async (f: api.FileEntry): Promise<api.LodBuildMeta | null> => {
+    const key = `${f.name}@${f.mtime}`;
+    const hit = lodMetaCache.get(key);
+    if (hit !== undefined) return hit;
+    const res = await fetch(api.fileUrl(f.name.replace(/lod-meta\.json$/, 'build-meta.json')));
+    if (res.status === 404) { lodMetaCache.set(key, null); return null; }
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const meta = (await res.json()) as api.LodBuildMeta;
+    lodMetaCache.set(key, meta);
+    return meta;
+};
+
+// per-level table + settings + bake line from a bundle's build recipe
+const renderRecipe = (host: HTMLElement, recipe: api.LodBuildMeta): void => {
+    const table = document.createElement('table');
+    table.className = 'lod-recipe';
+    const head = table.createTHead().insertRow();
+    for (const h of ['Level', 'Source', 'Keep %', 'Gaussians']) {
+        const th = document.createElement('th');
+        th.textContent = h;
+        head.appendChild(th);
+    }
+    const body = table.createTBody();
+    for (const l of recipe.levels ?? []) {
+        const tr = body.insertRow();
+        if (l.environment) tr.className = 'env';
+        tr.insertCell().textContent = l.environment ? 'env' : `LOD ${l.level}`;
+        tr.insertCell().textContent = l.source;
+        tr.insertCell().textContent = typeof l.keepPercent === 'number' ? `${l.keepPercent}%` : '';
+        tr.insertCell().textContent = typeof l.gaussians === 'number' ? l.gaussians.toLocaleString() : '';
+    }
+    host.appendChild(table);
+    const s = recipe.settings ?? {};
+    const parts = [
+        `mode ${recipe.mode}`,
+        s.iterations != null ? `iterations ${s.iterations}` : '',
+        s.maxWorkers != null ? `workers ${s.maxWorkers}` : '',
+        s.device != null ? `device ${s.device}` : '',
+        s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : ''
+    ].filter(Boolean);
+    if (parts.length) host.appendChild(detailRow('Settings', parts.join(' · ')));
+    const versions = [
+        recipe.generator?.app ? `Splat Studio ${recipe.generator.app}` : '',
+        recipe.generator?.splatTransform ? `splat-transform ${recipe.generator.splatTransform}` : ''
+    ].filter(Boolean).join(' · ');
+    const baked = recipe.createdAt ? new Date(recipe.createdAt).toLocaleString() : '';
+    if (baked || versions) host.appendChild(detailRow('Baked', [baked, versions].filter(Boolean).join(' — ')));
+};
+
+const buildDetails = (f: api.FileEntry): HTMLDivElement => {
+    const card = document.createElement('div');
+    card.className = 'file-details';
+    if (typeof f.gaussians === 'number') card.appendChild(detailRow('Gaussians', f.gaussians.toLocaleString()));
+    card.appendChild(detailRow('Size', `${fmtSize(f.size)} (${f.size.toLocaleString()} bytes)`));
+    card.appendChild(detailRow('Modified', new Date(f.mtime).toLocaleString()));
+    card.appendChild(detailRow('Kind', f.kind));
+    card.appendChild(detailRow('Path', f.name));
+    if (f.kind !== 'lod') return card;
+    const recipeHost = document.createElement('div');
+    const note = document.createElement('div');
+    note.className = 'detail-note';
+    note.textContent = 'Loading build recipe…';
+    recipeHost.appendChild(note);
+    card.appendChild(recipeHost);
+    void fetchLodMeta(f).then((recipe) => {
+        note.remove();
+        if (recipe) return renderRecipe(recipeHost, recipe);
+        const miss = document.createElement('div');
+        miss.className = 'detail-note';
+        miss.textContent = 'No build recipe (built before this feature)';
+        recipeHost.appendChild(miss);
+        if (f.lodCounts?.length) {
+            recipeHost.appendChild(detailRow('Levels', f.lodCounts.map((c, i) => `LOD ${i}: ${c.toLocaleString()}`).join(' · ')));
+        }
+    }).catch((err) => { note.textContent = `Couldn't read build recipe: ${err}`; });
+    return card;
+};
+
+const toggleDetails = (f: api.FileEntry): void => {
+    const row = fileRows.get(f.name);
+    if (!row) return;
+    const open = row.li.querySelector('.file-details');
+    if (open) {
+        open.remove();
+        expandedFiles.delete(f.name);
+        row.chev.textContent = '▸';
+    } else {
+        row.li.appendChild(buildDetails(f));
+        expandedFiles.add(f.name);
+        row.chev.textContent = '▾';
     }
 };
 
@@ -453,42 +803,10 @@ const prefillSelect = (select: HTMLSelectElement, name: string): void => {
     select.value = name;
     select.dispatchEvent(new Event('change', { bubbles: true })); // refresh dependent rows + persist
 };
-// LOD 'Build info': fetch the bundle's build-meta.json (sibling of lod-meta.json)
-// and toast a compact recipe summary
-const showLodBuildInfo = async (name: string): Promise<void> => {
-    let recipe: api.LodBuildMeta;
-    try {
-        const res = await fetch(api.fileUrl(name.replace(/lod-meta\.json$/, 'build-meta.json')));
-        if (res.status === 404) return showToast('No build recipe (built before this feature)', true);
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        recipe = await res.json();
-    } catch (err) {
-        return showToast(`Couldn't read build recipe: ${err}`, true);
-    }
-    const levels = recipe.levels ?? [];
-    const real = levels.filter((l) => !l.environment).length;
-    const hasEnv = levels.length > real;
-    const lines = [`LOD build — ${recipe.mode}, ${real} level${real === 1 ? '' : 's'}${hasEnv ? ' + env' : ''}`];
-    for (const l of levels) {
-        const label = l.environment ? 'env' : `LOD ${l.level}`;
-        const pct = typeof l.keepPercent === 'number' ? ` (keep ${l.keepPercent}%)` : '';
-        const n = typeof l.gaussians === 'number' ? ` — ${l.gaussians.toLocaleString()}` : '';
-        lines.push(`${label}: ${l.source}${pct}${n}`);
-    }
-    const s = recipe.settings ?? {};
-    const parts = [
-        s.iterations != null ? `iterations ${s.iterations}` : '',
-        s.maxWorkers != null ? `workers ${s.maxWorkers}` : '',
-        s.device != null ? `device ${s.device}` : '',
-        s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : ''
-    ].filter(Boolean);
-    if (parts.length) lines.push(`Settings: ${parts.join(' · ')}`);
-    showToast(lines.join('\n'), false, true);
-};
-
 const deleteFromMenu = (f: api.FileEntry): void => {
     const folder = f.name.includes('/') && (f.name.endsWith('meta.json') || f.name.endsWith('lod-meta.json'));
     if (!confirm(`Delete ${f.name}?${folder ? ' This removes the whole output folder.' : ''}`)) return;
+    unloadDeleted(f.name);
     void api.deleteFile(f.name).then(() => refreshFiles()).catch((err) => showToast(`Delete failed (${f.name}): ${err}`, true));
 };
 
@@ -503,6 +821,7 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
     const isRaw = isSplat && !isSog;                              // an uncompressed source worth compressing to SOG
 
     if (f.viewable) items.push({ label: '👁  View in viewport', hint: 'Load this file into the 3D viewer', run: () => void viewFile(f.name, f.viewable!) });
+    if (isSplat || isLod) items.push({ label: 'Details', hint: 'Expand the row\'s inline details card (counts, dates, LOD build recipe)', run: () => toggleDetails(f) });
 
     if (isGenerator) {
         items.push({ label: '✨  Generate & view', hint: 'Run the .mjs generator and load the result', run: () => { prefillSelect(genInput, f.name); openPanel('panel-generate'); void updateGenRows().then(() => generateViewBtn.click()); } });
@@ -522,10 +841,6 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
         items.push({ label: hasCollision ? 'Regenerate collision…' : 'Generate collision…', hint: 'Open the Collision panel with this file selected', run: () => { prefillSelect(collisionInput, f.name); openPanel('panel-collision'); } });
         items.push({ label: 'Edit (scale / origin)…', hint: 'Measure to set real scale, or pick a new origin', run: () => { prefillSelect(editInput, f.name); if (f.viewable) void viewFile(f.name, f.viewable); openPanel('panel-edit'); } });
     }
-    if (isLod) {
-        items.push({ label: 'Build info', hint: 'Show the recipe this bundle was baked from (build-meta.json)', run: () => void showLodBuildInfo(f.name) });
-    }
-
     items.push('sep');
     items.push({ label: 'Copy file path', hint: f.name, run: () => void navigator.clipboard.writeText(f.name).then(() => showToast('Path copied')).catch(() => showToast('Copy failed', true)) });
     items.push({ label: 'Delete', danger: true, hint: 'Remove from the workspace', run: () => deleteFromMenu(f) });
@@ -1933,22 +2248,32 @@ $<HTMLInputElement>('collision-flip').onchange = (e) =>
     viewer?.setCollisionFlipped((e.currentTarget as HTMLInputElement).checked);
 $<HTMLButtonElement>('frame-scene').onclick = () => viewer?.frame();
 
-// remove (unload) layers — distinct from the show/hide checkboxes above
-const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); currentSplatName = null; syncPreview(); rebuildSceneList(); scheduleUndoCapture(); };
-const removeCollision = () => { viewer?.clearCollision(); hideChip(hudCollision); rebuildSceneList(); };
-const removeVoxels = () => { viewer?.clearVoxels(); hideChip(hudVoxel); rebuildSceneList(); };
-hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
-hudCollision.querySelector('.chip-remove')?.addEventListener('click', removeCollision);
-hudVoxel.querySelector('.chip-remove')?.addEventListener('click', removeVoxels);
-$<HTMLButtonElement>('clear-viewport').onclick = () => {
+// remove (unload) layers — distinct from the show/hide eyes above
+const removeSplat = () => {
+    const n = viewer?.activeSplatName;
+    if (n) viewer?.unloadFile(n); // the newest remaining shown file becomes active
+    syncActiveSplatChip();
+    syncPreview();
+    rebuildSceneList();
+    scheduleUndoCapture();
+};
+const removeCollision = () => { viewer?.clearCollision(); currentCollisionName = null; hideChip(hudCollision); rebuildSceneList(); };
+const removeVoxels = () => { viewer?.clearVoxels(); currentVoxelName = null; hideChip(hudVoxel); rebuildSceneList(); };
+const clearViewport = () => {
     viewer?.clearAll();
     hideChip(hudSplat);
     hideChip(hudCollision);
     hideChip(hudVoxel);
     currentSplatName = null;
+    currentCollisionName = null;
+    currentVoxelName = null;
     syncPreview();
     rebuildSceneList();
 };
+hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
+hudCollision.querySelector('.chip-remove')?.addEventListener('click', removeCollision);
+hudVoxel.querySelector('.chip-remove')?.addEventListener('click', removeVoxels);
+$<HTMLButtonElement>('clear-viewport').onclick = clearViewport;
 
 // ---------- scene hierarchy panel ----------
 $<HTMLSelectElement>('camera-mode').onchange = (e) =>
@@ -2022,6 +2347,7 @@ function rebuildSceneList(): void {
         sceneList.appendChild(li);
     }
     $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
+    updateFileEyes(); // file-row eyes mirror the same visibility state
 }
 
 function selectScene(id: SelId): void {
@@ -2440,12 +2766,7 @@ const switchProject = async (name: string) => {
     projectSelect.value = name;
     localStorage.setItem(PROJECT_KEY, name);
     // loaded layers belong to the project we're leaving
-    viewer?.clearAll();
-    hideChip(hudSplat);
-    hideChip(hudCollision);
-    hideChip(hudVoxel);
-    currentSplatName = null;
-    syncPreview();
+    clearViewport();
     await refreshFiles();
     await loadGroup(); // tick the saved group members for this project
     clearUndoHistory(); // undo history doesn't span a project switch
@@ -2463,12 +2784,7 @@ const loadProjects = async (preferred?: string) => {
     if (projects.length === 0) {
         api.setProject('');
         // clear anything from the workspace we just left (no project to refreshFiles)
-        viewer?.clearAll();
-        hideChip(hudSplat);
-        hideChip(hudCollision);
-        hideChip(hudVoxel);
-        currentSplatName = null;
-        syncPreview();
+        clearViewport();
         fileList.innerHTML = '';
         showToast('No projects yet — click "+ New" to create one', true);
         return;
@@ -2627,7 +2943,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         return editorError('bad-input', `unknown layout action "${action}"`);
     },
     load_into_viewport: async ({ action, project, file }) => {
-        if (action === 'clear') { removeSplat(); removeCollision(); removeVoxels(); return { cleared: true }; }
+        if (action === 'clear') { clearViewport(); return { cleared: true }; }
         if (project != null && String(project) !== projectSelect.value) {
             return editorError('bad-input', `project "${project}" is not the app's current project ("${projectSelect.value}") — the viewport loads from the current project only`);
         }

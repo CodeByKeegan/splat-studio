@@ -111,7 +111,7 @@ npm run dev    # API on :5174, UI on http://localhost:5173
 ```
 
 Open **http://localhost:5173**. `demo-room.ply` is already listed in the **Files** panel —
-click **view** to load it into the 3D viewer, then run your first job with
+click its **👁 eye** to show it in the 3D viewer, then run your first job with
 **Convert → SOG (bundled)**. Output streams into the **Job** panel and the new file flashes
 in the list.
 
@@ -152,7 +152,8 @@ Then in the browser:
    per-request, so two windows can sit on different projects at once.
 1. **Files** — drop a `.ply` / `.sog` / `.spz` / `.splat` / `.ksplat` file
    anywhere in the window (or use the generated `demo-room.ply`). Click
-   **view** to display a splat; **✕** asks twice before deleting. Uploads show
+   a file's **👁 eye** to show or hide it (several splats can be shown at
+   once); **✕** asks twice before deleting. Uploads show
    a progress bar; job outputs flash blue in the list. Panel headers
    collapse/expand on click (state persists), the Jobs panel stays pinned to
    the bottom of the sidebar, and all form values survive a reload.
@@ -195,7 +196,7 @@ Then in the browser:
    against the splat and flying inside carved interiors). Visual settings (wire
    and voxel colours/opacity, plus dark-mode / font / language placeholders) live
    in a separate **Settings** window (⚙ in the toolbar).
-   Clicking **view** on a `.voxel.json` renders the sparse voxel octree as
+   Clicking the **eye** on a `.voxel.json` renders the sparse voxel octree as
    hardware-instanced translucent boxes (solid octree regions render as one
    merged box; display is capped at 1.5 M boxes — regenerate with a coarser
    voxel size if truncated). The `.voxel.bin` format is parsed client-side
