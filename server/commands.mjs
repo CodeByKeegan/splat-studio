@@ -26,7 +26,7 @@ const num = (value, fallback, min, max) => {
 const csv = (value, label, count) => {
     const s = String(value ?? '').trim();
     const parts = s.split(',');
-    if (parts.length < count || parts.length > count + 1 || parts.some((p) => !/^-?\d*\.?\d+$/.test(p.trim()))) {
+    if (parts.length < count || parts.length > count + 1 || parts.some((p) => !/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(p.trim()))) {
         throw new Error(`Invalid ${label}: ${value} (expected ${count} comma-separated numbers)`);
     }
     return s;
@@ -345,7 +345,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         }
         if (t.translate != null && t.translate !== '') {
             const v = String(t.translate).trim();
-            if (!/^-?\d*\.?\d+(,-?\d*\.?\d+){2}$/.test(v)) throw new Error(`Invalid translate: ${v} (use x,y,z)`);
+            if (!/^-?(?:\d+(?:\.\d+)?|\.\d+)(?:,-?(?:\d+(?:\.\d+)?|\.\d+)){2}$/.test(v)) throw new Error(`Invalid translate: ${v} (use x,y,z)`);
             args.push('-t', v);
         }
     }
