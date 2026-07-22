@@ -333,7 +333,7 @@ but local and driven by `splat-transform`.
 
 **Measure → real-world scale:**
 
-1. Pick the splat in **Input** (and **view** it so you can see it).
+1. Pick the splat in **Input** (and show it with its **eye** so you can see it).
 2. Check **Measure mode**.
 3. **Click the splat** to drop point **A** (green), then click again for point **B**
    (orange) across a feature whose real size you know. **Place A / Place B** choose
