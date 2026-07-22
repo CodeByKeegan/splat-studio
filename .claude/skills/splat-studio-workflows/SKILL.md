@@ -38,8 +38,9 @@ letters digits spaces `( ) . _ -`) → `inspect(stats)` → `get_summary` (per-c
 the job LOG, no file).
 
 **Streamed LOD (decimate):** `suggest_lod_settings` → `build_lod(mode:"decimate",
-...suggestion)`. Big scenes: `timeout_ms: 1800000`. Output = `lod-meta.json` bundle folder;
-deleting that entry deletes the folder.
+...suggestion)`. Big scenes: `timeout_ms: 1800000`. Output = `lod-meta.json` bundle folder
+(+ a `build-meta.json` recipe — read via `inspect(target:"lod_recipe")`; pre-feature
+bundles return `not-found`); deleting that entry deletes the folder.
 
 **Environment-shell LOD (combine):** lighter levels first (`convert(decimate:"50%")` per level),
 then `build_lod(mode:"combine", lodFiles:[...], lodEnvFlags:[...])` — env flag = always-visible

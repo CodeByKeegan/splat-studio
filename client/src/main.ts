@@ -38,13 +38,14 @@ const jobLog = $<HTMLPreElement>('job-log');
 
 let viewer: SplatViewer | undefined;
 
-const showToast = (message: string, isError = false) => {
+const showToast = (message: string, isError = false, pre = false) => {
     const el = document.createElement('div');
     el.className = isError ? 'toast error' : 'toast';
+    if (pre) el.style.whiteSpace = 'pre-line'; // multi-line detail toast, longer dwell
     el.textContent = message;
     toastStack.appendChild(el);
     while (toastStack.children.length > 4) toastStack.firstChild?.remove();
-    setTimeout(() => el.remove(), isError ? 8000 : 4000);
+    setTimeout(() => el.remove(), pre ? 12000 : isError ? 8000 : 4000);
 };
 
 // In-app text prompt — Electron's renderer has no window.prompt(). Resolves the
@@ -454,6 +455,39 @@ const prefillSelect = (select: HTMLSelectElement, name: string): void => {
     select.value = name;
     select.dispatchEvent(new Event('change', { bubbles: true })); // refresh dependent rows + persist
 };
+// LOD 'Build info': fetch the bundle's build-meta.json (sibling of lod-meta.json)
+// and toast a compact recipe summary
+const showLodBuildInfo = async (name: string): Promise<void> => {
+    let recipe: api.LodBuildMeta;
+    try {
+        const res = await fetch(api.fileUrl(name.replace(/lod-meta\.json$/, 'build-meta.json')));
+        if (res.status === 404) return showToast('No build recipe (built before this feature)', true);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        recipe = await res.json();
+    } catch (err) {
+        return showToast(`Couldn't read build recipe: ${err}`, true);
+    }
+    const levels = recipe.levels ?? [];
+    const real = levels.filter((l) => !l.environment).length;
+    const hasEnv = levels.length > real;
+    const lines = [`LOD build — ${recipe.mode}, ${real} level${real === 1 ? '' : 's'}${hasEnv ? ' + env' : ''}`];
+    for (const l of levels) {
+        const label = l.environment ? 'env' : `LOD ${l.level}`;
+        const pct = typeof l.keepPercent === 'number' ? ` (keep ${l.keepPercent}%)` : '';
+        const n = typeof l.gaussians === 'number' ? ` — ${l.gaussians.toLocaleString()}` : '';
+        lines.push(`${label}: ${l.source}${pct}${n}`);
+    }
+    const s = recipe.settings ?? {};
+    const parts = [
+        s.iterations != null ? `iterations ${s.iterations}` : '',
+        s.maxWorkers != null ? `workers ${s.maxWorkers}` : '',
+        s.device != null ? `device ${s.device}` : '',
+        s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : ''
+    ].filter(Boolean);
+    if (parts.length) lines.push(`Settings: ${parts.join(' · ')}`);
+    showToast(lines.join('\n'), false, true);
+};
+
 const deleteFromMenu = (f: api.FileEntry): void => {
     const folder = f.name.includes('/') && (f.name.endsWith('meta.json') || f.name.endsWith('lod-meta.json'));
     if (!confirm(`Delete ${f.name}?${folder ? ' This removes the whole output folder.' : ''}`)) return;
@@ -489,6 +523,9 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
         const hasCollision = all.some((x) => x.name === 'collision.collision.glb');
         items.push({ label: hasCollision ? 'Regenerate collision…' : 'Generate collision…', hint: 'Open the Collision panel with this file selected', run: () => { prefillSelect(collisionInput, f.name); openPanel('panel-collision'); } });
         items.push({ label: 'Edit (scale / origin)…', hint: 'Measure to set real scale, or pick a new origin', run: () => { prefillSelect(editInput, f.name); if (f.viewable) void viewFile(f.name, f.viewable); openPanel('panel-edit'); } });
+    }
+    if (isLod) {
+        items.push({ label: 'Build info', hint: 'Show the recipe this bundle was baked from (build-meta.json)', run: () => void showLodBuildInfo(f.name) });
     }
 
     items.push('sep');

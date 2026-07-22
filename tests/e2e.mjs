@@ -204,6 +204,35 @@ try {
         assert(!fs.existsSync(path.join(projectDir, 'demo-room-lod-src')), 'temp decimate dir not cleaned up');
     });
 
+    // build recipe persisted inside the bundle, before the job flips to 'done'
+    await check('build-meta.json records the decimate recipe + per-level gaussians', async () => {
+        const bmPath = path.join(projectDir, 'demo-room-lod', 'build-meta.json');
+        assert(fs.existsSync(bmPath), 'no build-meta.json in the bundle');
+        const bm = JSON.parse(fs.readFileSync(bmPath, 'utf8'));
+        const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
+        assert(bm.version === 1, `version: ${bm.version}`);
+        assert(bm.mode === 'decimate', `mode: ${bm.mode}`);
+        assert(bm.input === 'demo-room.ply', `input: ${bm.input}`);
+        assert(!Number.isNaN(Date.parse(bm.createdAt)), `createdAt: ${bm.createdAt}`);
+        const versions = (await api('GET', '/api/versions')).json;
+        assert(bm.generator?.app === versions.app && bm.generator?.splatTransform === versions.splatTransform,
+            `generator: ${JSON.stringify(bm.generator)}`);
+        // level 0 = raw input at 100%; each level keeps 50% of the previous
+        assert(Array.isArray(bm.levels) && bm.levels.length === 3, `levels: ${JSON.stringify(bm.levels)}`);
+        bm.levels.forEach((l, i) => {
+            assert(l.level === i && l.source === 'demo-room.ply' && !l.environment, `level ${i}: ${JSON.stringify(l)}`);
+            assert(l.gaussians === meta.counts[i], `level ${i} gaussians ${l.gaussians} != lod-meta counts ${meta.counts[i]}`);
+        });
+        assert(JSON.stringify(bm.levels.map((l) => l.keepPercent)) === '[100,50,25]',
+            `keepPercent chain: ${JSON.stringify(bm.levels.map((l) => l.keepPercent))}`);
+        const s = bm.settings;
+        assert(s.lodLevels === 3 && s.keepPercent === 50, `settings: ${JSON.stringify(s)}`);
+        assert(s.iterations === 10 && s.chunkCount === 512 && s.chunkExtent === 16 && s.filterNaN === false,
+            `settings defaults: ${JSON.stringify(s)}`);
+        assert(s.device === (SKIP_GPU ? 'cpu' : 'auto') && s.maxWorkers === undefined,
+            `settings device/workers: ${JSON.stringify(s)}`);
+    });
+
     // cheap count parsed from lod-meta.json itself — must mirror what the CLI wrote
     await check('files listing: lod entry carries gaussians + per-level lodCounts', async () => {
         const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
@@ -287,6 +316,28 @@ try {
         assert(/env-shell\.ply -l -1\b/.test(job.command), `no env -l -1 in cmd: ${job.command}`);
         assert(/ -l 0\b/.test(job.command) && /detail-1\.ply -l 1\b/.test(job.command), `levels not contiguous: ${job.command}`);
         assert(fs.existsSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json')), 'no lod-meta.json');
+    });
+
+    await check('build-meta.json records the combine recipe (env level last + flagged)', async () => {
+        const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'build-meta.json'), 'utf8'));
+        const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
+        assert(bm.version === 1 && bm.mode === 'combine', `header: v${bm.version} ${bm.mode}`);
+        assert(bm.input === 'demo-room.ply', `input: ${bm.input}`);
+        assert(!Number.isNaN(Date.parse(bm.createdAt)), `createdAt: ${bm.createdAt}`);
+        const rows = bm.levels.map((l) => `${l.level}:${l.source}`);
+        assert(JSON.stringify(rows) === JSON.stringify(['0:demo-room.ply', '1:detail-1.ply', '-1:env-shell.ply']),
+            `levels: ${JSON.stringify(bm.levels)}`);
+        assert(bm.levels[2].environment === true && bm.levels.slice(0, 2).every((l) => !l.environment),
+            `env flags: ${JSON.stringify(bm.levels)}`);
+        // structural levels count from lod-meta counts; the env shell from env/meta.json
+        for (const l of bm.levels.slice(0, 2)) {
+            assert(l.gaussians === meta.counts[l.level], `level ${l.level} gaussians ${l.gaussians} != lod-meta counts ${meta.counts[l.level]}`);
+        }
+        const envMeta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'env', 'meta.json'), 'utf8'));
+        assert(bm.levels[2].gaussians === envMeta.count, `env gaussians ${bm.levels[2].gaussians} != env/meta.json count ${envMeta.count}`);
+        // the files walk stops at the bundle entry point — the recipe never surfaces
+        const files = await api('GET', `/api/files?project=${PROJECT}`);
+        assert(!files.json.files.some((f) => f.name.endsWith('build-meta.json')), 'build-meta.json leaked into /api/files');
     });
 
     await check('rejects an all-environment combine bake', async () => {

@@ -122,6 +122,12 @@ try {
         assert(s.suggestion?.mode === 'decimate' && s.suggestion.lodLevels >= 1, `suggest: ${JSON.stringify(s)}`);
     });
 
+    // no LOD is baked in this suite (slow), so only the missing-recipe path is covered
+    await check('inspect lod_recipe on a missing bundle returns not-found', async () => {
+        const r = await call('inspect', { target: 'lod_recipe', project: 'Demo', input: 'nope-lod/lod-meta.json' });
+        assert(r.isError && data(r).error === 'not-found', `expected not-found: ${text(r)}`);
+    });
+
     await check('generate_collision preflight refuses a fine-voxel whole-splat run (override bypasses)', async () => {
         // 28k gaussians at 0.001 m -> load ~71M >> the 16.7M cap -> danger -> refused
         const r = data(await call('generate_collision', { project: 'Demo', input: 'demo-room.ply', voxelSize: 0.001 }));

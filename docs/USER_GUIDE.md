@@ -223,6 +223,12 @@ folders that the engine streams by camera distance, for scenes too big to load a
 5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
    **Generate streamed LOD**.
 
+Every bake also writes a `build-meta.json` next to the bundle's `lod-meta.json` — the
+recipe it was built from: the source file per level, the environment selection, the
+effective settings, and per-level gaussian counts. Pick **Build info** from the bundle's
+**⋯** menu in the Files panel for a quick summary (bundles baked before this file
+existed report "No build recipe").
+
 > **⚡ Auto-tune from splat stats:** the **Auto-tune** button reads each source's
 > gaussian count and world-space extents (a quick CPU summary, cached) and fills the
 > settings for you:
