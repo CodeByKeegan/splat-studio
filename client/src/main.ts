@@ -2303,10 +2303,13 @@ $<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 // ---------- Settings ▸ Updates (channel switch + manual check) ----------
 // Only meaningful in the packaged desktop app; drop the page in the browser dev build.
 void (async () => {
+    interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
     const bridge = (window as unknown as { desktop?: {
         checkForUpdates?: () => Promise<void>;
         getUpdateChannel?: () => Promise<'stable' | 'beta'>;
         setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
+        getUpdateStatus?: () => Promise<UpdateStatus>;
+        onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
     } }).desktop;
     const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
     const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
@@ -2314,20 +2317,32 @@ void (async () => {
 
     const channelSel = $<HTMLSelectElement>('update-channel');
     const checkBtn = $<HTMLButtonElement>('check-updates');
+    const statusEl = $<HTMLSpanElement>('update-status');
+    const statusText = $<HTMLSpanElement>('update-status-text');
     try { channelSel.value = await bridge.getUpdateChannel(); } catch { /* keep default */ }
 
-    channelSel.addEventListener('change', async () => {
-        channelSel.disabled = true;
-        try { await bridge.setUpdateChannel?.(channelSel.value as 'stable' | 'beta'); }
-        finally { channelSel.disabled = false; }
-    });
-    checkBtn.addEventListener('click', async () => {
-        checkBtn.disabled = true;
-        const label = checkBtn.textContent;
-        checkBtn.textContent = 'Checking…';
-        try { await bridge.checkForUpdates?.(); }
-        finally { checkBtn.disabled = false; checkBtn.textContent = label ?? 'Check for updates'; }
-    });
+    // status line mirrors main-process updater state; checks/downloads keep running
+    // in the background even with the settings dialog closed
+    const showStatus = (s: UpdateStatus): void => {
+        const busy = s.phase === 'checking' || s.phase === 'downloading';
+        const text =
+            s.phase === 'checking' ? 'Checking for updates…' :
+            s.phase === 'downloading' ? `Downloading ${s.version ?? 'update'}… ${Math.round(s.percent ?? 0)}%` :
+            s.phase === 'ready' ? `${s.version} downloaded — restart to install` :
+            s.phase === 'up-to-date' ? `Up to date (${s.version}, ${s.channel})` :
+            s.phase === 'error' ? 'Check failed — see error dialog' : '';
+        statusEl.classList.toggle('hidden', !text);
+        statusEl.classList.toggle('busy', busy);
+        statusEl.classList.toggle('error', s.phase === 'error');
+        statusText.textContent = text;
+        checkBtn.disabled = busy;
+        channelSel.disabled = busy;
+    };
+    bridge.onUpdateStatus?.(showStatus);
+    try { showStatus(await bridge.getUpdateStatus?.() ?? { phase: 'idle' }); } catch { /* keep hidden */ }
+
+    channelSel.addEventListener('change', () => { void bridge.setUpdateChannel?.(channelSel.value as 'stable' | 'beta'); });
+    checkBtn.addEventListener('click', () => { void bridge.checkForUpdates?.(); });
 })();
 
 // ---------- per-workspace layout persistence ----------
