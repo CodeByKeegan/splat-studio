@@ -113,7 +113,10 @@ const viewableAs = (name) => {
 const listFiles = async (projectDir) => {
     const out = [];
     const statEntry = async (rel) => {
-        const abs = path.join(projectDir, ...rel.split('/'));
+        // containment barrier: resolved path must stay inside the project
+        const base = path.resolve(projectDir);
+        const abs = path.resolve(base, ...rel.split('/'));
+        if (!abs.startsWith(base + path.sep)) throw new Error(`Unsafe path: ${rel}`);
         const st = await fs.stat(abs);
         const entry = { name: rel, size: st.size, mtime: st.mtimeMs, kind: fileKind(rel), viewable: viewableAs(rel) };
         if (entry.kind === 'splat' || entry.kind === 'lod') {
