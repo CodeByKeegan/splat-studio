@@ -50,6 +50,11 @@ const applyChannel = (c) => {
     // setting .channel also flips allowDowngrade=true, which is what we want when a
     // beta user (version x.y.z-beta.N) switches to stable (numerically "older").
     autoUpdater.channel = feedChannel(c);
+    // beta only: with allowPrerelease + an explicit channel, the GitHub provider only
+    // accepts feed tags whose prerelease id is alpha/beta or equals the channel — with
+    // channel 'latest' nothing ever matches ("No published versions on GitHub").
+    // Stable instead resolves releases/latest (which skips prereleases).
+    autoUpdater.allowPrerelease = c === 'beta';
 };
 
 const clearBar = () => { const w = getWin(); if (w && !w.isDestroyed()) w.setProgressBar(-1); };
@@ -62,8 +67,6 @@ const wire = () => {
     // and install on quit if the user never clicks Restart.
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    // Follow GitHub prerelease releases so beta.yml is discoverable on the beta channel.
-    autoUpdater.allowPrerelease = true;
     autoUpdater.logger = {
         info: (...a) => console.log('[update]', ...a),
         warn: (...a) => console.warn('[update]', ...a),
