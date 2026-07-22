@@ -333,6 +333,40 @@ try {
         }
     });
 
+    // a hostile .sog whose meta.json inflates far past its compressed size must be
+    // ignored (decompressed-size cap), never parsed or ballooned in memory
+    await check('files listing: crafted .sog decompression bomb yields no count, listing survives', async () => {
+        const zlib = await import('node:zlib');
+        const big = Buffer.concat([Buffer.from('{"count":42,"pad":"'), Buffer.alloc(64 * 1024 * 1024, 0x61), Buffer.from('"}')]);
+        const payload = zlib.deflateRawSync(big);
+        const name = Buffer.from('meta.json');
+        const local = Buffer.alloc(30);
+        local.writeUInt32LE(0x04034b50, 0);
+        local.writeUInt16LE(8, 8); // deflate
+        local.writeUInt16LE(name.length, 26);
+        const cd = Buffer.alloc(46);
+        cd.writeUInt32LE(0x02014b50, 0);
+        cd.writeUInt16LE(8, 10);
+        cd.writeUInt32LE(payload.length, 20);
+        cd.writeUInt32LE(big.length, 24);
+        cd.writeUInt16LE(name.length, 28);
+        cd.writeUInt32LE(0, 42); // local header at offset 0
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0);
+        eocd.writeUInt16LE(1, 8);
+        eocd.writeUInt16LE(1, 10);
+        eocd.writeUInt32LE(46 + name.length, 12);
+        eocd.writeUInt32LE(30 + name.length + payload.length, 16);
+        await fsp.writeFile(path.join(ws, PROJECT, 'bomb.sog'), Buffer.concat([local, name, payload, cd, name, eocd]));
+        const { status, json } = await api('GET', `/api/files?project=${PROJECT}`);
+        assert(status === 200, `status ${status}`);
+        const bomb = json.files.find((f) => f.name === 'bomb.sog');
+        assert(bomb, 'bomb.sog not listed');
+        assert(bomb.gaussians === undefined, `bomb count surfaced: ${bomb.gaussians}`);
+        const del = await api('DELETE', `/api/files/bomb.sog?project=${PROJECT}`);
+        assert(del.status === 200, `cleanup delete -> ${del.status}`);
+    });
+
     await check('trim (carve out) removes gaussians inside a box; remove+keep partitions', async () => {
         const keptOf = (log) => {
             const m = log.match(/kept ([\d,]+) of ([\d,]+)/);

@@ -222,7 +222,9 @@ const readSogCounts = async (abs) => {
             if (dataStart + compSize > size) return null;
             const data = await readRange(abs, dataStart, compSize);
             if (data.length !== compSize) return null;
-            const json = method === 0 ? data : method === 8 ? zlib.inflateRawSync(data) : null;
+            // cap the DECOMPRESSED size too — a real meta.json is a few KB
+            const json = method === 0 ? data
+                : method === 8 ? zlib.inflateRawSync(data, { maxOutputLength: 8 * 1024 * 1024 }) : null;
             if (!json) return null;
             const meta = JSON.parse(json.toString('utf8'));
             return Number.isFinite(meta?.count) ? { gaussians: meta.count } : null;
@@ -243,7 +245,7 @@ const readSplatCounts = async (abs) => {
 const readSpzCounts = async (abs) => {
     let head = await readRange(abs, 0, 16 * 1024);
     if (head.length >= 2 && head[0] === 0x1f && head[1] === 0x8b) {
-        head = zlib.gunzipSync(head, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+        head = zlib.gunzipSync(head, { finishFlush: zlib.constants.Z_SYNC_FLUSH, maxOutputLength: 16 * 1024 * 1024 });
     }
     if (head.length < 12 || head.readUInt32LE(0) !== 0x5053474e) return null;
     return { gaussians: head.readUInt32LE(8) };
