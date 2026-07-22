@@ -202,12 +202,68 @@ try {
         const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
         assert(meta.lodLevels === 3, `expected 3 LOD levels, got ${meta.lodLevels}`);
         assert(!fs.existsSync(path.join(projectDir, 'demo-room-lod-src')), 'temp decimate dir not cleaned up');
+        assert(!job.command.includes('--scratch-dir'), `--scratch-dir without scratchDir option: ${job.command}`);
     });
 
     // 3.0.0: --decimate writes a PLY only — decimating to a non-PLY format is rejected up front
     await check('decimate to a non-PLY format is rejected', async () => {
         const { status, json } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'sog', options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' } });
         assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);
+    });
+
+    // --scratch-dir: decimation spill location — emitted only when decimate is active
+    await check('decimate + scratchDir emits --scratch-dir', async () => {
+        const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'splat-studio-scratch-'));
+        try {
+            const job = await runJob('/api/convert', {
+                input: 'demo-room.ply', format: 'ply',
+                options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto', scratchDir: scratch }
+            });
+            assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+            assert(job.command.includes(`--scratch-dir ${scratch}`), `no --scratch-dir in cmd: ${job.command}`);
+        } finally {
+            await fsp.rm(scratch, { recursive: true, force: true });
+        }
+    });
+
+    await check('scratchDir without decimate is silently ignored (never emitted)', async () => {
+        // bogus value on purpose: without decimate it must not even be validated
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'csv',
+            options: { scratchDir: 'not-an-absolute-path' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(!job.command.includes('--scratch-dir'), `--scratch-dir leaked into cmd: ${job.command}`);
+    });
+
+    await check('decimate + invalid scratchDir is rejected up front', async () => {
+        const rel = await api('POST', '/api/convert', {
+            project: PROJECT, input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', scratchDir: 'relative/spill' }
+        });
+        assert(rel.status === 400 && /absolute/i.test(rel.json.error || ''), `relative path: ${rel.status} ${JSON.stringify(rel.json)}`);
+        const missing = await api('POST', '/api/convert', {
+            project: PROJECT, input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', scratchDir: path.join(os.tmpdir(), 'splat-studio-scratch-does-not-exist') }
+        });
+        assert(missing.status === 400 && /not found|existing directory/i.test(missing.json.error || ''), `missing dir: ${missing.status} ${JSON.stringify(missing.json)}`);
+    });
+
+    await check('LOD decimate mode: --scratch-dir on each pre-command, not the combine', async () => {
+        const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'splat-studio-scratch-'));
+        try {
+            const job = await runJob('/api/convert', {
+                input: 'demo-room.ply', format: 'lod',
+                options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 3, lodKeepPercent: 50, scratchDir: scratch }
+            });
+            assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+            const lines = job.command.split('\n');
+            assert(lines.length === 3, `expected 2 pre-commands + combine, got ${lines.length}: ${job.command}`);
+            assert(lines.slice(0, 2).every((l) => l.includes(`--scratch-dir ${scratch}`)), `pre-commands missing --scratch-dir: ${job.command}`);
+            assert(!lines[2].includes('--scratch-dir'), `combine step must not carry --scratch-dir: ${lines[2]}`);
+        } finally {
+            await fsp.rm(scratch, { recursive: true, force: true });
+        }
     });
 
     await check('summary (--stats) prints a stats table, writes nothing', async () => {

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -78,6 +78,19 @@ const pushDeviceFlag = (args, options) => {
     else if (options.device != null && options.device !== '' && options.device !== 'auto') {
         args.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
     }
+};
+
+// --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
+// pointing spill at another volume is the point. Absolute + existing dir only.
+// Callers consult it only when --decimate is active; blank/unset returns null.
+const scratchDirArg = (options) => {
+    const s = String(options.scratchDir ?? '').trim();
+    if (!s) return null;
+    if (!path.isAbsolute(s)) throw new Error(`Invalid scratch directory: ${s} (must be an absolute path)`);
+    let st = null;
+    try { st = statSync(s); } catch { /* missing */ }
+    if (!st?.isDirectory()) throw new Error(`Scratch directory not found: ${s} (must be an existing directory)`);
+    return s;
 };
 
 // -B/-S spatial crop, shared by convert and collision. They are per-input filter
@@ -183,6 +196,8 @@ const pushConvertActions = (args, options) => {
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
         // must be the final action; 3.0.0 also requires .ply output (guarded in buildConvertCommand)
         args.push('--decimate', d);
+        const sd = scratchDirArg(options);
+        if (sd) args.push('--scratch-dir', sd); // spill location (global option)
     }
 };
 
@@ -290,11 +305,13 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         const tmpDir = `${lodDir}-src`;
         const tmp = (level) => `${tmpDir}/l${level}.ply`;
 
+        const sd = scratchDirArg(options); // each pre-command decimates
         const preCommands = [];
         for (let level = 1; level < levels; level++) {
             const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
             const a = [cliPath, '--no-tty', '-w', '-q'];
             pushDeviceFlag(a, options);
+            if (sd) a.push('--scratch-dir', sd);
             a.push(input);
             if (options.filterNaN) a.push('-N');
             a.push('--decimate', `${pct}%`, tmp(level)); // decimate is the final action, .ply output

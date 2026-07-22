@@ -25,12 +25,14 @@ const cancelledIds = new Set();
 export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], preCommands = [], tempDirs = [], onOutputs, onStatus }) => {
     pruneFinished();
     const id = String(nextId++);
+    const cliLine = (a) => `splat-transform ${a.slice(1).join(' ')}`;
     const job = {
         id,
         title,
         status: 'running',
-        // non-CLI jobs (e.g. the PLY trim worker) pass a readable command label
-        command: command ?? `splat-transform ${args.slice(1).join(' ')}`,
+        // non-CLI jobs (e.g. the PLY trim worker) pass a readable command label;
+        // pre-steps (LOD pre-decimates) get their own line each
+        command: command ?? [...preCommands.map((p) => cliLine(p.args)), cliLine(args)].join('\n'),
         log: '',
         outputs: [],
         viewables: [],
