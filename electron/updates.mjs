@@ -59,6 +59,15 @@ const applyChannel = (c) => {
 
 const clearBar = () => { const w = getWin(); if (w && !w.isDestroyed()) w.setProgressBar(-1); };
 
+// push updater state to the renderer (Settings > Updates status line)
+let lastStatus = { phase: 'idle' };
+const sendStatus = (phase, extra = {}) => {
+    lastStatus = { phase, ...extra };
+    const w = getWin();
+    if (w && !w.isDestroyed()) w.webContents.send('updates:status', lastStatus);
+};
+export const getStatus = () => lastStatus;
+
 const wire = () => {
     if (wired) return;
     wired = true;
@@ -76,6 +85,7 @@ const wire = () => {
 
     autoUpdater.on('update-available', (info) => {
         const v = info?.version;
+        sendStatus('downloading', { version: v, percent: 0 });
         // With autoDownload on we don't prompt here; the download starts automatically
         // and we prompt once it's ready. Only surface a note for a truly manual check.
         if (manualCheck) {
@@ -86,6 +96,7 @@ const wire = () => {
     });
 
     autoUpdater.on('update-not-available', () => {
+        sendStatus('up-to-date', { version: app.getVersion(), channel: getChannel() });
         if (manualCheck) {
             dialog.showMessageBox(getWin() ?? undefined, {
                 type: 'info', title: 'Up to date',
@@ -96,6 +107,7 @@ const wire = () => {
     });
 
     autoUpdater.on('download-progress', (p) => {
+        sendStatus('downloading', { version: lastPromptedVersion, percent: p?.percent ?? 0 });
         const w = getWin();
         if (w && !w.isDestroyed()) w.setProgressBar(Math.max(0, Math.min(1, (p?.percent ?? 0) / 100)));
     });
@@ -103,6 +115,7 @@ const wire = () => {
     autoUpdater.on('update-downloaded', async (info) => {
         clearBar();
         const v = info?.version;
+        sendStatus('ready', { version: v });
         // one prompt, only when the bits are ready (skip re-nagging the same version on periodic ticks)
         if (!manualCheck && v && v === lastInstalledPromptFor) return;
         lastInstalledPromptFor = v;
@@ -118,6 +131,7 @@ const wire = () => {
 
     autoUpdater.on('error', (err) => {
         clearBar();
+        sendStatus('error', { message: String(err?.message || err) });
         if (manualCheck) dialog.showErrorBox('Update check failed', String(err?.message || err));
         manualCheck = false;
         console.error('[update] error:', err?.message || err);
@@ -133,6 +147,7 @@ const wire = () => {
 async function runCheck({ silent }) {
     manualCheck = !silent;
     applyChannel(getChannel());
+    sendStatus('checking', { channel: getChannel() });
     checking = true;
     try { await autoUpdater.checkForUpdates(); }
     catch { /* 'error' event handles it */ }

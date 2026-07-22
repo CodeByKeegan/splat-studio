@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, dialog, shell, ipcMain } from 'electron';
-import { checkForUpdates, getChannel, setChannel } from './updates.mjs';
+import { checkForUpdates, getChannel, getStatus, setChannel } from './updates.mjs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import http from 'node:http';
@@ -179,6 +179,7 @@ ipcMain.handle('workspace:open', () => shell.openPath(workspace));
 ipcMain.handle('updates:check', () => checkForUpdates(win, { silent: false }));
 ipcMain.handle('updates:get-channel', () => getChannel());
 ipcMain.handle('updates:set-channel', (_e, channel) => setChannel(channel, win));
+ipcMain.handle('updates:get-status', () => getStatus());
 
 // File > Change Workspace Folder… delegates to the renderer's single flow
 const chooseWorkspace = () => win?.webContents.send('menu:choose-workspace');
