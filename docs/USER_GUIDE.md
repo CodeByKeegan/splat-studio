@@ -518,10 +518,14 @@ portable exe) and publishes it to
 [AUTOMATION.md](AUTOMATION.md) for the release pipeline.
 
 The installed app **updates itself**: on launch (and every few hours) it checks for a
-newer release and, if one exists, offers to **download** it. The download runs in the
-background — progress shows on the taskbar icon — and when it's ready the app offers to
-**restart and install**, or installs automatically the next time you quit. You can
-trigger a check any time via **Help → Check for Updates…**. (The NSIS installer build
+newer release. With **Download updates automatically** on (Settings ▸ Updates, the
+default), a found update starts downloading right away; turned off, the status pill in
+the bottom-right corner (and the settings page) show a **Download** button instead.
+The pill tracks the whole flow — checking, download progress, "restart to update" —
+and clicking it opens Settings ▸ Updates. Downloads run in the background (progress
+also shows on the taskbar icon); when ready the app offers to **restart and install**,
+or installs automatically the next time you quit. You can trigger a check any time via
+**Help → Check for Updates…** or the settings page. (The NSIS installer build
 self-updates; the standalone portable exe does not.)
 
 ---

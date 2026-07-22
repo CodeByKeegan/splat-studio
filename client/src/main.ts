@@ -2302,8 +2302,8 @@ initThemeSettings({ promptText, showToast });
 // the viewport toolbar's ⚙ opens the settings dialog
 $<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 
-// ---------- Settings ▸ Updates (channel switch + manual check) ----------
-// Only meaningful in the packaged desktop app; drop the page in the browser dev build.
+// ---------- Settings ▸ Updates + bottom-right status widget ----------
+// Only meaningful in the packaged desktop app; drop both in the browser dev build.
 void (async () => {
     interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
     const bridge = (window as unknown as { desktop?: {
@@ -2312,24 +2312,37 @@ void (async () => {
         setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
         getUpdateStatus?: () => Promise<UpdateStatus>;
         onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
+        downloadUpdate?: () => Promise<void>;
+        getUpdateAuto?: () => Promise<boolean>;
+        setUpdateAuto?: (on: boolean) => Promise<boolean>;
     } }).desktop;
     const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
     const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
-    if (!bridge?.getUpdateChannel) { navItem?.remove(); page?.remove(); return; }
+    const widget = $<HTMLDivElement>('update-widget');
+    if (!bridge?.getUpdateChannel) { navItem?.remove(); page?.remove(); widget.remove(); return; }
 
     const channelSel = $<HTMLSelectElement>('update-channel');
     const checkBtn = $<HTMLButtonElement>('check-updates');
+    const downloadBtn = $<HTMLButtonElement>('download-update');
+    const autoChk = $<HTMLInputElement>('update-auto');
     const statusEl = $<HTMLSpanElement>('update-status');
     const statusText = $<HTMLSpanElement>('update-status-text');
+    const widgetText = $<HTMLSpanElement>('update-widget-text');
+    const widgetBar = $<HTMLSpanElement>('update-widget-bar');
+    const widgetFill = $<HTMLSpanElement>('update-widget-fill');
+    const widgetDownload = $<HTMLButtonElement>('update-widget-download');
     try { channelSel.value = await bridge.getUpdateChannel(); } catch { /* keep default */ }
+    try { autoChk.checked = await bridge.getUpdateAuto?.() ?? true; } catch { /* keep default */ }
 
-    // status line mirrors main-process updater state; checks/downloads keep running
-    // in the background even with the settings dialog closed
+    // settings status line + bottom-right widget both mirror main-process updater
+    // state; checks/downloads keep running with the settings dialog closed
     const showStatus = (s: UpdateStatus): void => {
         const busy = s.phase === 'checking' || s.phase === 'downloading';
+        const pct = Math.round(s.percent ?? 0);
         const text =
             s.phase === 'checking' ? 'Checking for updates…' :
-            s.phase === 'downloading' ? `Downloading ${s.version ?? 'update'}… ${Math.round(s.percent ?? 0)}%` :
+            s.phase === 'available' ? `${s.version} available` :
+            s.phase === 'downloading' ? `Downloading ${s.version ?? 'update'}… ${pct}%` :
             s.phase === 'ready' ? `${s.version} downloaded — restart to install` :
             s.phase === 'up-to-date' ? `Up to date (${s.version}, ${s.channel})` :
             s.phase === 'error' ? 'Check failed — see error dialog' : '';
@@ -2339,12 +2352,33 @@ void (async () => {
         statusText.textContent = text;
         checkBtn.disabled = busy;
         channelSel.disabled = busy;
+        downloadBtn.classList.toggle('hidden', s.phase !== 'available');
+
+        const widgetLabel =
+            s.phase === 'checking' ? 'Checking for updates…' :
+            s.phase === 'available' ? `⬇ ${s.version} available` :
+            s.phase === 'downloading' ? `${pct}%` :
+            s.phase === 'ready' ? `↻ Restart to update` :
+            s.phase === 'up-to-date' ? '✓ Up to date' :
+            s.phase === 'error' ? '⚠ Update failed' : '';
+        widget.classList.toggle('hidden', !widgetLabel);
+        widget.classList.toggle('busy', s.phase === 'checking');
+        widget.classList.toggle('error', s.phase === 'error');
+        widgetText.textContent = widgetLabel;
+        widgetBar.classList.toggle('hidden', s.phase !== 'downloading');
+        widgetFill.style.width = `${pct}%`;
+        widgetDownload.classList.toggle('hidden', s.phase !== 'available');
     };
     bridge.onUpdateStatus?.(showStatus);
     try { showStatus(await bridge.getUpdateStatus?.() ?? { phase: 'idle' }); } catch { /* keep hidden */ }
 
     channelSel.addEventListener('change', () => { void bridge.setUpdateChannel?.(channelSel.value as 'stable' | 'beta'); });
     checkBtn.addEventListener('click', () => { void bridge.checkForUpdates?.(); });
+    autoChk.addEventListener('change', () => { void bridge.setUpdateAuto?.(autoChk.checked); });
+    downloadBtn.addEventListener('click', () => { void bridge.downloadUpdate?.(); });
+    widgetDownload.addEventListener('click', () => { void bridge.downloadUpdate?.(); });
+    // the widget body always leads to the settings page, whatever the state
+    $<HTMLButtonElement>('update-widget-main').addEventListener('click', () => openSettings('updates'));
 })();
 
 // ---------- per-workspace layout persistence ----------

@@ -243,7 +243,9 @@ button.primary:focus-visible { outline-color: var(--text); }
     font-size: var(--fs-xs);
     color: var(--text-dim);
     align-self: center;
+    white-space: nowrap;
 }
+#download-update { width: auto; margin-top: 0; }
 .update-status .spinner { display: none; }
 .update-status.busy .spinner {
     display: inline-block;
@@ -256,6 +258,66 @@ button.primary:focus-visible { outline-color: var(--text); }
 }
 .update-status.error { color: var(--error); }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* bottom-right update pill (VS Code-style); sits under modals, above the dock */
+.update-widget {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 900;
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--overlay-strong);
+    box-shadow: 0 4px 16px var(--shadow-color);
+    overflow: hidden;
+}
+.update-widget-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: var(--fs-xs);
+    padding: 4px 9px;
+    cursor: pointer;
+}
+.update-widget-main:hover { background: var(--hover); color: var(--text); }
+.update-widget.error .update-widget-main { color: var(--error); }
+.update-widget .spinner { display: none; }
+.update-widget.busy .spinner {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+.update-widget-bar {
+    display: inline-block;
+    width: 90px;
+    height: 4px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    overflow: hidden;
+}
+.update-widget-bar span { display: block; height: 100%; width: 0; background: var(--accent); }
+.update-widget-download {
+    border: none;
+    border-left: 1px solid var(--border);
+    background: var(--accent);
+    color: var(--on-accent);
+    font: inherit;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+}
+.update-widget-download:hover { filter: brightness(1.12); }
 
 .about-list { display: flex; flex-direction: column; gap: 5px; margin-top: 3px; }
 .about-row { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-sm); }
