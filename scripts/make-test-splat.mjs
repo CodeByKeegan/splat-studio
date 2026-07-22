@@ -1,6 +1,6 @@
-// Generates workspace/demo-room.ply — a synthetic gaussian-splat scan of a small
-// room (floor, four walls, a pillar and a table) for exercising the conversion and
-// collision pipeline without needing a real capture.
+// Generates workspace/demo-room.ply (or the path given as argv[2]) — a synthetic
+// gaussian-splat scan of a small room (floor, four walls, a pillar and a table) for
+// exercising the conversion and collision pipeline without needing a real capture.
 //
 // Coordinates follow the usual 3DGS PLY convention (Y-down), which is why viewers
 // flip splats 180° about X. "Up" in this file is -Y: the floor sits at y=0 and the
@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outPath = path.join(rootDir, 'workspace', 'demo-room.ply');
+const outPath = process.argv[2] ? path.resolve(process.argv[2]) : path.join(rootDir, 'workspace', 'demo-room.ply');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
 const SH_C0 = 0.28209479177387814;
