@@ -6,11 +6,44 @@ export interface FileEntry {
     mtime: number;
     kind: 'splat' | 'lod' | 'voxel' | 'collision' | 'glb' | 'export' | 'generator' | 'other';
     viewable: ViewKind | null;
+    /** gaussian count from a cheap header/metadata read; absent when unknown */
+    gaussians?: number;
+    /** kind 'lod' only: per-LOD-level gaussian counts */
+    lodCounts?: number[];
 }
 
 export interface Viewable {
     name: string;
     as: ViewKind;
+}
+
+/** One level of an LOD bundle's build recipe (environment shell = level -1). */
+export interface LodBuildLevel {
+    level: number;
+    source: string;
+    gaussians?: number;
+    keepPercent?: number;
+    environment?: boolean;
+}
+
+/** <lodDir>/build-meta.json — the recipe a streamed-LOD bundle was baked from. */
+export interface LodBuildMeta {
+    version: number;
+    createdAt: string;
+    generator: { app: string | null; splatTransform: string | null };
+    mode: 'combine' | 'decimate';
+    input: string;
+    levels: LodBuildLevel[];
+    settings: {
+        iterations?: number;
+        maxWorkers?: number;
+        device?: string | number;
+        chunkCount?: number;
+        chunkExtent?: number;
+        filterNaN?: boolean;
+        lodLevels?: number;
+        keepPercent?: number;
+    };
 }
 
 /** A live slider a .mjs generator advertises via its static `Generator.params`. */

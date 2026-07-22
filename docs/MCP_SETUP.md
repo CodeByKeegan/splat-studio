@@ -139,7 +139,7 @@ return `no-editor`.
 | Group | Tools |
 |---|---|
 | **Workspace / files** | `workspace` (get/set) · `projects` (list/create) · `files` (list/delete) · `import_file` |
-| **Analysis / jobs** | `inspect` (stats/generator_params/gpus/health/versions/editor_status) · `get_summary` · `jobs` (get/list/cancel/wait) · `suggest_lod_settings` |
+| **Analysis / jobs** | `inspect` (stats/generator_params/lod_recipe/gpus/health/versions/editor_status) · `get_summary` · `jobs` (get/list/cancel/wait) · `suggest_lod_settings` |
 | **Pipeline (jobs)** | `convert` · `build_lod` · `render_image` · `generate_collision` · `trim_region` |
 | **Editor — viewport** | `camera` (get/set/mode/frame) · `viewport_screenshot` · `viewport_click` · `load_into_viewport` · `select_item` · `get_editor_state` |
 | **Editor — scene/tools/dock** | `set_view_option` · `measure` · `set_origin` · `set_region` · `render_pose` · `set_collision_gizmo` · `history` (undo/redo) · `panel` · `layout` |

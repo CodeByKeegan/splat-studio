@@ -72,12 +72,18 @@ const vec3Arg = (v, name) => {
 // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus). Shared by the
 // main command and the LOD decimate pre-commands, which spawn their own CLI process
 // and must honor the same device choice (--decimate defaults to trying GPU init
-// otherwise, even though it runs fine on CPU).
+// otherwise, even though it runs fine on CPU). Returns the effective device.
 const pushDeviceFlag = (args, options) => {
-    if (options.device === 'cpu') args.push('-g', 'cpu');
-    else if (options.device != null && options.device !== '' && options.device !== 'auto') {
-        args.push('-g', String(Math.round(num(options.device, 0, 0, 64))));
+    if (options.device === 'cpu') {
+        args.push('-g', 'cpu');
+        return 'cpu';
     }
+    if (options.device != null && options.device !== '' && options.device !== 'auto') {
+        const idx = Math.round(num(options.device, 0, 0, 64));
+        args.push('-g', String(idx));
+        return idx;
+    }
+    return 'auto';
 };
 
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
@@ -223,12 +229,15 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
 
     const args = [cliPath, '--no-tty', '-w'];
     if (options.verbose) args.push('--verbose', '--memory'); // diagnostics
-    pushDeviceFlag(args, options);
+    const device = pushDeviceFlag(args, options);
+    let iterations, maxWorkers;
     if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
-        args.push('-i', String(Math.round(num(options.iterations, 10, 1, 100))));
+        iterations = Math.round(num(options.iterations, 10, 1, 100));
+        args.push('-i', String(iterations));
         // SOG encoder worker threads (--max-workers); 0 = inline/serial
         if (options.maxWorkers != null && options.maxWorkers !== '') {
-            args.push('--max-workers', String(Math.round(num(options.maxWorkers, 4, 0, 64))));
+            maxWorkers = Math.round(num(options.maxWorkers, 4, 0, 64));
+            args.push('--max-workers', String(maxWorkers));
         }
     }
     if (format === 'html') {
@@ -248,9 +257,15 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     }
 
     if (format === 'lod') {
-        args.push('--lod-chunk-count', String(Math.round(num(options.lodChunkCount, 512, 16, 8192))));
+        const chunkCount = Math.round(num(options.lodChunkCount, 512, 16, 8192));
         // the CLI parses --lod-chunk-extent with parseInteger; fractional input must be rounded
-        args.push('--lod-chunk-extent', String(Math.round(num(options.lodChunkExtent, 16, 1, 1000))));
+        const chunkExtent = Math.round(num(options.lodChunkExtent, 16, 1, 1000));
+        args.push('--lod-chunk-count', String(chunkCount));
+        args.push('--lod-chunk-extent', String(chunkExtent));
+        const lodDir = output.split('/')[0];
+        // build recipe skeleton — gaussians/createdAt/generator fill in at write time
+        const settings = { iterations, maxWorkers, device, chunkCount, chunkExtent, filterNaN: !!options.filterNaN };
+        const buildMetaName = `${lodDir}/build-meta.json`;
 
         const rawFiles = Array.isArray(options.lodFiles) ? options.lodFiles : null;
         const rawEnv = Array.isArray(options.lodEnvFlags) ? options.lodEnvFlags : [];
@@ -277,21 +292,31 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             args.push(input);
             if (options.filterNaN) args.push('-N');
             args.push('-l', '0');
+            const metaLevels = [{ level: 0, source: input }];
+            const envLevels = [];
             let nextLevel = 1;
             for (const { file, env } of pairs) {
                 args.push(file);
                 if (options.filterNaN) args.push('-N');
-                args.push('-l', env ? '-1' : String(nextLevel++));
+                if (env) {
+                    args.push('-l', '-1');
+                    envLevels.push({ level: -1, source: file, environment: true });
+                } else {
+                    args.push('-l', String(nextLevel));
+                    metaLevels.push({ level: nextLevel++, source: file });
+                }
             }
             args.push(output);
-            const envCount = pairs.filter((p) => p.env).length;
             return {
-                title: `Streamed LOD (combine ${pairs.length + 1} files${envCount ? ', +environment' : ''}) → ${output}`,
+                title: `Streamed LOD (combine ${pairs.length + 1} files${envLevels.length ? ', +environment' : ''}) → ${output}`,
                 args,
                 expectedOutputs: [output],
                 viewables: viewableOutputs([output]),
                 // chunk folder names vary with settings; clear stale ones on re-run
-                cleanDirs: [output.split('/')[0]]
+                cleanDirs: [lodDir],
+                // environment rows sort last
+                buildMeta: { version: 1, mode: 'combine', input, levels: [...metaLevels, ...envLevels], settings },
+                buildMetaName
             };
         }
 
@@ -301,14 +326,17 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         // (level 0) with those pre-authored levels in one invocation.
         const levels = Math.round(num(options.lodLevels, 3, 1, 8));
         const keep = num(options.lodKeepPercent, 50, 5, 95);
-        const lodDir = output.split('/')[0];
         const tmpDir = `${lodDir}-src`;
         const tmp = (level) => `${tmpDir}/l${level}.ply`;
 
         const sd = scratchDirArg(options); // each pre-command decimates
+        // provenance is the original input at each level's kept percentage — the
+        // l<n>.ply temps are plumbing
+        const metaLevels = [{ level: 0, source: input, keepPercent: 100 }];
         const preCommands = [];
         for (let level = 1; level < levels; level++) {
             const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
+            metaLevels.push({ level, source: input, keepPercent: pct });
             const a = [cliPath, '--no-tty', '-w', '-q'];
             pushDeviceFlag(a, options);
             if (sd) a.push('--scratch-dir', sd);
@@ -332,7 +360,15 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             // clear stale chunk dirs AND stale temps before the run
             cleanDirs: [lodDir, tmpDir],
             // remove the temp .ply dir after the job finishes
-            tempDirs: [tmpDir]
+            tempDirs: [tmpDir],
+            buildMeta: {
+                version: 1,
+                mode: 'decimate',
+                input,
+                levels: metaLevels,
+                settings: { ...settings, lodLevels: levels, keepPercent: keep }
+            },
+            buildMetaName
         };
     }
 

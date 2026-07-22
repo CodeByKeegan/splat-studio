@@ -22,7 +22,7 @@ const pruneFinished = () => {
 
 const cancelledIds = new Set();
 
-export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], preCommands = [], tempDirs = [], onOutputs, onStatus }) => {
+export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], preCommands = [], tempDirs = [], finalize, onOutputs, onStatus }) => {
     pruneFinished();
     const id = String(nextId++);
     const cliLine = (a) => `splat-transform ${a.slice(1).join(' ')}`;
@@ -109,6 +109,10 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         }
         if (cancelledIds.has(id)) return;
         await runStep(args);
+        // post-success hook before 'done'; a failure warns but doesn't fail the job
+        if (finalize && !cancelledIds.has(id)) {
+            try { await finalize(job); } catch (err) { append(`\nWarning: finalize failed: ${err?.message ?? err}\n`); }
+        }
     })().then(() => finish('done')).catch((e) => {
         if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
         else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;

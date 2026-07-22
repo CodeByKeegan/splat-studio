@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { apiGet, apiPost, qs } from '../http.mjs';
 import { headless, sleep, RO, SAFE } from './_wrap.mjs';
-import { ERR, okResult, failResult, mapHttpError, classifyJobFailure } from '../errors.mjs';
+import { ERR, HttpError, okResult, failResult, mapHttpError, classifyJobFailure } from '../errors.mjs';
 
 const POLL_MS = 700;
 
@@ -10,12 +10,12 @@ export function register(server) {
     server.registerTool('inspect', {
         title: 'Inspect',
         description:
-            'Read quick, synchronous info. target="stats" -> gaussian count + x/y/z extents for one splat (needs project+input); "generator_params" -> a .mjs generator\'s advertised params (needs project+input); "gpus" -> GPU adapters [{index,name}]; "health" -> server + CLI status; "versions" -> app + splat-transform versions; "editor_status" -> {connected, controlEnabled, ...} — probe the live-editor bridge WITHOUT consent (use before editor tools).',
+            'Read quick, synchronous info. target="stats" -> gaussian count + x/y/z extents for one splat (needs project+input); "generator_params" -> a .mjs generator\'s advertised params (needs project+input); "lod_recipe" -> an LOD bundle\'s build-meta.json recipe — sources, env selection, effective settings, per-level counts (needs project+input = the bundle\'s lod-meta.json path or folder); "gpus" -> GPU adapters [{index,name}]; "health" -> server + CLI status; "versions" -> app + splat-transform versions; "editor_status" -> {connected, controlEnabled, ...} — probe the live-editor bridge WITHOUT consent (use before editor tools).',
         annotations: RO,
         inputSchema: {
-            target: z.enum(['stats', 'generator_params', 'gpus', 'health', 'versions', 'editor_status']).describe('what to read'),
-            project: z.string().optional().describe('Project name (required for stats / generator_params).'),
-            input: z.string().optional().describe('Project-relative splat path (required for stats / generator_params).')
+            target: z.enum(['stats', 'generator_params', 'lod_recipe', 'gpus', 'health', 'versions', 'editor_status']).describe('what to read'),
+            project: z.string().optional().describe('Project name (required for stats / generator_params / lod_recipe).'),
+            input: z.string().optional().describe('Project-relative splat path (required for stats / generator_params / lod_recipe).')
         }
     }, headless(async ({ target, project, input }) => {
         switch (target) {
@@ -27,6 +27,20 @@ export function register(server) {
             case 'generator_params':
                 if (!project || !input) throw new Error('generator_params needs project and input');
                 return await apiGet(`/api/generator-params${qs({ project, input })}`);
+            case 'lod_recipe': {
+                if (!project || !input) throw new Error('lod_recipe needs project and input');
+                // bundle folder or its lod-meta.json -> sibling build-meta.json via the static /files route
+                const dir = input.replace(/\/?(lod|build)-meta\.json$/i, '').replace(/\/+$/, '');
+                const segs = [project, ...(dir ? dir.split('/') : []), 'build-meta.json'];
+                try {
+                    return await apiGet(`/files/${segs.map(encodeURIComponent).join('/')}`);
+                } catch (e) {
+                    if (e instanceof HttpError && e.status === 404) {
+                        throw new Error('no build recipe: build-meta.json not found (the bundle predates this feature, or the path is not an LOD bundle)');
+                    }
+                    throw e;
+                }
+            }
             case 'gpus':
                 return await apiGet('/api/gpus');
             case 'health':

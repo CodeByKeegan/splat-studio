@@ -86,7 +86,11 @@ To add splats:
 1. **Drop** files anywhere in the window, or click **browse**. Supported inputs:
    `.ply`, `.compressed.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`, `.lcc`, `.lcc2`,
    `meta.json`, and `.mjs` generators.
-2. The **file list** shows every source in the project. Click **view** to display a
+2. The **file list** shows every source in the project. Splat rows also show the
+   **gaussian count**, read straight from the file's own metadata — instant, no analysis
+   run. Hover the count for the exact number; on LOD bundles it breaks down per level.
+   (Formats that don't store a readable count — `.ksplat`, `.lcc` — just omit it.)
+   Click **view** to display a
    splat (or collision mesh / voxel octree) in the viewport, or **✕** to delete it.
 3. **Right-click any file** — or click its **⋯** button — for an actions menu of
    everything you can do with that file. The menu adapts to the file's type:
@@ -218,6 +222,12 @@ folders that the engine streams by camera distance, for scenes too big to load a
    of culling it by distance. One environment layer per bake; Combine mode only.
 5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
    **Generate streamed LOD**.
+
+Every bake also writes a `build-meta.json` next to the bundle's `lod-meta.json` — the
+recipe it was built from: the source file per level, the environment selection, the
+effective settings, and per-level gaussian counts. Pick **Build info** from the bundle's
+**⋯** menu in the Files panel for a quick summary (bundles baked before this file
+existed report "No build recipe").
 
 > **⚡ Auto-tune from splat stats:** the **Auto-tune** button reads each source's
 > gaussian count and world-space extents (a quick CPU summary, cached) and fills the

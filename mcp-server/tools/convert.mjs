@@ -73,7 +73,7 @@ export function register(server) {
     server.registerTool('build_lod', {
         title: 'Build streamed LOD',
         description:
-            'Bake a streamed multi-LOD SOG (lod-meta.json + per-LOD chunk folders). mode="decimate" auto-decimates one input into lodLevels; mode="combine" uses lodFiles as explicit lighter levels, optionally tagging one as an always-visible environment shell (env flag). Returns {jobId}.',
+            'Bake a streamed multi-LOD SOG (lod-meta.json + per-LOD chunk folders). mode="decimate" auto-decimates one input into lodLevels; mode="combine" uses lodFiles as explicit lighter levels, optionally tagging one as an always-visible environment shell (env flag). Also writes build-meta.json inside the bundle — the reproducible recipe (source per level, env selection, effective settings, per-level gaussian counts); read it back with inspect(target="lod_recipe"). Returns {jobId}.',
         annotations: SAFE,
         inputSchema: {
             project: z.string(),
