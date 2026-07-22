@@ -103,6 +103,12 @@ const fmtSize = (bytes: number): string => {
     return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 };
 
+const fmtCount = (n: number): string => {
+    if (n < 1000) return String(n);
+    if (n < 1e6) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
+    return `${(n / 1e6).toFixed(2).replace(/\.?0+$/, '')}M`;
+};
+
 // ---------- persisted form state ----------
 const FORM_KEY = 'splat-studio.form';
 // selects whose options come from the workspace — restored after the file list loads
@@ -260,6 +266,19 @@ const refreshFiles = async (highlight?: Set<string>) => {
             name.appendChild(base);
         }
         li.appendChild(name);
+
+        // always appended (empty when unknown) so the grid stays aligned
+        const count = document.createElement('span');
+        count.className = 'count';
+        if (typeof f.gaussians === 'number') {
+            count.textContent = fmtCount(f.gaussians);
+            let tip = `${f.gaussians.toLocaleString()} gaussians`;
+            if (f.kind === 'lod' && f.lodCounts?.length) {
+                tip += `\n${f.lodCounts.map((c, i) => `LOD ${i}: ${c.toLocaleString()}`).join(' · ')}`;
+            }
+            count.title = tip;
+        }
+        li.appendChild(count);
 
         const size = document.createElement('span');
         size.className = 'size';
@@ -1215,7 +1234,6 @@ const MC_VERTEX_CAP = 16_777_216;
 // risk proxy: in-box gaussians scaled by (0.05/voxelSize)^2 (finer voxels => more MC vertices).
 // calibrated against the known failure — the whole 12.2M-gaussian Acropolis at 0.05 m overflowed.
 let regionRiskLevel: 'ok' | 'warn' | 'danger' = 'ok';
-const fmtCount = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
 const regionVoxelSize = () => Math.max(Number($<HTMLInputElement>('voxel-size').value) || 0.05, 0.001);
 const updateRegionEstimate = () => {
     const chip = $('region-estimate'), actions = $('region-estimate-actions');

@@ -284,7 +284,7 @@ Chain everything headlessly — e.g. "make every raw scan web-ready":
 ```
 workspace(action: "get")                              → { path, projects }
 for each project:
-    files(action: "list", project: P)                 → pick kind "splat" inputs
+    files(action: "list", project: P)                 → pick kind "splat" inputs (most carry gaussians; absent when no cheap read exists, e.g. .ksplat/.lcc — fall back to inspect stats)
     inspect(target: "stats", project: P, input: F)
     if count > 2M:  suggest_lod_settings → build_lod(mode: "decimate", ...)
     else:           convert(format: "sog")

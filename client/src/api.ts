@@ -6,6 +6,10 @@ export interface FileEntry {
     mtime: number;
     kind: 'splat' | 'lod' | 'voxel' | 'collision' | 'glb' | 'export' | 'generator' | 'other';
     viewable: ViewKind | null;
+    /** gaussian count from a cheap header/metadata read; absent when unknown */
+    gaussians?: number;
+    /** kind 'lod' only: per-LOD-level gaussian counts */
+    lodCounts?: number[];
 }
 
 export interface Viewable {
