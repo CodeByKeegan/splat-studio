@@ -324,19 +324,22 @@ app.get('/api/health', (req, res) => {
     res.json({ ok: true, cli: existsSync(cliPath) });
 });
 
-// component versions for the Settings/About section. PlayCanvas is a build-time
-// dep (bundled into the client; the packaged app prunes it from node_modules),
-// so the client reads its version from the engine; these two are always present.
-app.get('/api/versions', async (req, res) => {
+// component versions for the Settings/About section and the LOD build recipe.
+// PlayCanvas is a build-time dep (bundled into the client; the packaged app
+// prunes it from node_modules), so the client reads its version from the
+// engine; these two are always present.
+const componentVersions = async () => {
     const ver = async (rel) => {
         try { return JSON.parse(await fs.readFile(path.join(rootDir, rel), 'utf8')).version || null; }
         catch { return null; }
     };
-    res.json({
+    return {
         app: await ver('package.json'),
         splatTransform: await ver('node_modules/@playcanvas/splat-transform/package.json')
-    });
-});
+    };
+};
+
+app.get('/api/versions', async (req, res) => res.json(await componentVersions()));
 
 // re-point the whole app at a different workspace folder, live (no restart) — the
 // derived layout/static paths recompute here so every subsequent request sees it
@@ -480,6 +483,50 @@ app.delete(/^\/api\/files\/(.+)$/, async (req, res) => {
     res.json({ ok: true });
 });
 
+// ---------- LOD build recipe ----------
+// Persist the build recipe as <lodDir>/build-meta.json after the bake succeeds,
+// before the job flips to 'done'. Per-level gaussians come from the CLI's
+// lod-meta.json (counts[level] covers structural levels only; the environment
+// shell's count lives in its own SOG meta, referenced by meta.environment).
+// An unreadable lod-meta.json just drops the counts — the recipe still writes.
+const writeBuildMeta = async (projectDir, { buildMeta, buildMetaName }) => {
+    if (!isSafeRelPath(buildMetaName)) throw new Error(`Invalid build-meta path: ${buildMetaName}`);
+    const target = toAbs(projectDir, buildMetaName);
+    const lodDir = path.dirname(target);
+    const levels = buildMeta.levels.map((l) => ({ ...l }));
+    try {
+        const lodMeta = JSON.parse(await fs.readFile(path.join(lodDir, 'lod-meta.json'), 'utf8'));
+        for (const l of levels) {
+            if (!l.environment && Number.isFinite(lodMeta.counts?.[l.level])) l.gaussians = lodMeta.counts[l.level];
+        }
+        // multiple env inputs merge into one shell — only a single row is attributable
+        const envRows = levels.filter((l) => l.environment);
+        if (envRows.length === 1 && typeof lodMeta.environment === 'string' && isSafeRelPath(lodMeta.environment)) {
+            try {
+                const envMeta = JSON.parse(await fs.readFile(path.join(lodDir, ...lodMeta.environment.split('/')), 'utf8'));
+                if (Number.isFinite(envMeta.count)) envRows[0].gaussians = envMeta.count;
+            } catch { /* env meta unreadable — omit its count */ }
+        }
+    } catch { /* lod-meta unreadable — write the recipe without counts */ }
+    const recipe = {
+        version: buildMeta.version,
+        createdAt: new Date().toISOString(),
+        generator: await componentVersions(),
+        mode: buildMeta.mode,
+        input: buildMeta.input,
+        levels,
+        settings: buildMeta.settings
+    };
+    const tmp = `${target}.${Date.now().toString(36)}.tmp`;
+    try {
+        await fs.writeFile(tmp, JSON.stringify(recipe, null, 2)); // tmp + rename = atomic
+        await fs.rename(tmp, target);
+    } catch (err) {
+        await fs.rm(tmp, { force: true }).catch(() => {});
+        throw err;
+    }
+};
+
 const startJob = async (res, build, payload) => {
     try {
         const projectDir = resolveProject(payload.project);
@@ -503,6 +550,8 @@ const startJob = async (res, build, payload) => {
         const job = createJob({
             ...cmd,
             cwd: projectDir,
+            // persist the LOD build recipe into the bundle before the job reads 'done'
+            finalize: cmd.buildMeta && cmd.buildMetaName ? () => writeBuildMeta(projectDir, cmd) : undefined,
             onOutputs: recordOutputs,
             // live reflection: tell the editor when a job moves, and that the
             // workspace changed once outputs land (so the GUI refreshes its files)

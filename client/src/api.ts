@@ -17,6 +17,35 @@ export interface Viewable {
     as: ViewKind;
 }
 
+/** One level of an LOD bundle's build recipe (environment shell = level -1). */
+export interface LodBuildLevel {
+    level: number;
+    source: string;
+    gaussians?: number;
+    keepPercent?: number;
+    environment?: boolean;
+}
+
+/** <lodDir>/build-meta.json — the recipe a streamed-LOD bundle was baked from. */
+export interface LodBuildMeta {
+    version: number;
+    createdAt: string;
+    generator: { app: string | null; splatTransform: string | null };
+    mode: 'combine' | 'decimate';
+    input: string;
+    levels: LodBuildLevel[];
+    settings: {
+        iterations?: number;
+        maxWorkers?: number;
+        device?: string | number;
+        chunkCount?: number;
+        chunkExtent?: number;
+        filterNaN?: boolean;
+        lodLevels?: number;
+        keepPercent?: number;
+    };
+}
+
 /** A live slider a .mjs generator advertises via its static `Generator.params`. */
 export interface GenParam {
     name: string;

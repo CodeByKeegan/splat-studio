@@ -88,7 +88,11 @@ jobs(action: "wait", id: ..., timeout_ms: 1800000)                (big scenes ta
 ```
 
 Output is a `lod-meta.json` bundle folder. Deleting that entry point via
-`files(action: "delete")` removes the whole folder.
+`files(action: "delete")` removes the whole folder. The bake also writes a
+`build-meta.json` recipe into the bundle — read it back later with
+`inspect(target: "lod_recipe", project, input: <the lod-meta.json path>)` to see the
+source per level, environment selection, effective settings, and per-level gaussian
+counts (bundles baked before this feature return `not-found`).
 
 ### 4. Collision mesh for a game engine
 
