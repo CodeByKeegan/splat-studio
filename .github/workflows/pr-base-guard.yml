@@ -3,7 +3,8 @@ name: PR Base Guard
 # Fails any pull request that targets `main` from a branch other than `dev`.
 # Registered as a required status check on `main`, this is what actually enforces
 # "only dev merges into main" (GitHub cannot restrict the PR source branch natively).
-# No checkout runs, so pull_request_target is safe here.
+# No checkout runs; branch names reach the shell only via env vars (never ${{ }}
+# interpolation in run:), so pull_request_target is safe here.
 on:
   pull_request_target:
     branches: [main]
@@ -17,10 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Only dev may merge into main
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          echo "Base: ${{ github.event.pull_request.base.ref }}"
-          echo "Head: ${{ github.event.pull_request.head.ref }}"
-          if [ "${{ github.event.pull_request.head.ref }}" != "dev" ]; then
+          echo "Base: $BASE_REF"
+          echo "Head: $HEAD_REF"
+          if [ "$HEAD_REF" != "dev" ]; then
             echo "::error::PRs into 'main' may only come from 'dev'. Retarget this PR to 'dev'."
             exit 1
           fi

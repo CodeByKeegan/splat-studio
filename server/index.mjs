@@ -175,11 +175,12 @@ const runStats = (absInput) => new Promise((resolve) => {
 // DNS name at 127.0.0.1 to make its own requests same-origin (DNS rebinding). Require a
 // loopback Host and reject any cross-origin browser request. Non-browser clients (curl,
 // tests, the native MCP host) send no Origin and pass — same policy as the editor relay.
+// Applied globally so /files and the dist static get the same rebinding protection.
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const hostnameOf = (value, hasScheme) => {
     try { return new URL(hasScheme ? value : `http://${value}`).hostname; } catch { return null; }
 };
-app.use('/api', (req, res, next) => {
+app.use((req, res, next) => {
     if (!LOOPBACK_HOSTS.has(hostnameOf(req.headers.host))) return res.status(403).json({ error: 'forbidden-host' });
     const source = req.headers.origin || req.headers.referer;
     if (source && !LOOPBACK_HOSTS.has(hostnameOf(source, true))) return res.status(403).json({ error: 'forbidden-origin' });
