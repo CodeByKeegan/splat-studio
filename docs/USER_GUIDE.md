@@ -250,7 +250,9 @@ folders that the engine streams by camera distance, for scenes too big to load a
 2. **Scene type** — pick a preset chip: **⚡ Auto** (recommended — reads the input's
    stats and sizes everything, see below), or **Indoor** (3 levels, 16 m chunks),
    **Outdoor** (5 levels, 32 m chunks), **Object** (2 levels, 8 m chunks) — all at
-   50% keep per level. The plan line under the chips spells out what will be baked.
+   50% keep per level. The **Levels** ladder under the chips always shows what the
+   bake will write (per-level keep % in Decimate mode, the chosen files in Combine
+   mode, plus the chunk extent), updating live as settings change.
 3. **Generate streamed LOD**. That's the whole simple flow; the knobs the presets set
    live under **▸ Advanced options**:
    - **Levels** — the **LOD source** (*Decimate input automatically* derives the
@@ -414,7 +416,8 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
    typed axes are CLI-space, rotated 180° from the viewer). While the Collision tab
    is open the seed marker + carve capsule preview in the viewport; click
    **💊 Select & drag in viewport** to grab them with a gizmo (the seed XYZ fields
-   update live).
+   update live). Tick **📌 Keep shown on other tabs** to keep the preview visible
+   while you work in other panels.
 4. **Generate collision** — with a preset and a seed, that's the whole simple flow.
    Steps 5–8 below are the **▸ Advanced options** cards, for when the preset isn't
    enough: **Voxelize** (voxel size — edge length, e.g. 0.05 m — opacity cutoff, and

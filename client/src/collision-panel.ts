@@ -29,10 +29,12 @@ for (const el of [seedX, seedY, seedZ, carveHeight, carveRadius]) {
 }
 
 // the seed marker + capsule preview in the viewport whenever the Collision tab
-// is the shown one (selection still owns the gizmo) — called on tab changes
+// is the shown one — or always, while 📌 pinned (selection still owns the gizmo)
+const capsulePin = $<HTMLInputElement>('capsule-pin');
 export const syncSeedPreview = (): void => {
-    viewer?.setSeedPreviewVisible(panelActive('panel-collision') && !!viewer.hasSplat);
+    viewer?.setSeedPreviewVisible((panelActive('panel-collision') || capsulePin.checked) && !!viewer.hasSplat);
 };
+capsulePin.addEventListener('change', syncSeedPreview);
 viewportCallbacks.syncSeedPreview = syncSeedPreview; // rebuildSceneList keeps the preview fresh
 
 // "Select & drag in viewport" — selects the object in the scene hierarchy so its

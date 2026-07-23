@@ -1046,6 +1046,23 @@ body.dropping #viewport::after {
 /* ----- LOD auto-tune plan line (under the preset chips) ----- */
 #lod-autotune-plan { margin: 2px 0 8px; }
 
+/* ----- LOD level ladder — read-only pills reflecting the current settings ----- */
+.lod-ladder { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.lod-pill {
+    font-size: var(--fs-xs);
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--group-border);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lod-pill.env { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 45%, transparent); }
+.lod-pill.meta { color: var(--text-dim); background: none; }
+
 /* ----- carve out / trim (removes data → amber accent) ----- */
 #carve-remove { width: 100%; margin-top: 4px; border-color: var(--warn); color: var(--warn); font-weight: 600; }
 #carve-remove:hover:not(:disabled) { background: var(--warn); color: var(--on-warn); }

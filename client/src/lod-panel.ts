@@ -23,6 +23,7 @@ const relabelLodRows = () => {
         const isEnv = row.querySelector<HTMLInputElement>('.lod-env-box')?.checked;
         if (label) label.textContent = isEnv ? 'ENV' : `LOD ${n++}`;
     });
+    updateLodLadder(); // row add/remove/reorder shows on the simple page too
 };
 
 const addLodRow = () => {
@@ -67,12 +68,47 @@ const addLodRow = () => {
 };
 $<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
 
+// read-only level ladder on the simple page, recomputed from the current settings
+const lodLadder = $('lod-ladder');
+const updateLodLadder = (): void => {
+    lodLadder.innerHTML = '';
+    const pill = (text: string, cls = ''): void => {
+        const el = document.createElement('span');
+        el.className = `lod-pill ${cls}`.trim();
+        el.textContent = text;
+        lodLadder.appendChild(el);
+    };
+    if (lodMode.value === 'combine') {
+        pill(`L0 ${baseLabel(lodInput.value) || '—'}`);
+        let n = 1;
+        for (const row of lodFileRows.children) {
+            const file = row.querySelector('select')?.value;
+            if (!file) continue;
+            const env = row.querySelector<HTMLInputElement>('.lod-env-box')?.checked;
+            pill(env ? `ENV ${baseLabel(file)}` : `L${n++} ${baseLabel(file)}`, env ? 'env' : '');
+        }
+    } else {
+        const levels = Math.max(1, Math.min(8, Number($<HTMLInputElement>('lod-levels').value) || 1));
+        const keep = Number($<HTMLInputElement>('lod-keep').value) || 50;
+        for (let i = 0; i < levels; i++) pill(`L${i} · ${Math.round(100 * (keep / 100) ** i)}%`);
+    }
+    const ext = Number($<HTMLInputElement>('lod-chunk-extent').value);
+    if (Number.isFinite(ext) && ext > 0) pill(`${ext} m chunks`, 'meta');
+};
+// any level-shaping edit refreshes the ladder (combine rows are delegated)
+for (const id of ['lod-input', 'lod-levels', 'lod-keep', 'lod-chunk-extent']) {
+    $(id).addEventListener('change', updateLodLadder);
+    $(id).addEventListener('input', updateLodLadder);
+}
+lodFileRows.addEventListener('change', updateLodLadder);
+
 // LOD panel: decimate vs combine swaps which level controls show
 export const updateLodRows = (): void => {
     const combine = lodMode.value === 'combine';
     $('row-lod-levels').classList.toggle('hidden', combine);
     $('row-lod-files').classList.toggle('hidden', !combine);
     if (combine && lodFileRows.children.length === 0) addLodRow();
+    updateLodLadder();
 };
 lodMode.onchange = updateLodRows;
 

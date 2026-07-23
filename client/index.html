@@ -273,6 +273,10 @@
                     </select>
                 </div>
                 <div class="hint hidden" id="lod-autotune-plan"></div>
+                <div class="field" id="row-lod-ladder" title="The detail ladder the bake will write, from the current settings — L0 is the input at full detail. Tune it under Advanced options">
+                    <span>Levels</span>
+                    <div id="lod-ladder" class="lod-ladder"></div>
+                </div>
                 <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
                 <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Jobs panel">Generate streamed LOD</button>
 
@@ -547,6 +551,7 @@
                     </div>
                     <span class="hint">Fly inside the scene and click 📷 — the seed marker + capsule preview in the viewport while this tab is open. Typed XYZ use CLI axes (capsule gizmo arrows: red x, green y, blue z).</span>
                     <button type="button" id="capsule-select" data-sel="capsule" title="Select the seed capsule in the viewport and drag its gizmo to move the seed. Click again to deselect">💊 Select &amp; drag in viewport</button>
+                    <label class="check" title="Keep the seed marker + carve capsule visible in the viewport on every tab, not just while the Collision tab is open"><input type="checkbox" id="capsule-pin" /> 📌 Keep shown on other tabs</label>
                 </div>
                 <label class="check" title="When generation finishes, load the collision mesh + voxels into the 3D viewport"><input type="checkbox" id="collision-autoload" checked /> Load result into viewport</label>
                 <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb">Generate collision</button>
