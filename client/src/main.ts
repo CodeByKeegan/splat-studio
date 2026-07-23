@@ -1010,7 +1010,12 @@ const fmtDuration = (ms: number): string => {
     return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
 };
 
+// skip the (potentially 200 KB) log rewrite + forced relayout when nothing changed
+let lastDetail = '';
 const renderJobDetail = (job: api.Job): void => {
+    const key = `${job.id}:${job.status}:${job.log.length}`;
+    if (key === lastDetail) return;
+    lastDetail = key;
     jobCommand.textContent = job.command;
     jobLog.textContent = job.status === 'queued' ? 'Waiting for a free slot…' : job.log;
     jobLog.scrollTop = jobLog.scrollHeight;
@@ -1019,13 +1024,14 @@ const renderJobDetail = (job: api.Job): void => {
 const selectJob = (id: string): void => {
     selectedJobId = id;
     renderJobList();
+    // one-shot fetch so finished rows show their detail; active rows stay fresh via the poller
     void api.getJob(id).then((j) => { if (selectedJobId === id) renderJobDetail(j); }).catch(() => { /* pruned */ });
 };
 
 const renderJobList = (): void => {
     jobList.innerHTML = '';
     // newest first — the row you just queued lands on top
-    for (const j of [...jobsCache].sort((a, b) => (b.queuedAt - a.queuedAt) || (Number(b.id) - Number(a.id)))) {
+    for (const j of [...jobsCache].sort((a, b) => Number(b.id) - Number(a.id))) {
         const li = document.createElement('li');
         li.className = `job-row${j.id === selectedJobId ? ' selected' : ''}`;
         const badge = document.createElement('span');
@@ -1039,7 +1045,7 @@ const renderJobList = (): void => {
         time.className = 'job-row-time';
         if (j.startedAt != null) time.textContent = fmtDuration((j.endedAt ?? Date.now()) - j.startedAt);
         li.append(badge, title, time);
-        if (j.status === 'queued' || j.status === 'running') {
+        if (api.isJobActive(j)) {
             const cancel = document.createElement('button');
             cancel.className = 'job-row-cancel';
             cancel.textContent = '✕';
@@ -1055,23 +1061,32 @@ const renderJobList = (): void => {
     }
 };
 
-// One shared poller keeps the list (and the selected job's log) fresh while any
-// job is queued/running — it also catches jobs submitted outside the GUI (MCP).
+// One shared poller owns all Jobs-panel refreshes while anything is queued or
+// running: the list, the selected job's detail, and the completion waiters that
+// runJob awaits. It also catches jobs submitted outside the GUI (MCP).
+const jobWaiters = new Map<string, (job: api.Job) => void>();
 let jobsPolling = false;
 const pollJobs = async (): Promise<boolean> => {
-    const prev = jobsCache;
     const { jobs, concurrency } = await api.getJobs();
     jobsCache = jobs;
     if (document.activeElement !== jobParallel) jobParallel.value = String(concurrency);
     renderJobList();
-    if (selectedJobId) {
-        // refresh the detail while the selected job moves, incl. its final transition
-        const sel = jobs.find((j) => j.id === selectedJobId);
-        const was = prev.find((j) => j.id === selectedJobId);
-        const active = sel && (sel.status === 'queued' || sel.status === 'running');
-        if (sel && (active || sel.status !== was?.status)) renderJobDetail(await api.getJob(selectedJobId));
+    // settle waiters for jobs that finished (or were pruned before we saw it)
+    for (const [id, resolve] of [...jobWaiters]) {
+        const j = jobs.find((x) => x.id === id);
+        if (j && api.isJobActive(j)) continue;
+        jobWaiters.delete(id);
+        resolve(await api.getJob(id));
     }
-    return jobs.some((j) => j.status === 'queued' || j.status === 'running');
+    if (selectedJobId) {
+        // refresh the detail while the selected job moves, incl. its final transition;
+        // a settled-and-rendered selection costs nothing further
+        const sel = jobs.find((j) => j.id === selectedJobId);
+        if (sel && (api.isJobActive(sel) || !lastDetail.startsWith(`${sel.id}:${sel.status}`))) {
+            renderJobDetail(await api.getJob(selectedJobId));
+        }
+    }
+    return jobWaiters.size > 0 || jobs.some(api.isJobActive);
 };
 const ensureJobsPolling = (): void => {
     if (jobsPolling) return;
@@ -1083,6 +1098,8 @@ const ensureJobsPolling = (): void => {
         jobsPolling = false;
     })();
 };
+const waitForJob = (id: string): Promise<api.Job> =>
+    new Promise((resolve) => { jobWaiters.set(id, resolve); ensureJobsPolling(); });
 
 jobParallel.onchange = () => {
     void api.setJobConcurrency(Number(jobParallel.value))
@@ -1090,23 +1107,22 @@ jobParallel.onchange = () => {
         .catch((err) => showToast(`Couldn't set parallel jobs: ${err}`, true));
 };
 
-const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
+// Fan-out flows own their button's disabled state for the whole run and pass no
+// button here; single-shot buttons are disabled only while the submit is in flight.
+const runJob = async (start: () => Promise<string>, button?: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
     let jobId: string;
-    button.disabled = true; // only while the submit request is in flight
+    if (button) button.disabled = true;
     try {
         jobId = await start();
     } catch (err) {
         showToast(`Couldn't start job: ${err}`, true);
         return undefined;
     } finally {
-        button.disabled = false;
+        if (button) button.disabled = false;
     }
     selectJob(jobId);
-    ensureJobsPolling();
     try {
-        const job = await api.watchJob(jobId, (j) => {
-            if (selectedJobId === jobId) renderJobDetail(j);
-        });
+        const job = await waitForJob(jobId);
         await refreshFiles(new Set(job.outputs));
         if (job.status === 'done') {
             // load results into the viewer (when requested), then toast so 'done' stays visible
@@ -1861,7 +1877,6 @@ const loadGroup = async (): Promise<void> => {
 groupApplyBtn.onclick = async () => {
     const members = checkedMembers();
     if (!members.length) return showToast('Tick at least one member', true);
-    if (groupApplyBtn.disabled) return; // a fan-out is already in flight
     if (!panelValid('panel-convert')) return;
     const format = convertFormat.value;
     if (format === 'csv') {
@@ -1890,7 +1905,7 @@ groupApplyBtn.onclick = async () => {
         };
         const outputs: string[] = [];
         for (const member of members) {
-            const job = await runJob(() => api.startConvert({ input: member, format, options }), groupApplyBtn, false);
+            const job = await runJob(() => api.startConvert({ input: member, format, options }), undefined, false);
             if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
             outputs.push(...job.outputs);
         }
@@ -1908,7 +1923,6 @@ groupApplyRegionBtn.onclick = async () => {
     if (!members.length) return showToast('Tick at least one member', true);
     const region = carveRegion();
     if (!region) return showToast('Enable a Box or Sphere region in the Edit panel first', true);
-    if (groupApplyRegionBtn.disabled) return; // a fan-out is already in flight
     const mode = regionMode();
     const verb = mode === 'keep' ? 'Crop (keep only inside the region)' : 'Carve (remove inside the region)';
     if (!confirm(`${verb} on ${members.length} member${members.length > 1 ? 's' : ''}? Each writes a new trimmed .ply — the sources are left untouched.`)) return;
@@ -1918,7 +1932,7 @@ groupApplyRegionBtn.onclick = async () => {
     try {
         const outputs: string[] = [];
         for (const member of members) {
-            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), groupApplyRegionBtn, false);
+            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), undefined, false);
             if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
             outputs.push(...job.outputs);
         }

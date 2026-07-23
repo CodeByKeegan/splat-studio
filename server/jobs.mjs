@@ -22,31 +22,32 @@ let concurrency = clampConcurrency(Number(process.env.SPLAT_JOB_CONCURRENCY) || 
 
 export const getConcurrency = () => concurrency;
 export const setConcurrency = (n) => {
-    if (!Number.isFinite(n)) throw new Error('concurrency must be a number');
-    concurrency = clampConcurrency(n);
+    concurrency = clampConcurrency(n); // route validates; anything numeric clamps
     pump(); // a raised cap frees slots for queued jobs
     return concurrency;
 };
 
+const isFinished = (job) => job.status === 'done' || job.status === 'error';
+
 const pruneFinished = () => {
-    const finished = [...jobs.values()].filter((j) => j.status === 'done' || j.status === 'error');
+    const finished = [...jobs.values()].filter(isFinished);
     for (let i = 0; i < finished.length - MAX_FINISHED_JOBS; i++) {
         jobs.delete(finished[i].id);
     }
 };
 
 const cancelledIds = new Set();
+const settlers = new Map(); // id -> that job's finish(), for cancel paths
 
-// FIFO of { id, start } waiting for a free slot
+// FIFO of { id, start } waiting for a free slot; cancelled entries are spliced
+// out by cancelJob, so everything here is startable
 const queue = [];
 let running = 0;
 
 const pump = () => {
     while (running < concurrency && queue.length) {
-        const next = queue.shift();
-        if (cancelledIds.has(next.id)) { cancelledIds.delete(next.id); continue; }
         running++;
-        next.start();
+        queue.shift().start();
     }
 };
 
@@ -110,8 +111,11 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         });
     });
 
+    // The one terminal transition — every path (success, failure, cancel of a
+    // running OR still-queued job) settles through here.
     const finish = (status) => {
-        if (job.status !== 'running') return;
+        if (isFinished(job)) return;
+        const wasRunning = job.status === 'running';
         if (status === 'done') {
             const exists = (rel) => fs.existsSync(path.join(cwd, ...rel.split('/')));
             job.outputs = expectedOutputs.filter(exists);
@@ -122,13 +126,17 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             try { fs.rmSync(path.join(cwd, ...d.split('/')), { recursive: true, force: true }); } catch { /* ignore */ }
         }
         cancelledIds.delete(id);
+        settlers.delete(id);
         job.status = status;
         job.endedAt = Date.now();
         if (status === 'done') onOutputs?.(job.outputs);
         onStatus?.(job);
-        running--;
-        pump();
+        if (wasRunning) {
+            running--;
+            pump();
+        }
     };
+    settlers.set(id, finish);
 
     // Run the pre-decimate steps in order, then the main command. A failed or
     // cancelled step rejects and stops the chain, so the main step never runs on
@@ -167,11 +175,11 @@ export const cancelJob = (id) => {
     const job = jobs.get(id);
     if (!job) return false;
     if (job.status === 'queued') {
-        // never started: pump() skips it via cancelledIds and drops the marker
-        cancelledIds.add(id);
+        // never started: pull it out of the queue and settle it directly
+        const i = queue.findIndex((q) => q.id === id);
+        if (i !== -1) queue.splice(i, 1);
         job.log += 'Cancelled while queued\n';
-        job.status = 'error';
-        job.endedAt = Date.now();
+        settlers.get(id)?.('error');
         return true;
     }
     if (job.status !== 'running') return false;

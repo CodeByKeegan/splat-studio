@@ -780,7 +780,7 @@ body.dropping #viewport::after {
     cursor: pointer;
 }
 .job-row:hover { background: var(--bg-input); }
-.job-row.selected { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.job-row.selected { background: color-mix(in srgb, var(--selection) 14%, transparent); }
 .job-row .badge { flex-shrink: 0; min-width: 58px; justify-content: center; }
 .job-row-title {
     overflow: hidden;

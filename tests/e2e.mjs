@@ -52,33 +52,24 @@ const api = async (method, route, body) => {
 };
 
 const PROJECT = 'test';
-// run a job (convert/collision/summary) to completion; returns the finished job
-const runJob = async (route, payload, timeoutMs = 120000) => {
-    const { status, json } = await api('POST', route, { ...payload, project: PROJECT });
-    if (status !== 200 || !json.jobId) throw new Error(`${route} -> ${status} ${JSON.stringify(json)}`);
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-        const { json: job } = await api('GET', `/api/jobs/${json.jobId}`);
-        if (job.status === 'done' || job.status === 'error') return job;
-        if (Date.now() > deadline) throw new Error(`job timed out: ${job.title}`);
-        await new Promise((r) => setTimeout(r, 300));
-    }
-};
 // submit a job without waiting; returns the jobId
 const submitJob = async (route, payload) => {
     const { status, json } = await api('POST', route, { ...payload, project: PROJECT });
     if (status !== 200 || !json.jobId) throw new Error(`${route} -> ${status} ${JSON.stringify(json)}`);
     return json.jobId;
 };
+// poll until the job settles (done/error); returns the finished job
 const waitJob = async (id, timeoutMs = 120000) => {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
         const { json: job } = await api('GET', `/api/jobs/${id}`);
         if (job.status === 'done' || job.status === 'error') return job;
-        if (Date.now() > deadline) throw new Error(`job ${id} timed out`);
+        if (Date.now() > deadline) throw new Error(`job ${id} timed out: ${job.title}`);
         await new Promise((r) => setTimeout(r, 300));
     }
 };
+// run a job (convert/collision/summary) to completion; returns the finished job
+const runJob = async (route, payload, timeoutMs = 120000) => waitJob(await submitJob(route, payload), timeoutMs);
 
 const waitHealth = (port) => new Promise((resolve, reject) => {
     const deadline = Date.now() + 30000;

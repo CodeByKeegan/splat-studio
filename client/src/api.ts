@@ -72,6 +72,10 @@ export interface Job {
 /** /api/jobs list entry — a Job without its log. */
 export type JobSummary = Omit<Job, 'log'>;
 
+/** Still waiting or working — the complement of the terminal done/error states. */
+export const isJobActive = (job: { status: Job['status'] }): boolean =>
+    job.status === 'queued' || job.status === 'running';
+
 /** WebP render camera/projection/DoF/motion-blur (CLI image-output options). */
 export interface ImageOptions {
     camera?: string;        // "x,y,z"
@@ -319,16 +323,6 @@ export const setJobConcurrency = async (max: number): Promise<number> =>
 
 export const cancelJob = async (id: string): Promise<void> => {
     await jsonOrThrow(await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' }));
-};
-
-/** Polls until the job finishes (done/error); onUpdate fires on every poll. */
-export const watchJob = async (id: string, onUpdate: (job: Job) => void): Promise<Job> => {
-    for (;;) {
-        const job = await getJob(id);
-        onUpdate(job);
-        if (job.status === 'done' || job.status === 'error') return job;
-        await new Promise((r) => setTimeout(r, 700));
-    }
 };
 
 // project is a path prefix (not a query) so the engine can fetch bundle
