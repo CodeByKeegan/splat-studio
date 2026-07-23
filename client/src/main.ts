@@ -6,9 +6,9 @@ import { $, fileList, projectSelect } from './dom';
 import { viewer, setViewer, layerVisible, currentSplatName, lodMetaCache, hooks } from './state';
 import type { LayerId } from './state';
 import { showToast, promptText } from './ui';
-import { formState, FORM_KEY, EXTERNAL_STATE_IDS, restoreFormState } from './form-state';
+import { formState, restoreFormState } from './form-state';
 import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, getCameraViewCanvas, persistNow, makeMenu, bootLayout } from './dockview';
-import { toggleLayer, removeSplat, clearViewport, SCENE_ITEMS, rebuildSceneList, selectScene } from './viewport';
+import { toggleLayer, clearViewport, SCENE_ITEMS, rebuildSceneList, selectScene } from './viewport';
 import { refreshFiles, viewFile } from './files-panel';
 import { ensureJobsPolling } from './jobs';
 import { updateGenRows } from './generate-panel';
@@ -21,6 +21,7 @@ import { syncCollisionRows, seedX, seedY, seedZ, syncSeedViz } from './collision
 import './upload';
 import { loadGroup } from './groups';
 import './analyze-panel';
+import { canUndo, canRedo, doUndo, doRedo, clearUndoHistory, enableUndo, isUndoApplying } from './undo';
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
@@ -35,114 +36,6 @@ void (async () => {
     try { const v = await api.getVersions(); set('ver-app', v.app); set('ver-splat-transform', v.splatTransform); }
     catch { set('ver-app', null); set('ver-splat-transform', null); }
 })();
-
-// ---------- global undo / redo ----------
-// Snapshot-based over the undoable app state (form fields + loaded splat + layer
-// visibility). Each committed change captures a snapshot (debounced so a gizmo drag
-// = one step); Ctrl+Z / Ctrl+Y step through them. Job runs and file deletes are NOT
-// undoable — they have filesystem side effects.
-interface UndoSnap { fields: Record<string, string | boolean>; splat: string | null; layers: Record<string, boolean> }
-// snapshot the CURRENT value of every id'd form control (not just changed ones), so
-// undoing past a field's first edit still restores its original value
-const takeSnap = (): UndoSnap => {
-    const fields: Record<string, string | boolean> = {};
-    for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[id], select[id]')) {
-        if (el.id === 'project-select') continue; // switching projects is navigation, not an edit
-        // server/desktop-owned settings (MCP consent, update prefs) are not edits —
-        // undoing must never flip consent or the update channel as a side effect
-        if (EXTERNAL_STATE_IDS.has(el.id)) continue;
-        if (el instanceof HTMLInputElement && (el.type === 'file' || el.type === 'button' || el.type === 'submit')) continue;
-        fields[el.id] = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked : el.value;
-    }
-    return { fields, splat: currentSplatName, layers: { ...layerVisible } };
-};
-const clearUndoHistory = (): void => { clearTimeout(undoTimer); undoStack.length = 0; redoStack.length = 0; undoCurrent = takeSnap(); };
-const snapKey = (s: UndoSnap): string => JSON.stringify(s);
-const undoStack: UndoSnap[] = [];
-const redoStack: UndoSnap[] = [];
-let undoCurrent: UndoSnap = takeSnap();
-let undoApplying = false;
-let undoEnabled = false; // suppressed during boot (file-select population shouldn't be undoable)
-let undoTimer = 0;
-const MAX_UNDO = 100;
-const canUndo = (): boolean => undoStack.length > 0;
-const canRedo = (): boolean => redoStack.length > 0;
-
-const captureUndo = (): void => {
-    if (undoApplying) return;
-    const next = takeSnap();
-    if (snapKey(next) === snapKey(undoCurrent)) return;
-    undoStack.push(undoCurrent);
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
-    redoStack.length = 0;
-    undoCurrent = next;
-};
-// called on every committed change; debounced so a burst (e.g. a gizmo drag that
-// dispatches change on several fields) collapses into one undo step
-const scheduleUndoCapture = (): void => {
-    if (undoApplying || !undoEnabled) return;
-    clearTimeout(undoTimer);
-    undoTimer = window.setTimeout(captureUndo, 250);
-};
-hooks.scheduleUndoCapture = scheduleUndoCapture; // form-state's change listener calls through the hook
-// enable undo capture once after boot settles, discarding any boot-time steps
-const enableUndo = (): void => { undoEnabled = true; clearUndoHistory(); };
-
-const applySnap = async (snap: UndoSnap): Promise<void> => {
-    undoApplying = true;
-    clearTimeout(undoTimer);
-    try {
-        for (const [id, value] of Object.entries(snap.fields)) {
-            const el = document.getElementById(id);
-            if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) continue;
-            const isCb = el instanceof HTMLInputElement && el.type === 'checkbox';
-            const cur: string | boolean = isCb ? (el as HTMLInputElement).checked : el.value;
-            if (cur === value) continue;
-            if (isCb) (el as HTMLInputElement).checked = value === true;
-            else el.value = String(value);
-            formState[id] = value;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true })); // re-sync gizmos/preview/persistence
-        }
-        localStorage.setItem(FORM_KEY, JSON.stringify(formState));
-        // reload the splat FIRST — viewFile force-shows it, so restore layer visibility after
-        if (snap.splat !== currentSplatName) {
-            if (snap.splat == null) removeSplat();
-            else await viewFile(snap.splat, 'splat');
-        }
-        for (const id of Object.keys(layerVisible) as LayerId[]) {
-            if (layerVisible[id] !== snap.layers[id]) toggleLayer(id);
-        }
-    } finally {
-        undoApplying = false;
-        undoCurrent = takeSnap(); // reflect the actual post-apply state (a load may have failed)
-    }
-};
-
-const doUndo = (): void => {
-    if (undoApplying || !canUndo()) return;
-    redoStack.push(undoCurrent);
-    undoCurrent = undoStack.pop()!;
-    void applySnap(undoCurrent);
-};
-const doRedo = (): void => {
-    if (undoApplying || !canRedo()) return;
-    undoStack.push(undoCurrent);
-    undoCurrent = redoStack.pop()!;
-    void applySnap(undoCurrent);
-};
-
-document.addEventListener('keydown', (e) => {
-    if (e.repeat || !(e.ctrlKey || e.metaKey)) return;
-    const k = e.key.toLowerCase();
-    if (k !== 'z' && k !== 'y') return;
-    // keep native undo/redo inside a text field the user is editing
-    const ae = document.activeElement;
-    if (ae instanceof HTMLTextAreaElement || (ae instanceof HTMLInputElement && /^(text|number|search|email|url|tel|password|)$/.test(ae.type))) return;
-    e.preventDefault();
-    if (k === 'y' || (k === 'z' && e.shiftKey)) doRedo();
-    else doUndo();
-});
 
 function buildMenuBar(): void {
     const bar = $('menubar');
@@ -623,11 +516,11 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         return { ...st, ...(st.distance > 0 && len > 0 ? { scale: r4(len / st.distance) } : {}) };
     },
     history: ({ action }) => {
-        if (action !== 'get' && undoApplying) return editorError('bad-input', 'a previous undo/redo is still applying — retry in a moment');
+        if (action !== 'get' && isUndoApplying()) return editorError('bad-input', 'a previous undo/redo is still applying — retry in a moment');
         if (action === 'undo') { if (!canUndo()) return editorError('bad-input', 'nothing to undo'); doUndo(); }
         else if (action === 'redo') { if (!canRedo()) return editorError('bad-input', 'nothing to redo'); doRedo(); }
         else if (action !== 'get') return editorError('bad-input', `unknown history action "${action}"`);
-        return { canUndo: canUndo(), canRedo: canRedo(), applying: undoApplying };
+        return { canUndo: canUndo(), canRedo: canRedo(), applying: isUndoApplying() };
     },
     render_pose: ({ action, camera, lookAt }) => {
         if (action === 'get') return need(viewer?.cameraRenderPose(), 'no render pose available');
