@@ -186,8 +186,8 @@ try {
         });
     }
 
-    // 3.1.0: lod-meta.json (our own streamed-SOG output) is now a valid INPUT too,
-    // same --select-lod capability already offered for .lcc/.lcc2 input
+    // lod-meta.json (our own streamed-SOG output) is a valid INPUT too, with the
+    // same --select-lod capability offered for .lcc/.lcc2 input
     await check('--select-lod reads back a subset of a streamed-SOG (lod-meta.json) bundle', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room-lod/lod-meta.json', format: 'ply',
@@ -198,7 +198,7 @@ try {
     });
 
     // decimate LOD mode pre-decimates each level to a temp .ply then combines them
-    // (splat-transform 3.0.0: --decimate must be a standalone final .ply action)
+    // (the CLI requires --decimate to be a standalone final .ply action)
     await check('streamed LOD (decimate, 3 levels) bakes + cleans temps', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room.ply', format: 'lod',
@@ -255,7 +255,7 @@ try {
             `lodCounts ${JSON.stringify(lod.lodCounts)} don't sum to ${lod.gaussians}`);
     });
 
-    // 3.0.0: --decimate writes a PLY only — decimating to a non-PLY format is rejected up front
+    // --decimate writes a PLY only — decimating to a non-PLY format is rejected up front
     await check('decimate to a non-PLY format is rejected', async () => {
         const { status, json } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'sog', options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' } });
         assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);

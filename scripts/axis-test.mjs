@@ -1,4 +1,5 @@
-// Diagnostic: one tight gaussian blob at a known asymmetric PLY-space position.
+// Manual diagnostic (not wired to any npm script; writes into ./workspace).
+// One tight gaussian blob at a known asymmetric PLY-space position.
 // Voxelize it and read the collision GLB bounds to determine exactly how
 // splat-transform maps splat space -> GLB space (sign of each axis).
 import fs from 'node:fs';

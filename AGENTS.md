@@ -64,7 +64,10 @@ Code map: CLI command builders in `server/commands.mjs`; routes, file-kinds, and
 
 ## Code style
 
-- Comments extremely brief — what, not why. No cross-task, date, or history references in code.
+- Comments brief. Every file gets a one-to-three-line header; non-trivial functions get a
+  one-line signature comment; a short *why* is welcome where the code can't show a
+  constraint (security rationale, upstream CLI quirks, coordinate frames). No cross-task,
+  date, version-history, or task-tracker references in code.
 - Match the surrounding idiom: TypeScript in `client/`, plain ESM `.mjs` in `server/`,
   `electron/`, `scripts/`, `mcp-server/`.
 - New user-facing controls follow the design system (`client/src/style.css`): pair related

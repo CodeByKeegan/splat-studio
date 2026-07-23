@@ -382,7 +382,8 @@ Contributions are welcome — issues and pull requests both.
    ```
    Both must pass. UI/viewer changes should be verified against a running
    `npm run dev`.
-4. Match the existing style: brief, what-not-why code comments; new CLI flags get
+4. Match the existing style: brief code comments (file headers + one-line function
+   signatures; short whys only for non-obvious constraints); new CLI flags get
    a control + tooltip in the GUI and a `check(...)` in the e2e suite (see the
    `.claude/skills/` routines for how features and dependency bumps are wired).
 

@@ -1,3 +1,4 @@
+// Manual diagnostic (not wired to any npm script; reads from ./workspace).
 // Validates the voxel octree parser against real splat-transform output:
 // traversal counts must match the .voxel.json metadata and all boxes must lie
 // within gridBounds.

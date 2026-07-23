@@ -1,3 +1,6 @@
+// App shell: wires every panel (files, export, LOD, render, analyze, edit,
+// collision, generate, jobs, settings) to the API and the 3D viewer, owns the
+// dockable layout, app state, undo/redo, and the MCP editor-command handlers.
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
@@ -36,6 +39,7 @@ const jobLog = $<HTMLPreElement>('job-log');
 
 let viewer: SplatViewer | undefined;
 
+// transient status toast (errors persist longer)
 const showToast = (message: string, isError = false) => {
     const el = document.createElement('div');
     el.className = isError ? 'toast error' : 'toast';
@@ -95,12 +99,14 @@ const promptText = (title: string, opts: { value?: string; okLabel?: string; pla
         ok.onclick = submit;
     });
 
+// bytes -> human size ('1.2 GB')
 const fmtSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 };
 
+// gaussian count -> compact form ('4.1M')
 const fmtCount = (n: number): string => {
     if (n < 1000) return String(n);
     if (n < 1e6) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
@@ -158,6 +164,7 @@ const fileRows = new Map<string, { li: HTMLLIElement; chev: HTMLButtonElement }>
 // build-meta.json per LOD bundle, keyed name@mtime; null = none on disk (404)
 const lodMetaCache = new Map<string, api.LodBuildMeta | null>();
 
+// repopulate a file <select>, keeping the current choice when still present
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
     select.innerHTML = '';
@@ -181,6 +188,8 @@ const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     else if (names.length === 1) select.value = names[0];
 };
 
+// Re-fetch and re-render the whole Files panel (rows, eyes, selection, details,
+// input selects); `highlight` names flash as fresh job outputs.
 const refreshFiles = async (highlight?: Set<string>) => {
     const files = await api.listFiles();
     lastFiles = files;
@@ -406,6 +415,7 @@ const hideChip = (chip: HTMLSpanElement) => {
     if (label) label.textContent = '';
 };
 
+// load a file into its viewer layer (splat/collision/voxel); false on failure
 const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
     const v = viewer;
     if (!v) { showToast('Viewer is still starting up', true); return false; }
@@ -476,6 +486,7 @@ const updateFileEyes = (): void => {
     }
 };
 
+// eye button: show the file in the viewer, or hide/unload it if already shown
 const toggleFileEye = async (eye: HTMLButtonElement, name: string, as: api.ViewKind): Promise<void> => {
     const v = viewer;
     if (!v) return showToast('Viewer is still starting up', true);
@@ -707,6 +718,7 @@ const renderRecipe = (host: HTMLElement, recipe: api.LodBuildMeta): void => {
     if (baked || versions) host.appendChild(detailRow('Baked', [baked, versions].filter(Boolean).join(' — ')));
 };
 
+// expanded per-file detail card (size, counts, LOD recipe when present)
 const buildDetails = (f: api.FileEntry): HTMLDivElement => {
     const card = document.createElement('div');
     card.className = 'file-details';
@@ -736,6 +748,7 @@ const buildDetails = (f: api.FileEntry): HTMLDivElement => {
     return card;
 };
 
+// expand/collapse a file row's detail card
 const toggleDetails = (f: api.FileEntry): void => {
     const row = fileRows.get(f.name);
     if (!row) return;
@@ -1975,6 +1988,7 @@ const fmtNum = (s: string): string => {
 };
 
 let lastSummaryMarkdown = '';
+// render the persistent Analyze card from a summary job's --stats log
 const renderSummaryCard = (name: string, log: string): void => {
     const result = $('analyze-result');
     const summary = parseSummary(log);
@@ -2073,6 +2087,7 @@ const updateMeasureReadout = (d?: number): void => {
         : `A–B = ${dist.toFixed(3)} m`;
 };
 
+// switch the Edit panel's viewport tool; exclusive, toggling off the other
 const setEditTool = (mode: 'none' | 'measure' | 'origin'): void => {
     measureToggle.checked = mode === 'measure';
     originToggle.checked = mode === 'origin';
@@ -2334,6 +2349,7 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
     { id: 'render-camera', label: 'Render camera', icon: '🎥', gizmo: true, has: () => !!viewer?.hasRenderCamera }
 ];
 
+// re-render the Scene hierarchy from what's currently loaded in the viewer
 function rebuildSceneList(): void {
     if (!viewer) return;
     // getting-started overlay lives while the viewport is empty
@@ -2488,6 +2504,7 @@ const dock: DockviewApi = createDockview($('dock'), {
 
 const titleOf = (id: string): string => winById(id)?.title ?? id;
 
+// reset the dock to the factory arrangement
 function applyDefaultLayout(): void {
     dock.clear();
     dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
@@ -2535,6 +2552,7 @@ let saveTimer: number | undefined;
 const persistNow = (): void => { void api.saveLayout({ __v: LAYOUT_VERSION, dockview: dock.toJSON() as unknown as Record<string, unknown> }); };
 
 type MenuItem = { label: string; checked?: boolean; disabled?: boolean; onClick: () => void };
+// top-bar dropdown menu; items re-computed on every open
 function makeMenu(label: string, itemsFn: () => MenuItem[]): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'menu';
@@ -2831,6 +2849,7 @@ const switchProject = async (name: string) => {
     clearUndoHistory(); // undo history doesn't span a project switch
 };
 
+// refresh the project picker; selects `preferred` (or the first project)
 const loadProjects = async (preferred?: string) => {
     const projects = await api.listProjects();
     projectSelect.innerHTML = '';

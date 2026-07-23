@@ -1,3 +1,5 @@
+// Typed client for the whole loopback HTTP API: request/response shapes plus
+// thin fetch wrappers, job submission, and the watch-until-terminal poller.
 export type ViewKind = 'splat' | 'collision' | 'voxel';
 
 export interface FileEntry {
@@ -76,7 +78,9 @@ export type JobSummary = Omit<Job, 'log'>;
 export const isJobActive = (job: { status: Job['status'] }): boolean =>
     job.status === 'queued' || job.status === 'running';
 
-/** WebP render camera/projection/DoF/motion-blur (CLI image-output options). */
+/** WebP render camera/projection/DoF/motion-blur (CLI image-output options).
+ *  Mirrors the full server surface — some fields (up, near, sensorSize,
+ *  lookAtEnd, upEnd) are exercised via MCP render_image rather than the GUI. */
 export interface ImageOptions {
     camera?: string;        // "x,y,z"
     lookAt?: string;        // "x,y,z"

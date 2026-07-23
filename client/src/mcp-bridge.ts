@@ -61,7 +61,8 @@ export function startMcpBridge(opts: BridgeOptions): void {
         ws.onclose = () => {
             ws = null;
             opts.onStatus?.(false);
-            setTimeout(connect, backoff);
+            // jitter so several windows don't reconnect in lockstep
+            setTimeout(connect, backoff + Math.floor(backoff * 0.25 * Math.random()));
             backoff = Math.min(backoff * 2, 15000);
         };
         ws.onerror = () => { try { ws?.close(); } catch { /* onclose reconnects */ } };

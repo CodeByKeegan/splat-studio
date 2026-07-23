@@ -2,9 +2,15 @@
 // stdio MCP server via the SDK client, and drives the headless tools, the editor
 // relay/consent contract, and the editor-tool forwarding (with a mock WS editor).
 // Run: node tests/mcp-e2e.mjs   (set SKIP_GPU=1 — not needed here, no GPU ops).
-import { Client } from '../mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from '../mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { WebSocket } from 'ws';
+// Resolve the SDK through mcp-server's own dependency tree via its export map —
+// no hardcoded dist/ paths that break on SDK repackaging.
+const sdkRequire = createRequire(new URL('../mcp-server/index.mjs', import.meta.url));
+const sdkImport = (sub) => import(pathToFileURL(sdkRequire.resolve(`@modelcontextprotocol/sdk/${sub}`)).href);
+const { Client } = await sdkImport('client/index.js');
+const { StdioClientTransport } = await sdkImport('client/stdio.js');
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
