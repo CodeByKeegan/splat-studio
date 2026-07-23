@@ -203,15 +203,22 @@ const parseStats = (log) => {
     // a partial/garbled parse → treat as failure (don't 200 + cache a NaN)
     return Number.isFinite(result.count) ? result : null;
 };
-// run the CLI --stats scan on one file; null on any failure
-const runStats = (absInput) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '--stats', 'text', 'null'], { windowsHide: true, timeout: 120000 });
+// spawn a Node child and collect its output; resolves the collected string on
+// close, or null if the process failed to launch
+const spawnCapture = (execArgs, { timeoutMs, stderr = false } = {}) => new Promise((resolve) => {
+    const child = spawn(process.execPath, execArgs, { windowsHide: true, timeout: timeoutMs });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
-    child.stderr.on('data', (d) => { out += d; });
+    if (stderr) child.stderr.on('data', (d) => { out += d; });
     child.on('error', () => resolve(null));
-    child.on('close', () => resolve(parseStats(out)));
+    child.on('close', () => resolve(out));
 });
+
+// run the CLI --stats scan on one file; null on any failure
+const runStats = async (absInput) => {
+    const out = await spawnCapture(buildSummaryCommand({ input: absInput }).args, { timeoutMs: 120000, stderr: true });
+    return out == null ? null : parseStats(out);
+};
 // concurrent stats requests for the same uncached file share one scan
 const statsInFlight = new Map();
 
@@ -519,20 +526,16 @@ app.post('/api/summary', json, (req, res) => startJob(res, buildSummaryCommand, 
 app.post('/api/trim', json, (req, res) => startJob(res, buildTrimCommand, req.body ?? {}));
 
 // list GPU adapters (--list-gpus) so the UI can offer a device dropdown
-const listGpus = () => new Promise((resolve) => {
-    const child = spawn(process.execPath, [cliPath, '--no-tty', '--list-gpus'], { windowsHide: true, timeout: 15000 });
-    let out = '';
-    child.stdout.on('data', (d) => { out += d; });
-    child.on('error', () => resolve([]));
-    child.on('close', () => {
-        const gpus = [];
-        for (const line of out.split('\n')) {
-            const m = line.match(/^\s*\[(\d+)\]\s+(.+?)\s*$/);
-            if (m) gpus.push({ index: Number(m[1]), name: m[2] });
-        }
-        resolve(gpus);
-    });
-});
+const listGpus = async () => {
+    const out = await spawnCapture([cliPath, '--no-tty', '--list-gpus'], { timeoutMs: 15000 });
+    if (out == null) return [];
+    const gpus = [];
+    for (const line of out.split('\n')) {
+        const m = line.match(/^\s*\[(\d+)\]\s+(.+?)\s*$/);
+        if (m) gpus.push({ index: Number(m[1]), name: m[2] });
+    }
+    return gpus;
+};
 app.get('/api/gpus', async (req, res) => res.json({ gpus: await listGpus() }));
 
 // gaussian count + x/y/z extents for one splat (drives LOD auto-tune); cached by path+mtime
@@ -570,15 +573,12 @@ app.get('/api/stats', async (req, res) => {
 // by importing it in a throwaway child Node: isolates a crashing/looping module
 // (5s timeout) and dodges the ESM cache so an edited generator re-reads. Lets the
 // UI render live sliders for generators that opt in. Returns null on any failure.
-const readGeneratorParams = (absPath) => new Promise((resolve) => {
+const readGeneratorParams = async (absPath) => {
     const url = pathToFileURL(absPath).href;
     const code = `import(${JSON.stringify(url)}).then(m => process.stdout.write(JSON.stringify(m.Generator?.params ?? null))).catch(() => process.stdout.write('null'));`;
-    const child = spawn(process.execPath, ['-e', code], { windowsHide: true, timeout: 5000 });
-    let out = '';
-    child.stdout.on('data', (d) => { out += d; });
-    child.on('error', () => resolve(null));
-    child.on('close', () => { try { resolve(JSON.parse(out || 'null')); } catch { resolve(null); } });
-});
+    const out = await spawnCapture(['-e', code], { timeoutMs: 5000 });
+    try { return JSON.parse(out || 'null'); } catch { return null; }
+};
 
 app.get('/api/generator-params', async (req, res) => {
     try {
@@ -628,13 +628,10 @@ app.post('/api/layout', json, async (req, res) => {
     if (layout === null || typeof layout !== 'object' || Array.isArray(layout)) {
         return res.status(400).json({ error: 'Layout must be a JSON object' });
     }
-    const tmp = `${layoutFile}.${Date.now().toString(36)}.tmp`;
     try {
-        await fs.writeFile(tmp, JSON.stringify(layout, null, 2)); // tmp + rename = atomic
-        await fs.rename(tmp, layoutFile);
+        await writeJsonAtomic(layoutFile, layout);
         res.json({ ok: true });
     } catch (err) {
-        await fs.rm(tmp, { force: true }).catch(() => {});
         res.status(500).json({ error: `Failed to save layout: ${err.message}` });
     }
 });
@@ -676,13 +673,10 @@ app.post('/api/groups', json, async (req, res) => {
         return res.status(400).json({ error: `Invalid proxy path: ${body.proxy}` });
     }
     const data = { members: body.members.map(String), proxy: body.proxy ? String(body.proxy) : null };
-    const tmp = `${groupsFile(projectDir)}.${Date.now().toString(36)}.tmp`;
     try {
-        await fs.writeFile(tmp, JSON.stringify(data, null, 2)); // tmp + rename = atomic
-        await fs.rename(tmp, groupsFile(projectDir));
+        await writeJsonAtomic(groupsFile(projectDir), data);
         res.json({ ok: true });
     } catch (err) {
-        await fs.rm(tmp, { force: true }).catch(() => {});
         res.status(500).json({ error: `Failed to save group: ${err.message}` });
     }
 });
