@@ -7,9 +7,9 @@ packaged as an Electron app. Repo: `github.com/CodeByKeegan/splat-studio`.
 
 ## Source of truth: task tracker — not markdown
 
-**Project planning, design specs, scoping, and task tracking live on the internal coverage
-board (one task per CLI flag) — not in markdown files.** When designing a feature, scoping
-work, or recording a plan, write it there as tasks/subtasks, not into the repo.
+**Project planning, design specs, scoping, and task tracking live on the maintainer's
+task board (one task per CLI flag) — not in markdown files.** When designing a feature,
+scoping work, or recording a plan, write it there as tasks/subtasks, not into the repo.
 
 User-facing product docs (`README.md`, `docs/USER_GUIDE.md`, `docs/AUTOMATION.md`) remain
 markdown — the rule above is about internal planning/design/spec content. External

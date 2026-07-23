@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { HttpError, ConnError } from './errors.mjs';
 
-// Port resolution order (design decision 20):
+// Port resolution order:
 //   SPLAT_API_PORT env -> userData/port.json hint (written by electron/main.mjs) -> 5174.
 const hintFiles = () => {
     const names = ['Splat Studio', 'splat-studio'];

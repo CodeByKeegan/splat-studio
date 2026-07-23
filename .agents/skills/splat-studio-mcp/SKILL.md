@@ -92,7 +92,7 @@ Recipes with exact calls live in **`splat-studio-workflows`** (agent playbook) a
 
 ## Extending it
 
-Tool modules are `mcp-server/tools/*.mjs` (`files`/`analysis`/`convert`/`editor`/`phase3`), each
+Tool modules are `mcp-server/tools/*.mjs` (`files`/`analysis`/`convert`/`editor`/`advisor`/`resources`/`prompts`), each
 `register(server)` calling `server.registerTool` with a Zod schema **and an annotations preset
 from `_wrap.mjs` (`RO`/`SAFE`/`DEL`)**. Headless tools wrap a route via `http.mjs`; editor tools
 forward a `{name,params}` command via `POST /api/editor/command` and a matching handler in

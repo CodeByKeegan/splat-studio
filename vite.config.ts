@@ -1,3 +1,5 @@
+// Vite build/dev-server config: client/ is the app root; /api, /files and the
+// editor WebSocket proxy to the Express server during dev.
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -7,8 +9,8 @@ export default defineConfig({
         emptyOutDir: true
     },
     server: {
-        // PORT is injected by the Claude preview harness for secondary instances;
-        // API_PORT lets a secondary instance point at its own Express server too
+        // PORT/API_PORT let a second dev instance run side-by-side against its
+        // own Express server
         port: Number(process.env.PORT) || 5173,
         proxy: {
             '/api': `http://127.0.0.1:${Number(process.env.API_PORT) || 5174}`,

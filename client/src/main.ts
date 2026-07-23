@@ -2304,7 +2304,7 @@ $<HTMLButtonElement>('skybox-clear').onclick = () => { viewer?.clearSkybox(); sh
 // dockview reparents the node (never recreates it), so the PlayCanvas canvas
 // survives every dock/redock and tab switch. Built BEFORE the viewer boots so the
 // canvas is already mounted in the visible dock.
-// every dockable window: the panels, the 3D viewport, and (PR4) the camera view.
+// every dockable window: the panels, the 3D viewport, and the camera view.
 // component is the createComponent key; closable=false omits the tab close button.
 type Win = { id: string; component: string; title: string; closable: boolean };
 const WINDOWS: Win[] = [

@@ -4,12 +4,19 @@
   "private": true,
   "type": "module",
   "description": "MCP server exposing Splat Studio (headless splat-transform pipeline + live PlayCanvas editor) to AI agents over stdio.",
+  "author": "CodeByKeegan",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeByKeegan/splat-studio.git",
+    "directory": "mcp-server"
+  },
   "main": "index.mjs",
   "bin": {
     "splat-studio-mcp": "index.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

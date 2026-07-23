@@ -296,7 +296,7 @@ Analyze prints per-column statistics without writing any file (`--stats`).
 1. Pick an **Input** and click **Summarize stats**.
 2. The result renders below and persists: summary **tiles** (gaussian count, SH
    bands, etc.) and a **table** of per-column `min · max · median · mean · stdDev`
-   with NaN/Inf counts.
+   with NaN/Inf counts and a small distribution histogram per column.
 3. **copy** puts the raw Markdown summary on the clipboard.
 
 Use it to sanity-check a splat before converting — spot NaNs, extreme extents from
@@ -463,7 +463,7 @@ buttons in the [Scene panel](#scene-hierarchy)**.
 - **About** — component versions.
 
 **Agent (MCP)** holds a single toggle that lets a connected AI agent drive the live
-editor through Splat Studio's [MCP server](../README.md#mcp-server-ai-agent-control). It's **off by
+editor through Splat Studio's [MCP server](MCP_SETUP.md). It's **off by
 default**, loopback-only, and revocable instantly (and it resets to off when you switch workspaces);
 the headless pipeline tools work regardless. See [docs/MCP_SETUP.md](MCP_SETUP.md) for the full
 setup and [docs/MCP_WORKFLOWS.md](MCP_WORKFLOWS.md) for step-by-step agent workflow tutorials.
@@ -534,10 +534,11 @@ hint); closing the tab frees its GPU memory.
 
 ## Updates
 
-Every push to the project's `main` branch builds a new Windows release (installer +
-portable exe) and publishes it to
-[GitHub Releases](https://github.com/CodeByKeegan/splat-studio/releases). See
-[AUTOMATION.md](AUTOMATION.md) for the release pipeline.
+Every push builds a new Windows release (installer + portable exe) and publishes it
+to [GitHub Releases](https://github.com/CodeByKeegan/splat-studio/releases): pushes
+to `dev` publish **beta** pre-releases, promotions to `main` publish **stable**
+releases. The update channel is switchable in **Settings ▸ Updates** (stable is the
+default). See [AUTOMATION.md](AUTOMATION.md) for the release pipeline.
 
 The installed app **updates itself**: on launch (and every few hours) it checks for a
 newer release. With **Download updates automatically** on (Settings ▸ Updates, the

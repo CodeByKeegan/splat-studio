@@ -1,55 +1,7 @@
-// Phase 3 — opinionated layer + the MCP resource surface.
-//  - suggest_lod_settings: recommend streamed-LOD settings from a splat's stats.
-//  - resources: live read-only listings (projects / jobs / files) as MCP resources.
+// MCP prompts: canned multi-step workflows an agent can run verbatim.
 import { z } from 'zod';
-import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { apiGet, qs } from '../http.mjs';
-import { headless, RO } from './_wrap.mjs';
 
 export function register(server) {
-    server.registerTool('suggest_lod_settings', {
-        title: 'Suggest LOD settings',
-        description:
-            'Recommend streamed-LOD settings (decimate mode) for a splat from its gaussian count + extents. Reads the cached stats; returns a suggestion you can pass straight to build_lod(mode="decimate").',
-        annotations: RO,
-        inputSchema: { project: z.string(), input: z.string().describe('Project-relative splat path.') }
-    }, headless(async ({ project, input }) => {
-        const { count, extents } = await apiGet(`/api/stats${qs({ project, input })}`);
-        const maxExt = Math.max(1, ...(Array.isArray(extents) ? extents.filter(Number.isFinite) : []));
-        const lodLevels = count > 5_000_000 ? 4 : count > 1_000_000 ? 3 : 2;
-        const lodKeepPercent = count > 5_000_000 ? 40 : 50;
-        const lodChunkCount = count > 8_000_000 ? 256 : 512;
-        const lodChunkExtent = Math.min(1000, Math.max(8, Math.round(maxExt / 4)));
-        return {
-            count,
-            extents,
-            suggestion: { mode: 'decimate', lodLevels, lodKeepPercent, lodChunkCount, lodChunkExtent },
-            rationale: `~${count.toLocaleString()} gaussians, max extent ${maxExt.toFixed(1)}m → ${lodLevels} levels at ${lodKeepPercent}% keep, ~${lodChunkExtent}m chunks. Pass these to build_lod(mode="decimate").`
-        };
-    }));
-
-    // ---- MCP resources: live read-only listings ----
-    const json = (uri, data) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(data, null, 2) }] });
-
-    server.registerResource(
-        'projects', 'splat-studio://projects',
-        { title: 'Projects', description: 'Workspace projects', mimeType: 'application/json' },
-        async (uri) => json(uri, await apiGet('/api/projects'))
-    );
-
-    server.registerResource(
-        'jobs', 'splat-studio://jobs',
-        { title: 'Jobs', description: 'All jobs (without logs)', mimeType: 'application/json' },
-        async (uri) => json(uri, await apiGet('/api/jobs'))
-    );
-
-    server.registerResource(
-        'files', new ResourceTemplate('splat-studio://files/{project}', { list: undefined }),
-        { title: 'Project files', description: 'Primary assets in a project', mimeType: 'application/json' },
-        async (uri, { project }) => json(uri, await apiGet(`/api/files${qs({ project: decodeURIComponent(String(project)) })}`))
-    );
-
-    // ---- MCP prompts: canned multi-step workflows ----
     const userMsg = (text) => ({ messages: [{ role: 'user', content: { type: 'text', text } }] });
 
     server.registerPrompt('optimize_for_web', {
