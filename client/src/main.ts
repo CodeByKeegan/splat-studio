@@ -8,6 +8,7 @@ import type { LayerId } from './state';
 import { showToast, promptText, fmtSize, fmtCount, numOrNull, strOrUndef, numOrUndef } from './ui';
 import { formState, FORM_KEY, FILE_SELECT_IDS, EXTERNAL_STATE_IDS, restoreFormState } from './form-state';
 import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, refreshCameraViewHint, panelActive, getCameraViewCanvas, persistNow, makeMenu, bootLayout } from './dockview';
+import { viewportCallbacks, setChip, hideChip, applyLayerVisible, toggleLayer, removeSplat, removeCollision, removeVoxels, clearViewport, SCENE_ITEMS, rebuildSceneList, selectScene } from './viewport';
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
@@ -260,18 +261,6 @@ const refreshFiles = async (highlight?: Set<string>) => {
     updateFileEyes();
     updateBulkBar();
     firstNew?.scrollIntoView({ block: 'nearest' });
-};
-
-// chips carry a label span + a remove ✕; set/clear the label, not the chip itself
-const setChip = (chip: HTMLSpanElement, text: string) => {
-    const label = chip.querySelector('.chip-label');
-    if (label) label.textContent = text;
-    chip.classList.remove('hidden');
-};
-const hideChip = (chip: HTMLSpanElement) => {
-    chip.classList.add('hidden');
-    const label = chip.querySelector('.chip-label');
-    if (label) label.textContent = '';
 };
 
 // load a file into its viewer layer (splat/collision/voxel); false on failure
@@ -2088,29 +2077,6 @@ collisionRun.onclick = () => {
     }), collisionRun, $<HTMLInputElement>('collision-autoload').checked);
 };
 
-// ---------- viewport toolbar + settings ----------
-// guards: handlers are live before the async viewer boot finishes
-function applyLayerVisible(id: LayerId): void {
-    if (id === 'splat') viewer?.setSplatVisible(layerVisible.splat);
-    else if (id === 'collision') viewer?.setCollisionVisible(layerVisible.collision);
-    else viewer?.setVoxelsVisible(layerVisible.voxels);
-}
-function toggleLayer(id: LayerId): void {
-    layerVisible[id] = !layerVisible[id];
-    applyLayerVisible(id);
-    rebuildSceneList();
-}
-$<HTMLInputElement>('show-bounds').onchange = (e) =>
-    viewer?.setBoundsVisible((e.currentTarget as HTMLInputElement).checked);
-$<HTMLInputElement>('voxel-color').oninput = (e) =>
-    viewer?.setVoxelColor((e.currentTarget as HTMLInputElement).value);
-$<HTMLInputElement>('voxel-opacity').oninput = (e) =>
-    viewer?.setVoxelOpacity(Number((e.currentTarget as HTMLInputElement).value));
-$<HTMLInputElement>('wire-color').oninput = (e) =>
-    viewer?.setWireColor((e.currentTarget as HTMLInputElement).value);
-$<HTMLInputElement>('wire-opacity').oninput = (e) =>
-    viewer?.setWireOpacity(Number((e.currentTarget as HTMLInputElement).value));
-
 // Settings ▸ About: component versions (PlayCanvas from the bundled engine, app + splat-transform from the server)
 void (async () => {
     const set = (id: string, v: string | null | undefined) => { const el = $(id); el.textContent = v ? `v${v}` : 'unknown'; };
@@ -2118,121 +2084,6 @@ void (async () => {
     try { const v = await api.getVersions(); set('ver-app', v.app); set('ver-splat-transform', v.splatTransform); }
     catch { set('ver-app', null); set('ver-splat-transform', null); }
 })();
-$<HTMLSelectElement>('collision-style').onchange = (e) =>
-    viewer?.setCollisionStyle((e.currentTarget as HTMLSelectElement).value as 'xray' | 'hidden' | 'solid');
-$<HTMLInputElement>('collision-flip').onchange = (e) =>
-    viewer?.setCollisionFlipped((e.currentTarget as HTMLInputElement).checked);
-$<HTMLButtonElement>('frame-scene').onclick = () => viewer?.frame();
-
-// remove (unload) layers — distinct from the show/hide eyes above
-const removeSplat = () => {
-    const n = viewer?.activeSplatName;
-    if (n) viewer?.unloadFile(n); // the newest remaining shown file becomes active
-    syncActiveSplatChip();
-    syncPreview();
-    rebuildSceneList();
-    scheduleUndoCapture();
-};
-const removeCollision = () => { viewer?.clearCollision(); setCurrentCollisionName(null); hideChip(hudCollision); rebuildSceneList(); };
-const removeVoxels = () => { viewer?.clearVoxels(); setCurrentVoxelName(null); hideChip(hudVoxel); rebuildSceneList(); };
-const clearViewport = () => {
-    viewer?.clearAll();
-    hideChip(hudSplat);
-    hideChip(hudCollision);
-    hideChip(hudVoxel);
-    setCurrentSplatName(null);
-    setCurrentCollisionName(null);
-    setCurrentVoxelName(null);
-    syncPreview();
-    rebuildSceneList();
-};
-hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
-hudCollision.querySelector('.chip-remove')?.addEventListener('click', removeCollision);
-hudVoxel.querySelector('.chip-remove')?.addEventListener('click', removeVoxels);
-$<HTMLButtonElement>('clear-viewport').onclick = clearViewport;
-
-// ---------- scene hierarchy panel ----------
-$<HTMLSelectElement>('camera-mode').onchange = (e) =>
-    viewer?.setCameraMode((e.currentTarget as HTMLSelectElement).value as 'fly' | 'orbit');
-
-const sceneList = $<HTMLUListElement>('scene-list');
-const camMoveBtn = $<HTMLButtonElement>('cam-move');
-const camRotateBtn = $<HTMLButtonElement>('cam-rotate');
-camMoveBtn.onclick = () => { viewer?.setCameraGizmoMode('move'); camMoveBtn.classList.add('active'); camRotateBtn.classList.remove('active'); };
-camRotateBtn.onclick = () => { viewer?.setCameraGizmoMode('rotate'); camRotateBtn.classList.add('active'); camMoveBtn.classList.remove('active'); };
-
-const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has: () => boolean }[] = [
-    { id: 'splat', label: 'Splat', icon: '✨', gizmo: false, has: () => !!viewer?.hasSplat },
-    { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
-    { id: 'voxels', label: 'Voxels', icon: '🧊', gizmo: false, has: () => !!viewer?.hasVoxels },
-    // collision region box only while setting up collision (Collision tab + region on)
-    // listed whenever their toggle is on (the box/sphere stays visible on other tabs, so the
-    // selection + gizmo must survive tab switches too)
-    { id: 'collision-region', label: 'Collision region box', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-box-on').checked },
-    { id: 'collision-sphere', label: 'Collision region sphere', icon: '◯', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-sphere-on').checked },
-    // capsule only while actively setting up collision carving (Collision tab + carve on)
-    { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && panelActive('panel-collision') && carveBox.checked },
-    // render camera only when a WebP render is actually being set up
-    { id: 'render-camera', label: 'Render camera', icon: '🎥', gizmo: true, has: () => !!viewer?.hasRenderCamera }
-];
-
-// re-render the Scene hierarchy from what's currently loaded in the viewer
-function rebuildSceneList(): void {
-    if (!viewer) return;
-    // getting-started overlay lives while the viewport is empty
-    $('viewport-welcome').classList.toggle('hidden', viewer.hasSplat || viewer.hasCollision || viewer.hasVoxels);
-    const items = SCENE_ITEMS.filter((it) => it.has());
-    // if the selected object is no longer listed (e.g. capsule when collision
-    // hidden, render camera when leaving WebP), clear the selection + its gizmo
-    if (viewer.selection !== 'none' && !items.some((it) => it.id === viewer!.selection)) {
-        viewer.selectObject('none');
-    }
-    const sel = viewer.selection;
-    sceneList.innerHTML = '';
-    if (!items.length) {
-        const li = document.createElement('li');
-        li.className = 'scene-empty';
-        li.textContent = 'Nothing loaded — view a splat to populate the scene.';
-        sceneList.appendChild(li);
-    }
-    for (const it of items) {
-        const li = document.createElement('li');
-        li.className = 'scene-item' + (it.id === sel ? ' selected' : '');
-        li.title = it.gizmo ? 'Select to move it with a gizmo' : 'Selecting hides any gizmo';
-        const isLayer = it.id === 'splat' || it.id === 'collision' || it.id === 'voxels';
-        const vis = isLayer ? layerVisible[it.id as LayerId] : true;
-        const eye = isLayer ? `<button class="scene-eye${vis ? '' : ' off'}" title="Show / hide">${vis ? '👁' : '🙈'}</button>` : '<span class="scene-eye-spacer"></span>';
-        const gizmo = it.gizmo ? '<span class="scene-gizmo" title="movable">✥</span>' : '';
-        li.innerHTML = `${eye}<span class="scene-icon">${it.icon}</span><span class="scene-name">${it.label}</span>${gizmo}`;
-        li.onclick = () => { selectScene(it.id === viewer!.selection ? 'none' : it.id); };
-        if (isLayer) {
-            li.querySelector('.scene-eye')?.addEventListener('click', (e) => { e.stopPropagation(); toggleLayer(it.id as LayerId); });
-        }
-        sceneList.appendChild(li);
-    }
-    $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
-    updateFileEyes(); // file-row eyes mirror the same visibility state
-}
-
-function selectScene(id: SelId): void {
-    viewer?.selectObject(id);
-    rebuildSceneList();
-}
-
-// ---------- skybox (scene environment) ----------
-$<HTMLButtonElement>('skybox-apply').onclick = () => {
-    const name = skyboxSelect.value;
-    if (!name) return showToast('Pick an image to use as the skybox', true);
-    if (!viewer) return showToast('Viewer is still starting up', true);
-    const btn = $<HTMLButtonElement>('skybox-apply');
-    btn.disabled = true;
-    showToast(`Loading skybox ${name.split('/').pop()}…`);
-    void viewer.setSkybox(api.fileUrl(name), name.split('/').pop() ?? name)
-        .then((ok) => { if (ok) showToast('Skybox applied'); })
-        .catch((err) => showToast(`Failed to load skybox: ${err}`, true))
-        .finally(() => { btn.disabled = false; });
-};
-$<HTMLButtonElement>('skybox-clear').onclick = () => { viewer?.clearSkybox(); showToast('Skybox cleared'); };
 
 // ---------- global undo / redo ----------
 // Snapshot-based over the undoable app state (form fields + loaded splat + layer
