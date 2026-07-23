@@ -107,12 +107,14 @@ export const fmtCount = (n: number): string => {
 // blank input -> null, else Number (region/edit box fields)
 export const numOrNull = (el: HTMLInputElement): number | null => el.value.trim() === '' ? null : Number(el.value);
 
-// blank field by id -> undefined, else trimmed string / Number
-export const strOrUndef = (id: string): string | undefined => {
-    const v = $<HTMLInputElement>(id).value.trim();
-    return v === '' ? undefined : v;
-};
-export const numOrUndef = (id: string): number | undefined => {
-    const v = $<HTMLInputElement>(id).value.trim();
-    return v === '' ? undefined : Number(v);
+// path -> basename, for compact file labels
+export const baseLabel = (n: string): string => n.split('/').pop() ?? n;
+
+/** every visible number input in the panel must hold a valid value */
+export const panelValid = (panelId: string): boolean => {
+    for (const input of document.querySelectorAll<HTMLInputElement>(`#${panelId} input[type=number]`)) {
+        if (input.closest('.hidden')) continue;
+        if (!input.reportValidity()) return false;
+    }
+    return true;
 };

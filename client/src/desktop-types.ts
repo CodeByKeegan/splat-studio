@@ -1,6 +1,6 @@
-// Types for the Electron preload bridge (electron/preload.cjs); absent in the
-// browser dev build. Update members are optional so an older shell degrades
-// gracefully.
+// Types + accessor for the Electron preload bridge (electron/preload.cjs);
+// absent in the browser dev build. Update members are optional so an older
+// shell degrades gracefully.
 export interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
 export interface DesktopApi {
     pickFolder(defaultPath?: string): Promise<string | null>;
@@ -16,4 +16,8 @@ export interface DesktopApi {
     getUpdateAuto?: () => Promise<boolean>;
     setUpdateAuto?: (on: boolean) => Promise<boolean>;
 }
+
+// the bridge instance; preload assigns window.desktop before any renderer
+// module evaluates, so a module-eval read sees the final value
+export const desktop = (window as unknown as { desktop?: DesktopApi }).desktop;
 

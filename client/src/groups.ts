@@ -3,10 +3,9 @@
 import * as api from './api';
 import { $, convertInput, convertFormat } from './dom';
 import { splatFileNames } from './state';
-import { showToast } from './ui';
-import { panelValid, runJob } from './jobs';
+import { showToast, baseLabel, panelValid } from './ui';
+import { runJob } from './jobs';
 import { filesRefreshHooks, selectedFiles } from './files-panel';
-import { baseLabel } from './lod-panel';
 import { editTransformOptions, carveRegion, regionMode } from './edit-panel';
 
 // Edit on a proxy (the loaded splat / Convert input), then fan the same transform +

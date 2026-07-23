@@ -2,8 +2,8 @@
 // Export run, and the optional-filter row toggles shared with region-panel.
 import * as api from './api';
 import { $, convertInput, convertFormat, convertRun } from './dom';
-import { showToast } from './ui';
-import { panelValid, runJob } from './jobs';
+import { showToast, panelValid } from './ui';
+import { runJob } from './jobs';
 import { filesRefreshHooks } from './files-panel';
 import { currentGenParams } from './generate-panel';
 

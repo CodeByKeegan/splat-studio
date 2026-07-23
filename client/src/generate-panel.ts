@@ -1,10 +1,12 @@
 // Generate panel: schema-driven sliders (or a freeform params field) for the
 // selected .mjs generator, plus the debounced generate-and-view preview flow.
 import * as api from './api';
-import { $, genInput, generateViewBtn } from './dom';
+import { $, genInput } from './dom';
 import { showToast } from './ui';
 import { runJob } from './jobs';
 import { fileActionCallbacks } from './files-panel';
+
+const generateViewBtn = $<HTMLButtonElement>('generate-view');
 
 // live sliders when the generator advertises a `params` schema, else freeform
 let genSchema: api.GenParam[] | null = null;

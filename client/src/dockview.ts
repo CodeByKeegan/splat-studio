@@ -110,13 +110,13 @@ const titleOf = (id: string): string => winById(id)?.title ?? id;
 // reset the dock to the factory arrangement
 export function applyDefaultLayout(): void {
     dock.clear();
-    dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
-    dock.addPanel({ id: 'panel-files', component: 'panel-files', title: 'Files', position: { referencePanel: 'viewer', direction: 'left' } });
+    dock.addPanel({ id: 'viewer', component: 'viewer', title: titleOf('viewer') });
+    dock.addPanel({ id: 'panel-files', component: 'panel-files', title: titleOf('panel-files'), position: { referencePanel: 'viewer', direction: 'left' } });
     for (const id of ['panel-convert', 'panel-generate', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
-    dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Jobs', position: { referencePanel: 'viewer', direction: 'below' } });
+    dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: titleOf('panel-scene'), position: { referencePanel: 'viewer', direction: 'right' } });
+    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: titleOf('panel-job'), position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
     dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });

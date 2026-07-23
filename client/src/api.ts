@@ -177,6 +177,14 @@ const jsonOrThrow = async (res: Response) => {
     return body;
 };
 
+// POST a JSON body and parse the JSON response via jsonOrThrow
+const postJson = async (url: string, body: unknown) =>
+    jsonOrThrow(await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    }));
+
 /** MCP editor binding + per-workspace consent, from /api/editor/status. */
 export interface EditorStatus {
     connected: boolean;
@@ -191,11 +199,7 @@ export const getEditorStatus = async (): Promise<EditorStatus> =>
     jsonOrThrow(await fetch('/api/editor/status'));
 
 export const setEditorControl = async (enabled: boolean): Promise<void> => {
-    await jsonOrThrow(await fetch('/api/editor/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled })
-    }));
+    await postJson('/api/editor/control', { enabled });
 };
 
 // the active project scopes every file/job call; set by the UI on project switch
@@ -212,11 +216,7 @@ export type Layout = Record<string, unknown>;
 export const getLayout = async (): Promise<Layout> =>
     jsonOrThrow(await fetch('/api/layout'));
 export const saveLayout = async (layout: Layout): Promise<void> => {
-    await jsonOrThrow(await fetch('/api/layout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(layout)
-    }));
+    await postJson('/api/layout', layout);
 };
 
 /** A location group: source splats that are the same place at different detail. Project-scoped. */
@@ -224,11 +224,7 @@ export interface LocationGroup { members: string[]; proxy: string | null; }
 export const getGroup = async (): Promise<LocationGroup> =>
     jsonOrThrow(await fetch(`/api/groups?${pq()}`));
 export const saveGroup = async (group: LocationGroup): Promise<void> => {
-    await jsonOrThrow(await fetch(`/api/groups?${pq()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(group)
-    }));
+    await postJson(`/api/groups?${pq()}`, group);
 };
 
 /** GPU adapters (-L/--list-gpus) for the device dropdown. */
@@ -247,18 +243,10 @@ export const getWorkspace = async (): Promise<Workspace> =>
 
 /** Re-point the app at a different workspace folder (live, no restart). */
 export const setWorkspace = async (path: string, create = false): Promise<Workspace> =>
-    jsonOrThrow(await fetch('/api/workspace', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, create })
-    }));
+    postJson('/api/workspace', { path, create });
 
 export const createProject = async (name: string): Promise<void> => {
-    await jsonOrThrow(await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-    }));
+    await postJson('/api/projects', { name });
 };
 
 export const listFiles = async (): Promise<FileEntry[]> => {
@@ -291,18 +279,10 @@ export const deleteFile = async (name: string): Promise<void> => {
 };
 
 export const startConvert = async (req: ConvertRequest): Promise<string> =>
-    (await jsonOrThrow(await fetch('/api/convert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...req, project })
-    }))).jobId;
+    (await postJson('/api/convert', { ...req, project })).jobId;
 
 export const startCollision = async (req: CollisionRequest): Promise<string> =>
-    (await jsonOrThrow(await fetch('/api/collision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...req, project })
-    }))).jobId;
+    (await postJson('/api/collision', { ...req, project })).jobId;
 
 /** Carve out (remove) or keep the gaussians inside a box/sphere region → a trimmed .ply. */
 export interface TrimRequest {
@@ -314,19 +294,11 @@ export interface TrimRequest {
     };
 }
 export const startTrim = async (req: TrimRequest): Promise<string> =>
-    (await jsonOrThrow(await fetch('/api/trim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...req, project })
-    }))).jobId;
+    (await postJson('/api/trim', { ...req, project })).jobId;
 
 /** Analysis-only run: per-column stats (-m) to the job log, no file written. */
 export const startAnalyze = async (input: string): Promise<string> =>
-    (await jsonOrThrow(await fetch('/api/summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input, project })
-    }))).jobId;
+    (await postJson('/api/summary', { input, project })).jobId;
 
 /** Gaussian count + x/y/z extents for a splat (cached server-side); drives LOD auto-tune. */
 export interface FileStats { count: number; extents: [number, number, number]; }
@@ -349,11 +321,7 @@ export const getJobs = async (): Promise<{ jobs: JobSummary[]; concurrency: numb
 
 /** How many jobs may run at once (the rest queue FIFO); returns the clamped value. */
 export const setJobConcurrency = async (max: number): Promise<number> =>
-    (await jsonOrThrow(await fetch('/api/jobs/concurrency', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ max })
-    }))).concurrency;
+    (await postJson('/api/jobs/concurrency', { max })).concurrency;
 
 export const cancelJob = async (id: string): Promise<void> => {
     await jsonOrThrow(await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' }));

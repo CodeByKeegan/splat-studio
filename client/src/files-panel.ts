@@ -49,6 +49,23 @@ export const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     else if (names.length === 1) select.value = names[0];
 };
 
+const EYE_HINTS: Record<string, string> = {
+    splat: 'Show / hide this splat in the 3D viewer. First show loads it; the last shown splat is the active one (Edit / Analyze / Collision).',
+    collision: 'Show / hide this collision mesh as a wireframe overlay (loading replaces any other overlay)',
+    voxel: 'Show / hide this voxel octree as translucent boxes (loading replaces any other voxel layer)'
+};
+
+const KIND_HINTS: Record<string, string> = {
+    splat: 'Gaussian splat — usable as convert/collision input',
+    lod: 'Streamed multi-LOD SOG — view streams chunks by camera distance; not usable as a conversion input',
+    voxel: 'Sparse voxel octree (collision job output) — view it as translucent boxes, or use for runtime collision in supersplat-viewer',
+    collision: 'Collision triangle mesh — view it as a wireframe over the splat',
+    glb: 'glTF binary (KHR_gaussian_splatting splat export)',
+    export: 'Export artifact (CSV / HTML / image)',
+    generator: 'Procedural splat generator (.mjs) — run it from the Generate tab with -p params (Beta, local only)',
+    other: 'Unrecognized file type'
+};
+
 // Re-fetch and re-render the whole Files panel (rows, eyes, selection, details,
 // input selects); `highlight` names flash as fresh job outputs.
 export const refreshFiles = async (highlight?: Set<string>) => {
@@ -93,16 +110,16 @@ export const refreshFiles = async (highlight?: Set<string>) => {
         }
     }
     // re-apply the persisted choice once its file exists again
-    for (const [select, id, names] of [
-        [convertInput, 'convert-input', convertNames],
-        [analyzeInput, 'analyze-input', convertNames],
-        [genInput, 'gen-input', generatorNames],
-        [lodInput, 'lod-input', splatFileNames],
-        [renderInput, 'render-input', splatFileNames],
-        [collisionInput, 'collision-input', splatFileNames],
-        [editInput, 'edit-input', splatFileNames]
+    for (const [select, names] of [
+        [convertInput, convertNames],
+        [analyzeInput, convertNames],
+        [genInput, generatorNames],
+        [lodInput, splatFileNames],
+        [renderInput, splatFileNames],
+        [collisionInput, splatFileNames],
+        [editInput, splatFileNames]
     ] as const) {
-        const want = formState[id];
+        const want = formState[select.id];
         if (!select.value && typeof want === 'string' && names.includes(want)) select.value = want;
     }
     fileList.innerHTML = '';
@@ -146,11 +163,6 @@ export const refreshFiles = async (highlight?: Set<string>) => {
         }
 
         if (f.viewable) {
-            const EYE_HINTS: Record<string, string> = {
-                splat: 'Show / hide this splat in the 3D viewer. First show loads it; the last shown splat is the active one (Edit / Analyze / Collision).',
-                collision: 'Show / hide this collision mesh as a wireframe overlay (loading replaces any other overlay)',
-                voxel: 'Show / hide this voxel octree as translucent boxes (loading replaces any other voxel layer)'
-            };
             const eye = document.createElement('button');
             eye.className = 'file-eye unloaded';
             eye.textContent = '👁';
@@ -163,16 +175,6 @@ export const refreshFiles = async (highlight?: Set<string>) => {
             li.appendChild(document.createElement('span')); // keep the grid aligned
         }
 
-        const KIND_HINTS: Record<string, string> = {
-            splat: 'Gaussian splat — usable as convert/collision input',
-            lod: 'Streamed multi-LOD SOG — view streams chunks by camera distance; not usable as a conversion input',
-            voxel: 'Sparse voxel octree (collision job output) — view it as translucent boxes, or use for runtime collision in supersplat-viewer',
-            collision: 'Collision triangle mesh — view it as a wireframe over the splat',
-            glb: 'glTF binary (KHR_gaussian_splatting splat export)',
-            export: 'Export artifact (CSV / HTML / image)',
-            generator: 'Procedural splat generator (.mjs) — run it from the Generate tab with -p params (Beta, local only)',
-            other: 'Unrecognized file type'
-        };
         const tag = document.createElement('span');
         tag.className = `tag ${f.kind}`;
         tag.textContent = f.kind;

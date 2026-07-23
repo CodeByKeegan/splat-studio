@@ -1,12 +1,14 @@
 // Render panel: WebP camera/image options, the in-viewport render frustum
 // preview, and the render run.
 import * as api from './api';
-import { $, renderInput, renderRun } from './dom';
+import { $, renderInput } from './dom';
 import { viewer } from './state';
-import { showToast, strOrUndef, numOrUndef } from './ui';
+import { showToast, panelValid } from './ui';
 import { panelActive, refreshCameraViewHint } from './dockview';
 import { rebuildSceneList } from './viewport';
-import { panelValid, runJob } from './jobs';
+import { runJob } from './jobs';
+
+const renderRun = $<HTMLButtonElement>('render-run');
 
 // per-axis triplet fields <-> the "x,y,z" strings the CLI/API contract uses
 export const vecFieldIds = (base: string): string[] => [`${base}-x`, `${base}-y`, `${base}-z`];
@@ -24,6 +26,16 @@ $<HTMLButtonElement>('webp-from-viewer').onclick = () => {
     writeVecField('webp-lookat', pose.lookAt);
     updateRenderFrustum();
     showToast('Camera set from viewer — adjust if needed');
+};
+
+// blank field by id -> undefined, else trimmed string / Number
+const strOrUndef = (id: string): string | undefined => {
+    const v = $<HTMLInputElement>(id).value.trim();
+    return v === '' ? undefined : v;
+};
+const numOrUndef = (id: string): number | undefined => {
+    const v = $<HTMLInputElement>(id).value.trim();
+    return v === '' ? undefined : Number(v);
 };
 
 const webpImageOptions = (): api.ImageOptions => ({

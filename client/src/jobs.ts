@@ -1,21 +1,14 @@
 // Jobs panel: the server-side job queue list + detail view, the shared poller,
 // and runJob — submit a CLI job, await completion, refresh + auto-load outputs.
 import * as api from './api';
-import { $, jobCommand, jobLog } from './dom';
+import { $ } from './dom';
 import { showToast } from './ui';
 import { refreshFiles, viewFile } from './files-panel';
 
 const jobList = $<HTMLUListElement>('job-list');
 const jobParallel = $<HTMLInputElement>('job-parallel');
-
-/** every visible number input in the panel must hold a valid value */
-export const panelValid = (panelId: string): boolean => {
-    for (const input of document.querySelectorAll<HTMLInputElement>(`#${panelId} input[type=number]`)) {
-        if (input.closest('.hidden')) continue;
-        if (!input.reportValidity()) return false;
-    }
-    return true;
-};
+const jobCommand = $<HTMLElement>('job-command');
+const jobLog = $<HTMLPreElement>('job-log');
 
 // Jobs queue server-side (FIFO, concurrency-capped) — the panel lists them all,
 // with the selected job's command + log shown below the list.

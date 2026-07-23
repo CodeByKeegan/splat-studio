@@ -3,6 +3,7 @@
 import { $ } from './dom';
 import { viewer } from './state';
 import { showToast, fmtCount, numOrNull } from './ui';
+import { round } from './line-meshes';
 import { rebuildSceneList } from './viewport';
 import { afterViewFileHooks } from './files-panel';
 import { syncActionRows } from './convert-panel';
@@ -51,11 +52,10 @@ const seedSphereDefaults = () => {
     if (!untouched) return;
     const b = viewer?.regionDefaultBounds();
     if (!b) return;
-    const r2 = (n: number) => Math.round(n * 100) / 100;
-    regSphX.value = String(r2((b.min[0] + b.max[0]) / 2));
-    regSphY.value = String(r2((b.min[1] + b.max[1]) / 2));
-    regSphZ.value = String(r2((b.min[2] + b.max[2]) / 2));
-    regSphR.value = String(r2(Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2], 1) / 2));
+    regSphX.value = String(round((b.min[0] + b.max[0]) / 2));
+    regSphY.value = String(round((b.min[1] + b.max[1]) / 2));
+    regSphZ.value = String(round((b.min[2] + b.max[2]) / 2));
+    regSphR.value = String(round(Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2], 1) / 2));
 };
 
 for (const el of [regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR]) el.addEventListener('input', syncRegionViz);

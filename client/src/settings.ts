@@ -2,10 +2,10 @@
 // widget, the About component versions, and the decimation scratch-dir picker.
 import * as api from './api';
 import { $ } from './dom';
-import { showToast, promptText } from './ui';
+import { promptText } from './ui';
 import { initThemeSettings } from './theme';
 import { SplatViewer } from './viewer';
-import type { DesktopApi, UpdateStatus } from './desktop-types';
+import { desktop, type UpdateStatus } from './desktop-types';
 
 const settingsBackdrop = $<HTMLDivElement>('settings-backdrop');
 export function isSettingsOpen(): boolean { return !settingsBackdrop.classList.contains('hidden'); }
@@ -29,7 +29,7 @@ $<HTMLButtonElement>('settings-close').onclick = closeSettings;
 settingsBackdrop.addEventListener('pointerdown', (e) => { if (e.target === settingsBackdrop) closeSettings(); });
 // promptText's capture-phase Escape handler wins while a prompt is up
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isSettingsOpen()) closeSettings(); });
-initThemeSettings({ promptText, showToast });
+initThemeSettings();
 (window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // capture harness handle (scripts/capture-docs.mjs)
 
 // the viewport toolbar's ⚙ opens the settings dialog
@@ -46,7 +46,7 @@ void (async () => {
 // ----- Settings > Updates + bottom-right status widget -----
 // Only meaningful in the packaged desktop app; drop both in the browser dev build.
 void (async () => {
-    const bridge = (window as unknown as { desktop?: DesktopApi }).desktop;
+    const bridge = desktop;
     const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
     const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
     const widget = $<HTMLDivElement>('update-widget');
@@ -113,7 +113,6 @@ void (async () => {
 })();
 
 // ----- Settings > Advanced: decimation scratch dir (--scratch-dir) -----
-const desktop = (window as unknown as { desktop?: DesktopApi }).desktop;
 const scratchDirEl = $<HTMLInputElement>('scratch-dir');
 const setScratchDir = (v: string): void => {
     scratchDirEl.value = v;

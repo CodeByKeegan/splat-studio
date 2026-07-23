@@ -5,6 +5,7 @@ import './boot-theme'; // theme first — before any UI paints
 import { $, projectSelect } from './dom';
 import { setViewer, hooks } from './state';
 import { showToast } from './ui';
+import { round } from './line-meshes';
 import { formState, restoreFormState } from './form-state';
 import { dock, getCameraViewCanvas, bootLayout } from './dockview';
 import { rebuildSceneList } from './viewport';
@@ -93,7 +94,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         // or Edit carve), live; persist on release
         v.onCropSphereMove = (c) => { const [x, y, z] = ownerSphFields(); x.value = String(c.x); y.value = String(c.y); z.value = String(c.z); };
         v.onCropBoxMove = (d) => {
-            const shift = (el: HTMLInputElement, dv: number) => { if (el.value.trim() !== '') el.value = String(Math.round((Number(el.value) + dv) * 100) / 100); };
+            const shift = (el: HTMLInputElement, dv: number) => { if (el.value.trim() !== '') el.value = String(round(Number(el.value) + dv)); };
             const [minX, minY, minZ, maxX, maxY, maxZ] = ownerBoxFields();
             shift(minX, d.x); shift(maxX, d.x);
             shift(minY, d.y); shift(maxY, d.y);

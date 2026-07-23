@@ -1,14 +1,15 @@
 // LOD panel: decimate/combine level rows, the auto-tune planner, and the bake
 // run for a streamed multi-LOD SOG.
 import * as api from './api';
-import { $, lodInput, lodRun } from './dom';
+import { $, lodInput } from './dom';
 import { splatFileNames } from './state';
-import { showToast, fmtCount } from './ui';
-import { panelValid, runJob } from './jobs';
+import { showToast, fmtCount, baseLabel, panelValid } from './ui';
+import { runJob } from './jobs';
 import { fillSelect, filesRefreshHooks } from './files-panel';
 
 const lodMode = $<HTMLSelectElement>('lod-mode');
 const lodFileRows = $<HTMLDivElement>('lod-file-rows');
+const lodRun = $<HTMLButtonElement>('lod-run');
 
 const lodRowSelects = (): HTMLSelectElement[] => [...lodFileRows.querySelectorAll('select')];
 // refill the level-row selects whenever the file list refreshes
@@ -77,7 +78,6 @@ lodMode.onchange = updateLodRows;
 // ----- LOD auto-tune: fill the LOD settings from each source's gaussian count + extents -----
 const lodAutotuneBtn = $<HTMLButtonElement>('lod-autotune');
 const lodAutotunePlan = $('lod-autotune-plan');
-export const baseLabel = (n: string): string => n.split('/').pop() ?? n;
 const showLodPlan = (text: string, cls = ''): void => {
     lodAutotunePlan.textContent = text;
     lodAutotunePlan.className = `hint ${cls}`.trim();

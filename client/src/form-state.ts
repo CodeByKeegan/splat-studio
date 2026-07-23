@@ -6,7 +6,7 @@ import { hooks } from './state';
 
 export const FORM_KEY = 'splat-studio.form';
 // selects whose options come from the workspace — restored after the file list loads
-export const FILE_SELECT_IDS = new Set(['convert-input', 'lod-input', 'render-input', 'collision-input', 'analyze-input', 'edit-input']);
+const FILE_SELECT_IDS = new Set(['convert-input', 'lod-input', 'render-input', 'collision-input', 'analyze-input', 'edit-input']);
 // controls owned by the server/desktop (MCP consent, update prefs)
 export const EXTERNAL_STATE_IDS = new Set(['mcp-control', 'update-channel', 'update-auto']);
 export const formState: Record<string, string | boolean> = (() => {

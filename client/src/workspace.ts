@@ -5,11 +5,10 @@ import { $ } from './dom';
 import { hooks } from './state';
 import { showToast, promptText } from './ui';
 import { loadProjects } from './projects';
-import type { DesktopApi } from './desktop-types';
+import { desktop } from './desktop-types';
 
 // The native folder picker lives in Electron (preload -> main); the actual switch
 // goes through POST /api/workspace so it works headlessly (MCP) and in the browser.
-const desktop = (window as unknown as { desktop?: DesktopApi }).desktop;
 let currentWorkspace = '';
 let wsSwitching = false;
 const wsPathEl = $<HTMLInputElement>('ws-path');
@@ -59,6 +58,6 @@ export const onWorkspaceSwitched = async (): Promise<void> => {
 
 $<HTMLButtonElement>('ws-change').onclick = () => void chooseWorkspaceFolder();
 const wsOpenBtn = $<HTMLButtonElement>('ws-open');
-if (desktop?.openWorkspace) { wsOpenBtn.hidden = false; wsOpenBtn.onclick = () => void desktop.openWorkspace(); }
+if (desktop?.openWorkspace) { wsOpenBtn.hidden = false; wsOpenBtn.onclick = () => void desktop?.openWorkspace(); }
 desktop?.onChooseWorkspace(() => void chooseWorkspaceFolder());
 void api.getWorkspace().then((ws) => showWorkspace(ws.path)).catch(() => { /* server not up yet */ });

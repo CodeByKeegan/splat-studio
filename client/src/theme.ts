@@ -1,7 +1,7 @@
 // Theme engine: named color themes applied as CSS custom properties on <html>.
 // Built-in Dark + Light are read-only; custom themes live in localStorage and
 // are edited live from the Settings dialog's Appearance page.
-import { twoStageConfirm } from './ui';
+import { twoStageConfirm, promptText, showToast } from './ui';
 
 export type Scheme = 'dark' | 'light';
 
@@ -124,12 +124,7 @@ function applyTheme(t: Theme): void {
 export function applyActiveTheme(): void { applyTheme(activeTheme()); }
 
 // ---------- Settings ▸ Appearance UI ----------
-interface InitOpts {
-    promptText: (title: string, opts?: { value?: string; okLabel?: string; placeholder?: string }) => Promise<string | null>;
-    showToast: (message: string, isError?: boolean) => void;
-}
-
-export function initThemeSettings({ promptText, showToast }: InitOpts): void {
+export function initThemeSettings(): void {
     const q = <T extends HTMLElement>(sel: string): T => {
         const el = document.querySelector<T>(sel);
         if (!el) throw new Error(`missing settings element ${sel}`);

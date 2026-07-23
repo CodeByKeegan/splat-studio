@@ -1,13 +1,14 @@
 // Collision panel: presets, seed + carve capsule gizmo sync, knob visibility,
 // and the collision-generation run.
 import * as api from './api';
-import { $, collisionInput, collisionRun, carveBox } from './dom';
+import { $, collisionInput, carveBox } from './dom';
 import { viewer } from './state';
-import { showToast } from './ui';
+import { showToast, panelValid } from './ui';
 import { rebuildSceneList } from './viewport';
-import { panelValid, runJob } from './jobs';
-import { regionBoxOn, regionSphereOn, getRegionRiskLevel } from './region-panel';
+import { runJob } from './jobs';
+import { regionBoxOn, regionSphereOn, getRegionRiskLevel, regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR } from './region-panel';
 
+const collisionRun = $<HTMLButtonElement>('collision-run');
 const preset = $<HTMLSelectElement>('collision-preset');
 const fillMode = $<HTMLSelectElement>('fill-mode');
 export const seedX = $<HTMLInputElement>('seed-x');
@@ -53,8 +54,8 @@ preset.onchange = () => {
     carveBox.checked = p.carve;
     $<HTMLInputElement>('filter-cluster').checked = p.filterCluster;
     $<HTMLInputElement>('fill-size').value = String(p.fillSize);
-    $<HTMLInputElement>('carve-height').value = String(p.carveHeight);
-    $<HTMLInputElement>('carve-radius').value = String(p.carveRadius);
+    carveHeight.value = String(p.carveHeight);
+    carveRadius.value = String(p.carveRadius);
     syncCollisionRows();
 };
 
@@ -90,26 +91,19 @@ collisionRun.onclick = () => {
             voxelSize: Number($<HTMLInputElement>('voxel-size').value),
             opacity: Number($<HTMLInputElement>('voxel-opacity').value),
             filterCluster: $<HTMLInputElement>('filter-cluster').checked,
-            seedPos: [
-                Number($<HTMLInputElement>('seed-x').value),
-                Number($<HTMLInputElement>('seed-y').value),
-                Number($<HTMLInputElement>('seed-z').value)
-            ],
+            seedPos: [Number(seedX.value), Number(seedY.value), Number(seedZ.value)],
             fillMode: fillMode.value as 'none' | 'external' | 'floor',
             fillSize: Number($<HTMLInputElement>('fill-size').value),
             carve: carveBox.checked,
-            carveHeight: Number($<HTMLInputElement>('carve-height').value),
-            carveRadius: Number($<HTMLInputElement>('carve-radius').value),
+            carveHeight: Number(carveHeight.value),
+            carveRadius: Number(carveRadius.value),
             meshShape: $<HTMLSelectElement>('mesh-shape').value as 'smooth' | 'faces',
-            filterBox: $<HTMLInputElement>('region-box-on').checked ? [
-                $<HTMLInputElement>('region-min-x').value, $<HTMLInputElement>('region-min-y').value, $<HTMLInputElement>('region-min-z').value,
-                $<HTMLInputElement>('region-max-x').value, $<HTMLInputElement>('region-max-y').value, $<HTMLInputElement>('region-max-z').value
+            filterBox: regionBoxOn() ? [
+                regMinX.value, regMinY.value, regMinZ.value,
+                regMaxX.value, regMaxY.value, regMaxZ.value
             ] : undefined,
-            filterSphere: $<HTMLInputElement>('region-sphere-on').checked ? [
-                Number($<HTMLInputElement>('region-sphere-x').value),
-                Number($<HTMLInputElement>('region-sphere-y').value),
-                Number($<HTMLInputElement>('region-sphere-z').value),
-                Number($<HTMLInputElement>('region-sphere-r').value)
+            filterSphere: regionSphereOn() ? [
+                Number(regSphX.value), Number(regSphY.value), Number(regSphZ.value), Number(regSphR.value)
             ] : undefined
         }
     }), collisionRun, $<HTMLInputElement>('collision-autoload').checked);
