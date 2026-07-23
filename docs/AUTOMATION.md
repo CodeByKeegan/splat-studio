@@ -91,14 +91,17 @@ flowchart LR
 ## The release pipeline
 
 Every push ships a build. `.github/workflows/release.yml` runs on `windows-latest`
-for both branches: a push to `dev` publishes a **beta** pre-release
-(`0.0.<run>-beta.<run>`, `beta.yml`), promoting `dev` to `main` publishes a
-**stable** release (`0.0.<run>`, `latest.yml`).
+for both branches. `package.json` carries the **next stable version** (e.g.
+`0.1.0`): a push to `dev` publishes a **beta** pre-release
+(`<version>-beta.<run>`, `beta.yml`) leading up to it, and promoting `dev` to
+`main` publishes that **stable** release (`<version>`, `latest.yml`). After a
+promote, bump `package.json` on `dev` before the next one — the workflow fails
+fast if the stable tag already exists.
 
 ```mermaid
 flowchart LR
     PUSH([push to dev / main]) --> CI[GitHub Actions<br/>windows-latest]
-    CI --> V[version = 0.0.&lt;run&gt;<br/>+ -beta.&lt;run&gt; on dev]
+    CI --> V[version = package.json<br/>+ -beta.&lt;run&gt; on dev]
     V --> FN[stage node.exe] --> B[build client] --> EB[electron-builder --win]
     EB --> REL[[GitHub Release<br/>installer + portable + channel yml]]
     REL -. electron-updater .-> APP[installed app]
@@ -110,9 +113,7 @@ flowchart LR
 The installed app checks GitHub Releases on launch (and via **Help → Check for
 Updates…**) through electron-updater; a newer version on the selected channel
 downloads in the background and installs when the user restarts (or on quit).
-The channel (stable / beta) is switchable in **Settings → Updates**. The
-repo's `package.json` stays at version `0.0.0` — CI stamps the real version at
-build time, so a from-source build never semver-outranks a published release.
+The channel (stable / beta) is switchable in **Settings → Updates**.
 
 ## The dependency-update loop
 

@@ -47,6 +47,7 @@ const waitForHealth = (port, timeoutMs = 30000) => new Promise((resolve, reject)
     attempt();
 });
 
+// spawn the API server on the real workspace being captured
 const startServer = async (port) => {
     const env = { ...process.env, API_PORT: String(port), SPLAT_WORKSPACE: WORKSPACE };
     delete env.ELECTRON_RUN_AS_NODE;
@@ -57,6 +58,7 @@ const startServer = async (port) => {
     return proc;
 };
 
+// boot server + window, then capture each configured shot
 async function run() {
     const port = await freePort();
     const server = await startServer(port);

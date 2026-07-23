@@ -111,6 +111,9 @@ const fmtCount = (n: number): string => {
 const FORM_KEY = 'splat-studio.form';
 // selects whose options come from the workspace — restored after the file list loads
 const FILE_SELECT_IDS = new Set(['convert-input', 'lod-input', 'render-input', 'collision-input', 'analyze-input', 'edit-input']);
+// controls owned by the server/desktop (MCP consent, update prefs) — synced
+// from their owners, never persisted to localStorage or captured in undo
+const EXTERNAL_STATE_IDS = new Set(['mcp-control', 'update-channel', 'update-auto']);
 const formState: Record<string, string | boolean> = (() => {
     try { return JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'); } catch { return {}; }
 })();
@@ -121,14 +124,16 @@ document.addEventListener('change', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || !t.id) return;
     if (t.id === 'files-select-all') return; // transient bulk-select state, not a form value
-    formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
-    localStorage.setItem(FORM_KEY, JSON.stringify(formState));
+    if (!EXTERNAL_STATE_IDS.has(t.id)) {
+        formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
+        localStorage.setItem(FORM_KEY, JSON.stringify(formState));
+    }
     scheduleUndoCapture(); // record an undo step for this committed change
 });
 
 const restoreFormState = () => {
     for (const [id, value] of Object.entries(formState)) {
-        if (FILE_SELECT_IDS.has(id)) continue;
+        if (FILE_SELECT_IDS.has(id) || EXTERNAL_STATE_IDS.has(id)) continue;
         const el = document.getElementById(id);
         if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) continue;
         if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = value === true;
@@ -190,8 +195,8 @@ const refreshFiles = async (highlight?: Set<string>) => {
     splatFileNames = splatFiles.map((f) => f.name);
     // .mjs generators are valid convert/analyze inputs, but not collision/LOD sources
     const generatorNames = files.filter((f) => f.kind === 'generator').map((f) => f.name);
-    // 3.1.0: lod-meta.json (our own streamed-SOG output) is now a valid convert/analyze
-    // INPUT too (--select-lod reads back a subset of levels), but not a collision/LOD/
+    // lod-meta.json (our own streamed-SOG output) is a valid convert/analyze INPUT
+    // (--select-lod reads back a subset of levels), but not a collision/LOD/
     // render/edit source — those keep taking only actual splat files
     const lodMetaNames = files.filter((f) => f.kind === 'lod').map((f) => f.name);
     const convertNames = [...splatFileNames, ...generatorNames, ...lodMetaNames];
@@ -636,7 +641,7 @@ bulkDeleteBtn.onclick = async () => {
         }
     } finally {
         bulkDeleteBtn.disabled = false;
-        await refreshFiles();
+        await refreshFiles().catch(() => showToast('Couldn\'t refresh the file list', true));
     }
 };
 
@@ -873,7 +878,9 @@ const uploadFiles = async (files: Iterable<File>) => {
     } catch (err) {
         showToast(`Upload failed: ${err}`, true);
     } finally {
-        await refreshFiles(); // files before the failure did land
+        // files before the failure did land; a refresh failure must not escape the
+        // finally into the void-returning callers
+        await refreshFiles().catch(() => showToast('Couldn\'t refresh the file list', true));
         // fresh upload becomes the active input — that's almost always the intent
         if (lastSplat && splatFileNames.includes(lastSplat)) {
             convertInput.value = lastSplat;
@@ -2568,6 +2575,9 @@ const takeSnap = (): UndoSnap => {
     const fields: Record<string, string | boolean> = {};
     for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[id], select[id]')) {
         if (el.id === 'project-select') continue; // switching projects is navigation, not an edit
+        // server/desktop-owned settings (MCP consent, update prefs) are not edits —
+        // undoing must never flip consent or the update channel as a side effect
+        if (EXTERNAL_STATE_IDS.has(el.id)) continue;
         if (el instanceof HTMLInputElement && (el.type === 'file' || el.type === 'button' || el.type === 'submit')) continue;
         fields[el.id] = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked : el.value;
     }
@@ -2813,6 +2823,7 @@ const switchProject = async (name: string) => {
     api.setProject(name);
     projectSelect.value = name;
     localStorage.setItem(PROJECT_KEY, name);
+    lodMetaCache.clear(); // keyed name@mtime within a project
     // loaded layers belong to the project we're leaving
     clearViewport();
     await refreshFiles();
@@ -2840,7 +2851,8 @@ const loadProjects = async (preferred?: string) => {
     await switchProject(projects.includes(preferred ?? '') ? preferred! : projects[0]);
 };
 
-projectSelect.onchange = () => void switchProject(projectSelect.value);
+projectSelect.onchange = () => void switchProject(projectSelect.value)
+    .catch((err) => showToast(`Couldn't switch project: ${err}`, true));
 
 $<HTMLButtonElement>('project-new').onclick = async () => {
     const name = await promptText('New project name', { okLabel: 'Create', placeholder: 'my-scene' });
@@ -2876,7 +2888,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             seedZ.value = String(cli.z);
         };
         v.onSeedMoveEnd = () => {
-            // bubbles:true so the delegated form-state listener on #sidebar persists it
+            // bubbles:true so the delegated form-state listener on document persists it
             for (const el of [seedX, seedY, seedZ]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncSeedViz(); // snap the node to the rounded field values
         };

@@ -237,7 +237,7 @@ export class SplatViewer {
         const app = new pc.AppBase(canvas);
         app.init(createOptions);
         // size from the canvas's container (CSS 100%), not the window — the
-        // sidebar is resizable, so the viewport is narrower than the window
+        // viewport is a resizable dock tab, so it's rarely the full window
         app.setCanvasFillMode(pc.FILLMODE_NONE);
         app.setCanvasResolution(pc.RESOLUTION_AUTO);
         const observer = new ResizeObserver(() => app.resizeCanvas());
@@ -868,7 +868,7 @@ export class SplatViewer {
         this.skyboxCubemap = cubemap;
         this.app.scene.skybox = cubemap;
         this.app.scene.skyboxMip = 0; // use the sharp cubemap directly
-        this.skyboxAsset?.unload();
+        if (this.skyboxAsset) { this.app.assets.remove(this.skyboxAsset); this.skyboxAsset.unload(); }
         this.skyboxAsset = asset;
         return true;
     }
@@ -1784,6 +1784,9 @@ export class SplatViewer {
             if (!hit) return;
             this.regionDrag = hit;
             this.controls.enabled = false;
+            // keep receiving move/up when the pointer leaves the canvas — releasing
+            // outside must still end the drag (and re-enable the camera)
+            try { canvas.setPointerCapture(e.pointerId); } catch { /* stale pointer id */ }
             e.stopPropagation();
         }, true);
         canvas.addEventListener('pointermove', (e) => {

@@ -23,7 +23,8 @@ workspace.
 
 📚 **[Documentation site](https://codebykeegan.github.io/splat-studio/)** ·
 📖 **[User Guide](docs/USER_GUIDE.md)** (illustrated, every feature) ·
-⚙️ **[Automation Architecture](docs/AUTOMATION.md)** (how the app keeps itself current) ·
+🏗️ **[Architecture](docs/ARCHITECTURE.md)** (processes, modules, job pipeline) ·
+⚙️ **[Automation](docs/AUTOMATION.md)** (how the app keeps itself current) ·
 ⬇️ **[Download the latest release](https://github.com/CodeByKeegan/splat-studio/releases/latest)**
 
 ---

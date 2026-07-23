@@ -57,6 +57,7 @@ const seedWorkspace = () => {
     fs.copyFileSync(demoSrc, path.join(proj, 'demo-room.ply'));
 };
 
+// spawn the API server on the throwaway capture workspace
 const startServer = async (port) => {
     const env = { ...process.env, API_PORT: String(port), SPLAT_WORKSPACE: captureWs };
     delete env.ELECTRON_RUN_AS_NODE;
@@ -128,6 +129,7 @@ window.__doc = {
 true;
 `;
 
+// boot server + window, drive each documented panel, write the screenshots
 async function run() {
     const port = await freePort();
     seedWorkspace();

@@ -12,6 +12,7 @@ Unity/Unreal-style tab editor you can rearrange and save per workspace.
 - **[User Guide](USER_GUIDE.md)** — every feature, illustrated.
 - **[MCP Setup](MCP_SETUP.md)** — drive Splat Studio from an AI agent via its MCP server.
 - **[MCP Workflows](MCP_WORKFLOWS.md)** — end-to-end agent recipes.
+- **[Architecture](ARCHITECTURE.md)** — the processes, modules, and job pipeline, with diagrams.
 - **[Automation](AUTOMATION.md)** — how the app keeps itself current.
 
 ## Get the app

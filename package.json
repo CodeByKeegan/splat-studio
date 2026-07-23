@@ -1,7 +1,7 @@
 {
   "name": "splat-studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "GUI for @playcanvas/splat-transform: SOG bundling, splat format conversion and collision generation, with a PlayCanvas viewer that overlays the collision mesh as a wireframe on the gaussian splat",
   "author": "CodeByKeegan",

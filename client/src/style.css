@@ -1028,6 +1028,4 @@ body.dropping #viewport::after {
 #measure-readout { display: block; margin: 7px 0; }
 #measure-edit-row { margin-top: 8px; }
 
-/* ----- icon-rail navigation (SuperSplat-style: jump to a panel, or hide the
-   whole sidebar to maximize the 3D viewport) ----- */
 .hidden { display: none !important; }

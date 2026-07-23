@@ -82,6 +82,7 @@ const sendStatus = (phase, extra = {}) => {
 };
 export const getStatus = () => lastStatus;
 
+// one-time hookup of the electron-updater event stream to status broadcasts
 const wire = () => {
     if (wired) return;
     wired = true;
@@ -164,6 +165,7 @@ export async function downloadUpdate(win) {
     catch { /* 'error' event handles it */ }
 }
 
+// query GitHub Releases for a newer version on the selected channel
 async function runCheck({ silent }) {
     manualCheck = !silent;
     applyChannel(getChannel());

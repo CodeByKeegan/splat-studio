@@ -27,6 +27,8 @@ async function check(name, fn) { try { await fn(); console.log(`  ✓ ${name}`);
 async function waitHealth(port) { for (let i = 0; i < 120; i++) { try { const r = await fetch(`http://127.0.0.1:${port}/api/health`); if (r.ok) return; } catch { /* */ } await sleep(150); } throw new Error('server never healthy'); }
 
 const PNG1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+// Fake editor on the relay WS: answers pings, screenshots with a 1px PNG, echoes
+// every other command back as { ok:true, data:{ echo:{name,params} } }.
 function mockEditor(port) {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/editor-ws`);
     ws.on('open', () => ws.send(JSON.stringify({ type: 'register', role: 'editor', project: 'Demo', appVersion: 't' })));

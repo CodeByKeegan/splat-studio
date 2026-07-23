@@ -34,18 +34,28 @@ jobs:
 
       - name: Resolve channel + version
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # package.json carries the NEXT stable version (e.g. 0.1.0). A push to
+          # main ships it verbatim; every dev push ships <base>-beta.<run>, which
+          # semver-sorts below the stable it leads up to. After promoting a
+          # stable, bump package.json on dev before the next promote.
+          BASE=$(node -p "require('./package.json').version")
           if [ "${{ github.ref_name }}" = "dev" ]; then
             CHANNEL=beta
-            # -beta.<run> so successive betas compare as increasing semver, and the
-            # prerelease tag makes electron-builder write beta.yml (+ latest.yml via
-            # generateUpdatesFilesForAllChannels)
-            VERSION="0.0.${{ github.run_number }}-beta.${{ github.run_number }}"
+            # the prerelease tag makes electron-builder write beta.yml
+            # (+ latest.yml via generateUpdatesFilesForAllChannels)
+            VERSION="${BASE}-beta.${{ github.run_number }}"
             PRERELEASE_FLAG="--prerelease"
           else
             CHANNEL=stable
-            VERSION="0.0.${{ github.run_number }}"
+            VERSION="$BASE"
             PRERELEASE_FLAG=""
+          fi
+          if gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists — bump the version in package.json before promoting."
+            exit 1
           fi
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
