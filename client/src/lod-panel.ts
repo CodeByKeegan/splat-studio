@@ -3,7 +3,7 @@
 import * as api from './api';
 import { $, lodInput } from './dom';
 import { splatFileNames } from './state';
-import { showToast, fmtCount, baseLabel, panelValid, syncPresetRows, setAdvOpen } from './ui';
+import { showToast, fmtCount, baseLabel, panelValid, syncPresetRows } from './ui';
 import { runJob } from './jobs';
 import { fillSelect, filesRefreshHooks } from './files-panel';
 
@@ -220,8 +220,6 @@ lodPreset.onchange = () => {
 for (const id of ['lod-mode', 'lod-levels', 'lod-keep', 'lod-chunk-count', 'lod-chunk-extent']) {
     $(id).addEventListener('input', () => { lodPreset.value = 'custom'; syncPresetRows(); });
 }
-// combine mode lives in Advanced — reveal it when picked so the level rows show
-lodMode.addEventListener('change', () => { if (lodMode.value === 'combine') setAdvOpen('panel-lod', true); });
 
 // ---------- LOD panel: bake a streamed multi-LOD SOG ----------
 lodRun.onclick = () => {

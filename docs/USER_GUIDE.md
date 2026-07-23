@@ -253,17 +253,17 @@ folders that the engine streams by camera distance, for scenes too big to load a
    50% keep per level. The **Levels** ladder under the chips always shows what the
    bake will write (per-level keep % in Decimate mode, the chosen files in Combine
    mode, plus the chunk extent), updating live as settings change.
-3. **Generate streamed LOD**. That's the whole simple flow; the knobs the presets set
-   live under **▸ Advanced options**:
-   - **Levels** — the **LOD source** (*Decimate input automatically* derives the
-     lighter levels from the single input; *Combine existing files as levels* uses
-     files you already have as explicit levels — picking it opens Advanced). In
-     Decimate mode, **LOD levels** and **Keep per level (%)**. In Combine mode, each
-     **Additional level** row is the next, lighter level — order matters (each level
-     should have fewer gaussians than the one before). Tick a row's **Env** box to
-     make that file an always-visible far/background shell (a coarse backdrop —
-     skybox, distant cityscape — emitted as LOD `-1`) the runtime keeps resident
-     instead of culling it by distance. One environment layer per bake; Combine only.
+3. **Levels from** — *Decimate input automatically* (default) derives the lighter
+   levels from the single input; *Combine existing files as levels* uses files you
+   already have as explicit levels. In Combine mode the **Additional level** rows
+   appear right below: each row is the next, lighter level — order matters (each
+   level should have fewer gaussians than the one before). Tick a row's **Env** box
+   to make that file an always-visible far/background shell (a coarse backdrop —
+   skybox, distant cityscape — emitted as LOD `-1`) the runtime keeps resident
+   instead of culling it by distance. One environment layer per bake; Combine only.
+4. **Generate streamed LOD**. The tuning knobs the presets set live under
+   **▸ Advanced options**:
+   - **Decimate ladder** — **LOD levels** and **Keep per level (%)**.
    - **Streaming chunks** — **Chunk size (K splats)** and **Chunk extent (m)**.
    - **Encoding** — the paired **SH iterations** / **Encoder workers** row (as in
      Export) and the **Device**.

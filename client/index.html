@@ -255,6 +255,18 @@
                     <span>Input</span>
                     <select id="lod-input"></select>
                 </label>
+                <label class="field" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
+                    <span>Levels from</span>
+                    <select id="lod-mode">
+                        <option value="decimate" selected>Decimate input automatically</option>
+                        <option value="combine">Combine existing files as levels</option>
+                    </select>
+                </label>
+                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick a row's Env box to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
+                    <span>Additional levels <em>(Input = LOD 0; tick 'Env' for an always-visible backdrop)</em></span>
+                    <div id="lod-file-rows"></div>
+                    <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
+                </div>
                 <div class="field" title="Scene-type presets fill the LOD settings; ⚡ Auto reads the input's gaussian count + extents and sizes them to match. Editing a setting in Advanced switches to Custom">
                     <span>Scene type <em>— fills the LOD settings</em></span>
                     <div class="preset-row" data-preset-for="lod-preset">
@@ -282,15 +294,8 @@
 
                 <button type="button" class="adv-toggle" data-adv-panel="panel-lod">▸ Advanced options</button>
                 <div class="adv-body hidden" id="panel-lod-adv">
-                <div class="sec" title="How many detail levels the bake writes, and where they come from">
-                    <div class="sec-head">Levels</div>
-                    <label class="field" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
-                        <span>LOD source</span>
-                        <select id="lod-mode">
-                            <option value="decimate" selected>Decimate input automatically</option>
-                            <option value="combine">Combine existing files as levels</option>
-                        </select>
-                    </label>
+                <div class="sec" title="Tune the decimation ladder the presets set — how many levels, and how much each keeps">
+                    <div class="sec-head">Decimate ladder</div>
                     <div class="field-row" id="row-lod-levels">
                     <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
                         <span>LOD levels</span>
@@ -301,11 +306,7 @@
                         <input type="number" id="lod-keep" value="50" min="5" max="95" required />
                     </label>
                 </div>
-                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick a row's Env box to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
-                    <span>Additional levels <em>(Input = LOD 0; tick 'Env' for an always-visible backdrop)</em></span>
-                    <div id="lod-file-rows"></div>
-                    <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
-                </div>
+                
                 </div>
 
                 <div class="sec" title="How the baked scene is cut into distance-streamed chunks">
