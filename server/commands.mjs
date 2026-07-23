@@ -232,6 +232,96 @@ const pushConvertActions = (args, options) => {
     }
 };
 
+// Streamed-LOD combine mode: pre-authored levels — the input is LOD 0; each
+// added file is the next positive level, except one flagged "environment" which
+// is tagged -l -1 (the runtime keeps it resident as a far/background shell
+// instead of streaming it by camera distance). nextLevel (not the array index)
+// keeps positive levels gap-free around an environment row.
+const buildLodCombine = ({ input, options, args, output, lodDir, settings, buildMetaName, pairs }) => {
+    args.push(input);
+    if (options.filterNaN) args.push('-N');
+    args.push('-l', '0');
+    const metaLevels = [{ level: 0, source: input }];
+    const envLevels = [];
+    let nextLevel = 1;
+    for (const { file, env } of pairs) {
+        args.push(file);
+        if (options.filterNaN) args.push('-N');
+        if (env) {
+            args.push('-l', '-1');
+            envLevels.push({ level: -1, source: file, environment: true });
+        } else {
+            args.push('-l', String(nextLevel));
+            metaLevels.push({ level: nextLevel++, source: file });
+        }
+    }
+    args.push(output);
+    return {
+        title: `Streamed LOD (combine ${pairs.length + 1} files${envLevels.length ? ', +environment' : ''}) → ${output}`,
+        args,
+        expectedOutputs: [output],
+        viewables: viewableOutputs([output]),
+        // chunk folder names vary with settings; clear stale ones on re-run
+        cleanDirs: [lodDir],
+        // environment rows sort last
+        buildMeta: { version: 1, mode: 'combine', input, levels: [...metaLevels, ...envLevels], settings },
+        buildMetaName
+    };
+};
+
+// Streamed-LOD decimate mode: the CLI requires --decimate to be the final action
+// writing a .ply, so it can't run inline while tagging LOD levels. Pre-decimate
+// each level to a temp .ply in a sibling <lod>-src dir, then combine the raw
+// input (level 0) with those pre-authored levels in one invocation.
+const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buildMetaName }) => {
+    const levels = Math.round(num(options.lodLevels, 3, 1, 8));
+    const keep = num(options.lodKeepPercent, 50, 5, 95);
+    const tmpDir = `${lodDir}-src`;
+    const tmp = (level) => `${tmpDir}/l${level}.ply`;
+
+    const sd = scratchDirArg(options); // each pre-command decimates
+    // provenance is the original input at each level's kept percentage — the
+    // l<n>.ply temps are plumbing
+    const metaLevels = [{ level: 0, source: input, keepPercent: 100 }];
+    const preCommands = [];
+    for (let level = 1; level < levels; level++) {
+        const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
+        metaLevels.push({ level, source: input, keepPercent: pct });
+        const a = [cliPath, '--no-tty', '-w', '-q'];
+        pushDeviceFlag(a, options);
+        if (sd) a.push('--scratch-dir', sd);
+        a.push(input);
+        if (options.filterNaN) a.push('-N');
+        a.push('--decimate', `${pct}%`, tmp(level)); // decimate is the final action, .ply output
+        preCommands.push({ args: a });
+    }
+    // combine: raw input is level 0; each pre-decimated temp is the next level
+    args.push(input);
+    if (options.filterNaN) args.push('-N');
+    args.push('-l', '0');
+    for (let level = 1; level < levels; level++) args.push(tmp(level), '-l', String(level));
+    args.push(output);
+    return {
+        title: `Streamed LOD (${levels} levels, decimated) ${input} → ${output}`,
+        preCommands,
+        args,
+        expectedOutputs: [output],
+        viewables: viewableOutputs([output]),
+        // clear stale chunk dirs AND stale temps before the run
+        cleanDirs: [lodDir, tmpDir],
+        // remove the temp .ply dir after the job finishes
+        tempDirs: [tmpDir],
+        buildMeta: {
+            version: 1,
+            mode: 'decimate',
+            input,
+            levels: metaLevels,
+            settings: { ...settings, lodLevels: levels, keepPercent: keep }
+        },
+        buildMetaName
+    };
+};
+
 // Build the convert/LOD/render argv for one job.
 // CLI grammar: splat-transform [GLOBAL] input [ACTIONS] output [ACTIONS]
 export const buildConvertCommand = ({ input, format, options = {}, workspaceDir }) => {
@@ -304,93 +394,8 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         if (pairs.length > 0 && pairs.every((p) => p.env)) {
             throw new Error('Combine mode needs at least one non-environment LOD level');
         }
-        if (pairs.length > 0) {
-            // combine mode: pre-authored levels — input is LOD 0; each added file
-            // is the next positive level, except one flagged "environment" which is
-            // tagged -l -1 (the runtime keeps it resident as a far/background shell
-            // instead of streaming it by camera distance). nextLevel (not the array
-            // index) keeps positive levels gap-free around an environment row.
-            args.push(input);
-            if (options.filterNaN) args.push('-N');
-            args.push('-l', '0');
-            const metaLevels = [{ level: 0, source: input }];
-            const envLevels = [];
-            let nextLevel = 1;
-            for (const { file, env } of pairs) {
-                args.push(file);
-                if (options.filterNaN) args.push('-N');
-                if (env) {
-                    args.push('-l', '-1');
-                    envLevels.push({ level: -1, source: file, environment: true });
-                } else {
-                    args.push('-l', String(nextLevel));
-                    metaLevels.push({ level: nextLevel++, source: file });
-                }
-            }
-            args.push(output);
-            return {
-                title: `Streamed LOD (combine ${pairs.length + 1} files${envLevels.length ? ', +environment' : ''}) → ${output}`,
-                args,
-                expectedOutputs: [output],
-                viewables: viewableOutputs([output]),
-                // chunk folder names vary with settings; clear stale ones on re-run
-                cleanDirs: [lodDir],
-                // environment rows sort last
-                buildMeta: { version: 1, mode: 'combine', input, levels: [...metaLevels, ...envLevels], settings },
-                buildMetaName
-            };
-        }
-
-        // decimate mode: the CLI requires --decimate to be the final action writing
-        // a .ply, so it can't run inline while tagging LOD levels. Pre-decimate each
-        // level to a temp .ply in a sibling <lod>-src dir, then combine the raw input
-        // (level 0) with those pre-authored levels in one invocation.
-        const levels = Math.round(num(options.lodLevels, 3, 1, 8));
-        const keep = num(options.lodKeepPercent, 50, 5, 95);
-        const tmpDir = `${lodDir}-src`;
-        const tmp = (level) => `${tmpDir}/l${level}.ply`;
-
-        const sd = scratchDirArg(options); // each pre-command decimates
-        // provenance is the original input at each level's kept percentage — the
-        // l<n>.ply temps are plumbing
-        const metaLevels = [{ level: 0, source: input, keepPercent: 100 }];
-        const preCommands = [];
-        for (let level = 1; level < levels; level++) {
-            const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
-            metaLevels.push({ level, source: input, keepPercent: pct });
-            const a = [cliPath, '--no-tty', '-w', '-q'];
-            pushDeviceFlag(a, options);
-            if (sd) a.push('--scratch-dir', sd);
-            a.push(input);
-            if (options.filterNaN) a.push('-N');
-            a.push('--decimate', `${pct}%`, tmp(level)); // decimate is the final action, .ply output
-            preCommands.push({ args: a });
-        }
-        // combine: raw input is level 0; each pre-decimated temp is the next level
-        args.push(input);
-        if (options.filterNaN) args.push('-N');
-        args.push('-l', '0');
-        for (let level = 1; level < levels; level++) args.push(tmp(level), '-l', String(level));
-        args.push(output);
-        return {
-            title: `Streamed LOD (${levels} levels, decimated) ${input} → ${output}`,
-            preCommands,
-            args,
-            expectedOutputs: [output],
-            viewables: viewableOutputs([output]),
-            // clear stale chunk dirs AND stale temps before the run
-            cleanDirs: [lodDir, tmpDir],
-            // remove the temp .ply dir after the job finishes
-            tempDirs: [tmpDir],
-            buildMeta: {
-                version: 1,
-                mode: 'decimate',
-                input,
-                levels: metaLevels,
-                settings: { ...settings, lodLevels: levels, keepPercent: keep }
-            },
-            buildMetaName
-        };
+        const ctx = { input, options, args, output, lodDir, settings, buildMetaName, pairs };
+        return pairs.length > 0 ? buildLodCombine(ctx) : buildLodDecimate(ctx);
     }
 
     args.push(input);
