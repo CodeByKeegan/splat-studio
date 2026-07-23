@@ -1,21 +1,19 @@
 // App shell: wires every panel (files, export, LOD, render, analyze, edit,
 // collision, generate, jobs, settings) to the API and the 3D viewer, owns the
 // dockable layout, app state, undo/redo, and the MCP editor-command handlers.
+import './boot-theme'; // theme first — before any UI paints
+import { $, fileList, convertInput, genInput, lodInput, renderInput, collisionInput, analyzeInput, editInput, skyboxSelect, hudSplat, hudCollision, hudVoxel, jobCommand, jobLog, convertRun, lodRun, renderRun, collisionRun, analyzeRun, convertFormat, generateViewBtn, carveBox, projectSelect } from './dom';
+import { viewer, setViewer, layerVisible, currentSplatName, currentCollisionName, currentVoxelName, setCurrentSplatName, setCurrentCollisionName, setCurrentVoxelName, splatFileNames, setSplatFileNames, lodMetaCache, hooks } from './state';
+import type { LayerId } from './state';
+import { showToast, promptText, fmtSize, fmtCount, numOrNull, strOrUndef, numOrUndef } from './ui';
+import { formState, FORM_KEY, FILE_SELECT_IDS, EXTERNAL_STATE_IDS, restoreFormState } from './form-state';
+import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, refreshCameraViewHint, panelActive, getCameraViewCanvas, persistNow, makeMenu, bootLayout } from './dockview';
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
 import { startMcpBridge, editorError } from './mcp-bridge';
-import { applyActiveTheme, initThemeSettings } from './theme';
-import { createDockview, markDockviewPackageLoaded } from 'dockview-core';
-import type { DockviewApi, IContentRenderer, ITabRenderer, TabPartInitParameters } from 'dockview-core';
-import 'dockview-core/dist/styles/dockview.css';
-markDockviewPackageLoaded(); // silence the "internal package" dev notice — we use the core directly on purpose
-applyActiveTheme(); // before any UI paints
-import { $, fileList, convertInput, genInput, lodInput, renderInput, collisionInput, analyzeInput, editInput, skyboxSelect, hudSplat, hudCollision, hudVoxel, jobCommand, jobLog, convertRun, lodRun, renderRun, collisionRun, analyzeRun, convertFormat, generateViewBtn, carveBox, projectSelect } from './dom';
-import { showToast, promptText, fmtSize, fmtCount, numOrNull, strOrUndef, numOrUndef } from './ui';
-import { viewer, setViewer, layerVisible, currentSplatName, currentCollisionName, currentVoxelName, setCurrentSplatName, setCurrentCollisionName, setCurrentVoxelName, splatFileNames, setSplatFileNames, lodMetaCache, hooks } from './state';
-import type { LayerId } from './state';
-import { formState, FORM_KEY, FILE_SELECT_IDS, EXTERNAL_STATE_IDS, restoreFormState } from './form-state';
+import { initThemeSettings } from './theme';
+import type { DockviewApi } from 'dockview-core';
 
 // ---------- file list ----------
 let lastFiles: api.FileEntry[] = [];
@@ -1310,10 +1308,7 @@ const webpImageOptions = (): api.ImageOptions => ({
 });
 
 // the Render panel is the shown tab in its group (gates the render frustum + camera view)
-function renderActive(): boolean {
-    const p = dock.getPanel('panel-render');
-    return !!p && p.group.activePanel?.id === 'panel-render';
-}
+const renderActive = (): boolean => panelActive('panel-render');
 
 // show the WebP render camera as a frustum in the viewport while the Render tab is active
 const updateRenderFrustum = (): void => {
@@ -1402,7 +1397,7 @@ const syncSplatXform = () => {
 // only while the Edit tab is shown, the Edit input splat is displayed, and a region is on.
 type CropOwner = 'edit' | 'none';
 const cropOwner = (): CropOwner =>
-    editActive() && previewingEdit() && (ecBoxOn() || ecSphOn()) ? 'edit' : 'none';
+    panelActive('panel-edit') && previewingEdit() && (ecBoxOn() || ecSphOn()) ? 'edit' : 'none';
 const ownerBoxFields = (): HTMLInputElement[] => [ecBoxMinX, ecBoxMinY, ecBoxMinZ, ecBoxMaxX, ecBoxMaxY, ecBoxMaxZ];
 const ownerSphFields = (): HTMLInputElement[] => [ecSphX, ecSphY, ecSphZ, ecSphR];
 
@@ -2166,19 +2161,6 @@ const camRotateBtn = $<HTMLButtonElement>('cam-rotate');
 camMoveBtn.onclick = () => { viewer?.setCameraGizmoMode('move'); camMoveBtn.classList.add('active'); camRotateBtn.classList.remove('active'); };
 camRotateBtn.onclick = () => { viewer?.setCameraGizmoMode('rotate'); camRotateBtn.classList.add('active'); camMoveBtn.classList.remove('active'); };
 
-// the Collision panel is "selected" when its tab is the shown one in its group
-// (isVisible is always true under 'always', and isActive is the single globally
-// focused panel — so compare the group's active tab)
-function collisionActive(): boolean {
-    const p = dock.getPanel('panel-collision');
-    return !!p && p.group.activePanel?.id === 'panel-collision';
-}
-// the Edit panel is the shown tab in its group (gates the carve region viz)
-function editActive(): boolean {
-    const p = dock.getPanel('panel-edit');
-    return !!p && p.group.activePanel?.id === 'panel-edit';
-}
-
 const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has: () => boolean }[] = [
     { id: 'splat', label: 'Splat', icon: '✨', gizmo: false, has: () => !!viewer?.hasSplat },
     { id: 'collision', label: 'Collision mesh', icon: '🧱', gizmo: false, has: () => !!viewer?.hasCollision },
@@ -2189,7 +2171,7 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
     { id: 'collision-region', label: 'Collision region box', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-box-on').checked },
     { id: 'collision-sphere', label: 'Collision region sphere', icon: '◯', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-sphere-on').checked },
     // capsule only while actively setting up collision carving (Collision tab + carve on)
-    { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && collisionActive() && carveBox.checked },
+    { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && panelActive('panel-collision') && carveBox.checked },
     // render camera only when a WebP render is actually being set up
     { id: 'render-camera', label: 'Render camera', icon: '🎥', gizmo: true, has: () => !!viewer?.hasRenderCamera }
 ];
@@ -2251,180 +2233,6 @@ $<HTMLButtonElement>('skybox-apply').onclick = () => {
         .finally(() => { btn.disabled = false; });
 };
 $<HTMLButtonElement>('skybox-clear').onclick = () => { viewer?.clearSkybox(); showToast('Skybox cleared'); };
-
-// ---------- dockable layout (dockview) ----------
-// Each panel + the viewport is an existing DOM node adopted by a dock component;
-// dockview reparents the node (never recreates it), so the PlayCanvas canvas
-// survives every dock/redock and tab switch. Built BEFORE the viewer boots so the
-// canvas is already mounted in the visible dock.
-// every dockable window: the panels, the 3D viewport, and the camera view.
-// component is the createComponent key; closable=false omits the tab close button.
-type Win = { id: string; component: string; title: string; closable: boolean };
-const WINDOWS: Win[] = [
-    { id: 'panel-files', component: 'panel-files', title: 'Files', closable: true },
-    { id: 'panel-convert', component: 'panel-convert', title: 'Export', closable: true },
-    { id: 'panel-generate', component: 'panel-generate', title: 'Generate', closable: true },
-    { id: 'panel-lod', component: 'panel-lod', title: 'LOD', closable: true },
-    { id: 'panel-render', component: 'panel-render', title: 'Render', closable: true },
-    { id: 'panel-analyze', component: 'panel-analyze', title: 'Analyze', closable: true },
-    { id: 'panel-edit', component: 'panel-edit', title: 'Edit', closable: true },
-    { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
-    { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
-    { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
-    { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
-    { id: 'panel-job', component: 'panel-job', title: 'Jobs', closable: false }
-];
-const winById = (id: string): Win | undefined => WINDOWS.find((w) => w.id === id);
-const nodeOf = (component: string): HTMLElement => $(component === 'viewer' ? 'viewport' : component);
-
-// Live "Camera view" dock panel: its own <canvas> driven by viewer.setupCameraView
-// (a render-to-texture of the WebP render camera). Wired when the viewer is ready.
-let cameraViewCanvas: HTMLCanvasElement | null = null;
-let cameraViewHint: HTMLElement | null = null;
-function refreshCameraViewHint(): void {
-    if (cameraViewHint) cameraViewHint.style.display = viewer?.hasRenderCamera ? 'none' : '';
-}
-class CameraViewPanel implements IContentRenderer {
-    readonly element = document.createElement('div');
-    private canvas = document.createElement('canvas');
-    private hint = document.createElement('div');
-    constructor() {
-        this.element.className = 'camera-view-panel';
-        this.canvas.className = 'camera-view-canvas';
-        this.hint.className = 'camera-view-hint';
-        this.hint.textContent = 'Open the Render tab and set a camera to preview the render here.';
-        this.element.append(this.canvas, this.hint);
-    }
-    init(): void {
-        cameraViewCanvas = this.canvas;
-        cameraViewHint = this.hint;
-        viewer?.setupCameraView(this.canvas); // if viewer isn't up yet, the init block wires it
-        refreshCameraViewHint();
-    }
-    dispose(): void {
-        if (cameraViewCanvas === this.canvas) { cameraViewCanvas = null; cameraViewHint = null; viewer?.teardownCameraView(); }
-    }
-}
-
-// Adopts an existing DOM node as panel content. On dispose (tab closed) the node
-// is returned to the hidden pool so getElementById still finds it for a reopen —
-// the node (and the PlayCanvas canvas inside #viewport) is never destroyed.
-class AdoptPanel implements IContentRenderer {
-    readonly element: HTMLElement;
-    constructor(node: HTMLElement) { this.element = node; }
-    init(): void {}
-    dispose(): void { document.getElementById('panel-pool')?.appendChild(this.element); }
-}
-
-// Tab renderer with a close button only for closable windows (3D viewer + Job
-// are non-closable; everything else can be closed and reopened from the menu).
-class AppTab implements ITabRenderer {
-    readonly element = document.createElement('div');
-    private content = document.createElement('div');
-    private close = document.createElement('div');
-    constructor() {
-        this.element.className = 'dv-default-tab';
-        this.content.className = 'dv-default-tab-content';
-        this.close.className = 'dv-default-tab-action';
-        this.close.textContent = '✕';
-        this.element.append(this.content, this.close);
-    }
-    init(p: TabPartInitParameters): void {
-        this.content.textContent = p.title ?? p.api.id;
-        const closable = winById(p.api.id)?.closable !== false;
-        this.close.style.display = closable ? '' : 'none';
-        this.close.onclick = (e) => { e.stopPropagation(); p.api.close(); };
-    }
-}
-
-const dock: DockviewApi = createDockview($('dock'), {
-    // 'always' keeps every panel's adopted DOM node mounted (hidden, not detached)
-    // when its tab is inactive — so getElementById + bound handlers stay live and
-    // the PlayCanvas canvas is never torn down.
-    defaultRenderer: 'always',
-    createComponent: (o) => (o.name === 'camera-view' ? new CameraViewPanel() : new AdoptPanel(nodeOf(o.name))),
-    defaultTabComponent: 'app-tab',
-    createTabComponent: (o) => (o.name === 'app-tab' ? new AppTab() : undefined)
-});
-
-const titleOf = (id: string): string => winById(id)?.title ?? id;
-
-// reset the dock to the factory arrangement
-function applyDefaultLayout(): void {
-    dock.clear();
-    dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
-    dock.addPanel({ id: 'panel-files', component: 'panel-files', title: 'Files', position: { referencePanel: 'viewer', direction: 'left' } });
-    for (const id of ['panel-convert', 'panel-generate', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
-        dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
-    }
-    dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Jobs', position: { referencePanel: 'viewer', direction: 'below' } });
-    // size the side/bottom groups so the 3D viewport keeps the bulk of the window
-    dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
-    dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });
-    dock.getPanel('panel-job')?.group.api.setSize({ height: 180 });
-    dock.getPanel('panel-files')?.api.setActive();
-}
-
-// a restored layout carries the tab titles it was saved with — re-apply the
-// current names so renamed windows don't show stale titles
-function reconcilePanelTitles(): void {
-    for (const p of dock.panels) p.api.setTitle(titleOf(p.id));
-}
-
-// open (or focus) a window; close removes its tab (the node returns to the pool)
-function openWindow(w: Win): void {
-    const existing = dock.getPanel(w.id);
-    if (existing) { existing.api.setActive(); return; }
-    dock.addPanel({ id: w.id, component: w.component, title: w.title });
-}
-function closeWindow(w: Win): void {
-    if (!w.closable) return;
-    const p = dock.getPanel(w.id);
-    if (p) dock.removePanel(p);
-}
-
-applyDefaultLayout();
-// keep the scene list fresh when tabs change (the capsule item depends on the
-// Collision tab being visible) or the Scene tab is shown; the render frustum +
-// camera-view preview are gated on the Render tab being the active one
-dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); });
-(window as unknown as { __dock: DockviewApi }).__dock = dock; // capture harness handle (scripts/capture-docs.mjs)
-
-// ---------- top menu bar (Window / Layout) ----------
-const LAYOUT_VERSION = 2; // v1 layouts had a Settings dock panel (now a dialog)
-let saveTimer: number | undefined;
-const persistNow = (): void => { void api.saveLayout({ __v: LAYOUT_VERSION, dockview: dock.toJSON() as unknown as Record<string, unknown> }); };
-
-type MenuItem = { label: string; checked?: boolean; disabled?: boolean; onClick: () => void };
-// top-bar dropdown menu; items re-computed on every open
-function makeMenu(label: string, itemsFn: () => MenuItem[]): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'menu';
-    const btn = document.createElement('button');
-    btn.className = 'menu-btn';
-    btn.textContent = label;
-    const drop = document.createElement('div');
-    drop.className = 'menu-drop hidden';
-    wrap.append(btn, drop);
-    const close = (): void => { drop.classList.add('hidden'); document.removeEventListener('pointerdown', onDoc, true); };
-    const onDoc = (e: PointerEvent): void => { if (!wrap.contains(e.target as Node)) close(); };
-    btn.onclick = () => {
-        if (!drop.classList.contains('hidden')) { close(); return; }
-        drop.innerHTML = '';
-        for (const it of itemsFn()) {
-            const row = document.createElement('button');
-            row.className = 'menu-item';
-            row.disabled = !!it.disabled;
-            row.innerHTML = `<span class="menu-check">${it.checked ? '✓' : ''}</span><span>${it.label}</span>`;
-            if (!it.disabled) row.onclick = () => { close(); it.onClick(); };
-            drop.appendChild(row);
-        }
-        drop.classList.remove('hidden');
-        document.addEventListener('pointerdown', onDoc, true);
-    };
-    return wrap;
-}
 
 // ---------- global undo / redo ----------
 // Snapshot-based over the undoable app state (form fields + loaded splat + layer
@@ -2674,19 +2482,6 @@ void (async () => {
     $<HTMLButtonElement>('update-widget-main').addEventListener('click', () => openSettings('updates'));
 })();
 
-// ---------- per-workspace layout persistence ----------
-async function bootLayout(): Promise<void> {
-    let saved: api.Layout | null = null;
-    try { saved = await api.getLayout(); } catch { /* offline / first run → keep default */ }
-    const s = saved as { __v?: number; dockview?: unknown } | null;
-    if (s && s.__v === LAYOUT_VERSION && s.dockview) {
-        try { dock.fromJSON(s.dockview as Parameters<DockviewApi['fromJSON']>[0]); reconcilePanelTitles(); }
-        catch { applyDefaultLayout(); }
-    }
-    dock.onDidLayoutChange(() => { clearTimeout(saveTimer); saveTimer = window.setTimeout(persistNow, 400); });
-}
-void bootLayout();
-
 // ---------- projects ----------
 const PROJECT_KEY = 'splat-studio.project';
 
@@ -2739,6 +2534,11 @@ $<HTMLButtonElement>('project-new').onclick = async () => {
 };
 
 // ---------- boot ----------
+// keep the scene list fresh when tabs change (the capsule item depends on the
+// Collision tab being visible) or the Scene tab is shown; the render frustum +
+// camera-view preview are gated on the Render tab being the active one
+dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); });
+void bootLayout();
 // projects (and the active project's files) load first; renderer comes up in parallel
 void loadProjects(localStorage.getItem(PROJECT_KEY) ?? undefined)
     .catch((err) => showToast(`Can't reach the local server — projects unavailable (${err})`, true))
@@ -2819,7 +2619,8 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             updateRenderFrustum();
         };
         v.setCameraMode($<HTMLSelectElement>('camera-mode').value as 'fly' | 'orbit');
-        if (cameraViewCanvas) v.setupCameraView(cameraViewCanvas); // a Camera-view panel opened before the viewer booted
+        const cvc = getCameraViewCanvas();
+        if (cvc) v.setupCameraView(cvc); // a Camera-view panel opened before the viewer booted
         syncPreview(); // reflect restored Convert fields once the viewer is up
         syncRegionViz(); // reflect a restored collision region box
         updateRegionEstimate(); // and its overflow risk
