@@ -43,9 +43,10 @@ API_PORT=<port> SPLAT_WORKSPACE=<abs dir> node server/index.mjs
 | POST | `/api/summary` | `{ project, input, options? }` → `{ jobId }` (analysis-only) |
 | POST | `/api/trim` | `{ project, input, options: { mode, box?, sphere? } }` → `{ jobId }` (region carve/crop worker) |
 | GET | `/api/generator-params?project=&input=` | `{ params }` — a .mjs generator's slider schema, or null |
-| GET | `/api/jobs` | all jobs, no logs |
-| GET | `/api/jobs/:id` | `{ status: running\|done\|error, log, command, outputs, viewables }` |
-| POST | `/api/jobs/:id/cancel` | kill a running job |
+| GET | `/api/jobs` | `{ jobs, concurrency }` — all jobs (no logs) + the concurrency cap |
+| GET | `/api/jobs/:id` | `{ status: queued\|running\|done\|error, log, command, outputs, viewables }` |
+| POST | `/api/jobs/:id/cancel` | kill a running job, or drop a queued one before it runs |
+| POST | `/api/jobs/concurrency` | `{ max }` → how many jobs run at once (clamped 1–8; default 1, or `SPLAT_JOB_CONCURRENCY`) |
 | GET/POST | `/api/layout` | persisted dock layout (per-workspace dotfile) |
 | GET/POST | `/api/groups` | location-group members + proxy sidecar (viewer linked groups) |
 | POST | `/api/editor/command` | forward `{ name, params }` to the GUI over the WS relay (consent-gated: 403 off, 409 no editor, 504 timeout) |
@@ -54,8 +55,10 @@ API_PORT=<port> SPLAT_WORKSPACE=<abs dir> node server/index.mjs
 
 ### Running a job
 POST to convert/collision/summary, then poll `/api/jobs/:id` until
-`status !== 'running'`. `job.outputs` lists the files that landed;
-`job.log` holds the CLI stdout (the summary table for `-m`).
+`status` is `done` or `error`. Jobs queue FIFO and run up to the
+concurrency cap at once (default 1), so a fresh job may sit `queued`
+first. `job.outputs` lists the files that landed; `job.log` holds the
+CLI stdout (the summary table for `-m`).
 
 ### `convert` formats
 `ply`, `compressed-ply`, `sog`, `sog-unbundled`, `lod`, `spz`, `glb`, `csv`,

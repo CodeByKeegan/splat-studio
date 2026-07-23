@@ -58,8 +58,9 @@ All tools carry MCP annotations: `files` and `import_file` are the only destruct
 
 - **Jobs are fire-and-poll.** `convert`/`build_lod`/`render_image`/`generate_collision`/`trim_region`/`get_summary`
   return `{jobId}`. Then `jobs(action:"wait", id, timeout_ms)` until done, and `jobs(action:"get", id)` for the
-  full record (incl. log). On timeout the job keeps running server-side. Jobs run concurrently as
-  subprocesses — don't overlap GPU-heavy ones.
+  full record (incl. log). On timeout the job keeps running server-side. Jobs queue FIFO and run up
+  to a concurrency cap at once (default 1 — safe for GPU-heavy ones), so a fresh job may report
+  `status:"queued"` before it runs; `cancel` also drops a queued job.
 - **Probe before editor work.** `inspect(target:"editor_status")` → `{connected, controlEnabled}`
   needs no consent. Editor control is OFF by default (the user enables "Allow agent (MCP) control
   of the editor" in Settings) and **resets to OFF on every workspace switch**. With control off,
@@ -101,4 +102,4 @@ fields + persistence stay in sync — keep tool descriptions honest about what t
 does). The error contract + job model live in `mcp-server/errors.mjs`. Run `npm run test:mcp`
 after changes (and `npm run typecheck` if `client/` was touched); keep the tool-count check in
 `tests/mcp-e2e.mjs` and the docs (`docs/MCP_SETUP.md` §7, `docs/MCP_WORKFLOWS.md`) in sync.
-The authoritative design lives on the internal task board, not markdown.
+The authoritative design lives on the maintainer's task board, not markdown.

@@ -12,7 +12,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import zlib from 'node:zlib';
-import { createJob, getJob, cancelJob, listJobs } from './jobs.mjs';
+import { createJob, getJob, cancelJob, listJobs, getConcurrency, setConcurrency } from './jobs.mjs';
 import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, buildTrimCommand, recordOutputs, viewableAs, cliPath } from './commands.mjs';
 import { createRelay } from './editor-relay.mjs';
 import { isControlEnabled, setControlEnabled } from './mcp-config.mjs';
@@ -720,7 +720,14 @@ app.get('/api/generator-params', async (req, res) => {
     }
 });
 
-app.get('/api/jobs', (req, res) => res.json({ jobs: listJobs() }));
+app.get('/api/jobs', (req, res) => res.json({ jobs: listJobs(), concurrency: getConcurrency() }));
+
+// how many jobs may run at once (the rest queue FIFO); clamped to 1..8
+app.post('/api/jobs/concurrency', json, (req, res) => {
+    const max = Number(req.body?.max);
+    if (!Number.isFinite(max)) return res.status(400).json({ error: 'max must be a number' });
+    res.json({ concurrency: setConcurrency(max) });
+});
 
 app.get('/api/jobs/:id', (req, res) => {
     const job = getJob(req.params.id);
