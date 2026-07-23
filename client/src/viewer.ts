@@ -4,6 +4,11 @@
 import * as pc from 'playcanvas';
 import { CameraControls } from 'playcanvas/scripts/esm/camera-controls.mjs';
 import { closestPointOnAxisToRay, flipRowsBottomUp, hexColor, lineBoxMesh, lineSphereMesh, round } from './line-meshes';
+import {
+    makeBoundsMaterial, makeCapsuleMaterial, makeCropMaterial, makeDepthMaterial, makeEditMaterial,
+    makeRegionFillMaterial, makeRegionHandleMaterial, makeRegionMaterial, makeSeedMaterial,
+    makeSolidMaterial, makeVoxelMaterial, makeWireMaterial
+} from './viewer-materials';
 import { parseVoxelOctree } from './voxel-parser';
 import type { VoxelMeta } from './voxel-parser';
 
@@ -277,53 +282,13 @@ export class SplatViewer {
         });
         this.camera.addChild(light);
 
-        this.wireMaterial = new pc.StandardMaterial();
-        this.wireMaterial.useLighting = false;
-        this.wireMaterial.diffuse = new pc.Color(0, 0, 0);
-        this.wireMaterial.emissive = new pc.Color(0, 1, 0.4);
-        this.wireMaterial.blendType = pc.BLEND_NORMAL;
-        this.wireMaterial.opacity = 0.6;
-        this.wireMaterial.depthTest = false;
-        this.wireMaterial.depthWrite = false;
-        this.wireMaterial.update();
-
-        this.voxelMaterial = new pc.StandardMaterial();
-        this.voxelMaterial.useLighting = false;
-        this.voxelMaterial.diffuse = new pc.Color(0, 0, 0);
-        this.voxelMaterial.emissive = new pc.Color(1, 0.62, 0.25);
-        this.voxelMaterial.blendType = pc.BLEND_NORMAL;
-        this.voxelMaterial.opacity = 0.35;
-        this.voxelMaterial.depthWrite = false;
-        this.voxelMaterial.update();
-
+        this.wireMaterial = makeWireMaterial();
+        this.voxelMaterial = makeVoxelMaterial();
         // axis-aligned bounding-box overlay (drawn as a wireframe unit cube,
         // scaled/positioned to the loaded splat's world AABB)
-        this.boundsMaterial = new pc.StandardMaterial();
-        this.boundsMaterial.useLighting = false;
-        this.boundsMaterial.emissive = new pc.Color(0.45, 0.85, 1);
-        this.boundsMaterial.depthTest = false;
-        this.boundsMaterial.depthWrite = false;
-        this.boundsMaterial.update();
-
-        // depth-only prepass: fills the depth buffer so the wireframe becomes
-        // hidden-line instead of X-ray (draws no color)
-        this.depthMaterial = new pc.StandardMaterial();
-        this.depthMaterial.redWrite = false;
-        this.depthMaterial.greenWrite = false;
-        this.depthMaterial.blueWrite = false;
-        this.depthMaterial.alphaWrite = false;
-        this.depthMaterial.depthWrite = true;
-        this.depthMaterial.update();
-
-        // lit translucent surface for placement/carve inspection
-        this.solidMaterial = new pc.StandardMaterial();
-        this.solidMaterial.diffuse = new pc.Color(0.42, 0.55, 0.5);
-        this.solidMaterial.opacity = 0.8;
-        this.solidMaterial.blendType = pc.BLEND_NORMAL;
-        this.solidMaterial.depthWrite = true;
-        this.solidMaterial.cull = pc.CULLFACE_NONE;
-        this.solidMaterial.twoSidedLighting = true;
-        this.solidMaterial.update();
+        this.boundsMaterial = makeBoundsMaterial();
+        this.depthMaterial = makeDepthMaterial();
+        this.solidMaterial = makeSolidMaterial();
 
         // ----- seed + carve-capsule preview (a collision-tuning aid) -----
         // its own holder with the same CLI->viewer 180°-Y rotation as collision,
@@ -333,21 +298,8 @@ export class SplatViewer {
         this.seedHolder.setLocalEulerAngles(0, 180, 0);
         app.root.addChild(this.seedHolder);
 
-        this.seedMaterial = new pc.StandardMaterial();
-        this.seedMaterial.useLighting = false;
-        this.seedMaterial.emissive = new pc.Color(1, 0.85, 0.1); // yellow
-        this.seedMaterial.depthTest = false; // always findable through the splat
-        this.seedMaterial.update();
-
-        this.capsuleMaterial = new pc.StandardMaterial();
-        this.capsuleMaterial.useLighting = false;
-        this.capsuleMaterial.emissive = new pc.Color(0.2, 0.8, 1); // cyan
-        this.capsuleMaterial.blendType = pc.BLEND_NORMAL;
-        this.capsuleMaterial.opacity = 0.3;
-        this.capsuleMaterial.depthWrite = false;
-        this.capsuleMaterial.depthTest = false;
-        this.capsuleMaterial.cull = pc.CULLFACE_NONE;
-        this.capsuleMaterial.update();
+        this.seedMaterial = makeSeedMaterial();
+        this.capsuleMaterial = makeCapsuleMaterial();
 
         // marker + capsule live under a movable node so one gizmo drags both
         this.seedNode = new pc.Entity('seed-node');
@@ -392,10 +344,7 @@ export class SplatViewer {
         // edit markers (measure / set-origin) live in world space so the distance
         // between them is the real splat distance (sceneRoot's flip is a rotation).
         // unit-radius spheres scaled per frame to a constant on-screen size.
-        this.editMaterial = new pc.StandardMaterial();
-        this.editMaterial.useLighting = false;
-        this.editMaterial.depthTest = false; // markers hidden behind the splat via CPU occlusion, not the depth buffer
-        this.editMaterial.update();
+        this.editMaterial = makeEditMaterial();
         const marker = (name: string, color: pc.Color): pc.Entity => {
             const mat = this.editMaterial.clone(); mat.emissive = color; mat.update();
             const mesh = pc.Mesh.fromGeometry(device, new pc.SphereGeometry({ radius: 1 }));
@@ -419,14 +368,7 @@ export class SplatViewer {
         this.cropHolder = new pc.Entity('crop-holder');
         this.sceneRoot.addChild(this.cropHolder);
 
-        this.cropMaterial = new pc.StandardMaterial();
-        this.cropMaterial.useLighting = false;
-        this.cropMaterial.emissive = new pc.Color(0.3, 0.7, 1);
-        this.cropMaterial.blendType = pc.BLEND_NORMAL;
-        this.cropMaterial.opacity = 0.9;
-        this.cropMaterial.depthTest = false; // always findable through the splat
-        this.cropMaterial.depthWrite = false;
-        this.cropMaterial.update();
+        this.cropMaterial = makeCropMaterial();
 
         this.cropBoxNode = new pc.Entity('crop-box');
         this.cropBoxNode.addComponent('render', { meshInstances: [new pc.MeshInstance(lineBoxMesh(device), this.cropMaterial)], layers: [pc.LAYERID_IMMEDIATE] });
@@ -462,25 +404,8 @@ export class SplatViewer {
         this.cropGizmo.detach();
 
         // ----- collision region box + sphere (dedicated nodes under cropHolder = CLI space) -----
-        this.regionMaterial = new pc.StandardMaterial();
-        this.regionMaterial.useLighting = false;
-        this.regionMaterial.emissive = new pc.Color(0.95, 0.6, 0.15); // amber, distinct from the cyan crop/bounds
-        this.regionMaterial.blendType = pc.BLEND_NORMAL;
-        this.regionMaterial.opacity = 0.95;
-        this.regionMaterial.depthTest = false;
-        this.regionMaterial.depthWrite = false;
-        this.regionMaterial.update();
-
-        // optional translucent face fill (both sides, so it reads from inside a room scan too)
-        this.regionFillMat = new pc.StandardMaterial();
-        this.regionFillMat.useLighting = false;
-        this.regionFillMat.emissive = new pc.Color(0.95, 0.6, 0.15);
-        this.regionFillMat.blendType = pc.BLEND_NORMAL;
-        this.regionFillMat.opacity = 0.15;
-        this.regionFillMat.depthTest = false;
-        this.regionFillMat.depthWrite = false;
-        this.regionFillMat.cull = pc.CULLFACE_NONE;
-        this.regionFillMat.update();
+        this.regionMaterial = makeRegionMaterial();
+        this.regionFillMat = makeRegionFillMaterial();
 
         const regionShape = (name: string, wireMesh: pc.Mesh, fillGeom: pc.Geometry): pc.Entity => {
             const wire = new pc.MeshInstance(wireMesh, this.regionMaterial);
@@ -505,12 +430,7 @@ export class SplatViewer {
         this.regionGizmo.detach();
 
         // drag handles: six box faces (opposite face stays pinned) + one sphere radius knob
-        this.regionHandleMat = new pc.StandardMaterial();
-        this.regionHandleMat.useLighting = false;
-        this.regionHandleMat.emissive = new pc.Color(1, 0.85, 0.3);
-        this.regionHandleMat.depthTest = false;
-        this.regionHandleMat.depthWrite = false;
-        this.regionHandleMat.update();
+        this.regionHandleMat = makeRegionHandleMaterial();
         for (const axis of [0, 1, 2] as (0 | 1 | 2)[]) {
             for (const sign of [1, -1] as (1 | -1)[]) {
                 const h = new pc.Entity(`region-handle-${axis}-${sign}`);

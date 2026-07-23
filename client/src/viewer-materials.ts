@@ -1,0 +1,154 @@
+// Material factories for SplatViewer's overlay layers. The viewer keeps the
+// returned instances as fields and mutates them at runtime (style toggles,
+// color/opacity controls), so each factory returns a fresh material.
+import * as pc from 'playcanvas';
+
+/** Collision wireframe: unlit green X-ray lines (depthTest toggled by style). */
+export const makeWireMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.diffuse = new pc.Color(0, 0, 0);
+    m.emissive = new pc.Color(0, 1, 0.4);
+    m.blendType = pc.BLEND_NORMAL;
+    m.opacity = 0.6;
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.update();
+    return m;
+};
+
+/** Voxel boxes: unlit translucent amber. */
+export const makeVoxelMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.diffuse = new pc.Color(0, 0, 0);
+    m.emissive = new pc.Color(1, 0.62, 0.25);
+    m.blendType = pc.BLEND_NORMAL;
+    m.opacity = 0.35;
+    m.depthWrite = false;
+    m.update();
+    return m;
+};
+
+/** Bounding-box overlay: a wireframe unit cube scaled to the splat's world AABB. */
+export const makeBoundsMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.emissive = new pc.Color(0.45, 0.85, 1);
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.update();
+    return m;
+};
+
+/**
+ * Depth-only prepass: fills the depth buffer so the wireframe becomes
+ * hidden-line instead of X-ray (draws no color).
+ */
+export const makeDepthMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.redWrite = false;
+    m.greenWrite = false;
+    m.blueWrite = false;
+    m.alphaWrite = false;
+    m.depthWrite = true;
+    m.update();
+    return m;
+};
+
+/** Lit translucent surface for placement/carve inspection. */
+export const makeSolidMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.diffuse = new pc.Color(0.42, 0.55, 0.5);
+    m.opacity = 0.8;
+    m.blendType = pc.BLEND_NORMAL;
+    m.depthWrite = true;
+    m.cull = pc.CULLFACE_NONE;
+    m.twoSidedLighting = true;
+    m.update();
+    return m;
+};
+
+/** Seed marker: yellow, always findable through the splat. */
+export const makeSeedMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.emissive = new pc.Color(1, 0.85, 0.1);
+    m.depthTest = false;
+    m.update();
+    return m;
+};
+
+/** Carve-capsule preview: translucent cyan, visible from inside too. */
+export const makeCapsuleMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.emissive = new pc.Color(0.2, 0.8, 1);
+    m.blendType = pc.BLEND_NORMAL;
+    m.opacity = 0.3;
+    m.depthWrite = false;
+    m.depthTest = false;
+    m.cull = pc.CULLFACE_NONE;
+    m.update();
+    return m;
+};
+
+/** Measure/origin markers (cloned + tinted per marker); hidden via CPU occlusion, not the depth buffer. */
+export const makeEditMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.depthTest = false;
+    m.update();
+    return m;
+};
+
+/** Crop-region wireframe: cyan, always findable through the splat. */
+export const makeCropMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.emissive = new pc.Color(0.3, 0.7, 1);
+    m.blendType = pc.BLEND_NORMAL;
+    m.opacity = 0.9;
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.update();
+    return m;
+};
+
+/** Collision-region wireframe: amber, distinct from the cyan crop/bounds. */
+export const makeRegionMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.emissive = new pc.Color(0.95, 0.6, 0.15);
+    m.blendType = pc.BLEND_NORMAL;
+    m.opacity = 0.95;
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.update();
+    return m;
+};
+
+/** Optional translucent region face fill (both sides, so it reads from inside a room scan too). */
+export const makeRegionFillMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.emissive = new pc.Color(0.95, 0.6, 0.15);
+    m.blendType = pc.BLEND_NORMAL;
+    m.opacity = 0.15;
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.cull = pc.CULLFACE_NONE;
+    m.update();
+    return m;
+};
+
+/** Region drag handles (box faces + sphere radius knob); retinted per target family. */
+export const makeRegionHandleMaterial = (): pc.StandardMaterial => {
+    const m = new pc.StandardMaterial();
+    m.useLighting = false;
+    m.emissive = new pc.Color(1, 0.85, 0.3);
+    m.depthTest = false;
+    m.depthWrite = false;
+    m.update();
+    return m;
+};
