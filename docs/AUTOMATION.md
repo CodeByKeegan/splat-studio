@@ -91,17 +91,18 @@ flowchart LR
 ## The release pipeline
 
 Every push ships a build. `.github/workflows/release.yml` runs on `windows-latest`
-for both branches. `package.json` carries the **next stable version** (e.g.
-`0.1.0`): a push to `dev` publishes a **beta** pre-release
-(`<version>-beta.<run>`, `beta.yml`) leading up to it, and promoting `dev` to
-`main` publishes that **stable** release (`<version>`, `latest.yml`). After a
-promote, bump `package.json` on `dev` before the next one — the workflow fails
-fast if the stable tag already exists.
+for both branches. Betas are **release candidates for the next stable**: after
+stable `X.Y.Z`, each `dev` push publishes `X.Y.(Z+1)-beta.1`, `-beta.2`, …
+(`beta.yml`), and promoting `dev` to `main` publishes `X.Y.(Z+1)` itself
+(`latest.yml`). The patch number auto-increments from the latest stable release
+tag; for a planned bigger jump, set `package.json`'s version to the target
+(e.g. `0.1.0`) — the workflow takes whichever is semver-higher, and fails fast
+if the resolved stable tag already exists.
 
 ```mermaid
 flowchart LR
     PUSH([push to dev / main]) --> CI[GitHub Actions<br/>windows-latest]
-    CI --> V[version = package.json<br/>+ -beta.&lt;run&gt; on dev]
+    CI --> V[version = next stable<br/>auto patch or package.json<br/>+ -beta.&lt;N&gt; on dev]
     V --> FN[stage node.exe] --> B[build client] --> EB[electron-builder --win]
     EB --> REL[[GitHub Release<br/>installer + portable + channel yml]]
     REL -. electron-updater .-> APP[installed app]
