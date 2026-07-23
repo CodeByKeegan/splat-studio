@@ -214,10 +214,10 @@
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
-                    <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --memory)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
+                    <label class="check" title="Verbose CLI diagnostics + peak memory in the job log (--verbose --memory)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
-                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Job panel">Export</button>
+                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Jobs panel">Export</button>
             </section>
 
             <section class="panel" id="panel-lod">
@@ -277,7 +277,7 @@
                     <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
                 <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
-                <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Job panel">Generate streamed LOD</button>
+                <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Jobs panel">Generate streamed LOD</button>
             </section>
 
             <section class="panel" id="panel-render">
@@ -328,7 +328,7 @@
                     <span>Device</span>
                     <select id="render-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
-                <button id="render-run" class="primary" title="Render the WebP image as a background job — the exact CLI command appears in the Job panel">Render WebP image</button>
+                <button id="render-run" class="primary" title="Render the WebP image as a background job — the exact CLI command appears in the Jobs panel">Render WebP image</button>
             </section>
 
             <section class="panel" id="panel-analyze">
@@ -574,12 +574,14 @@
             </section>
 
             <section class="panel" id="panel-job">
-                <h2 title="The most recent background job. Each job is one splat-transform CLI run">Job
-                    <span id="job-title" class="job-title"></span>
-                    <span id="job-status" class="badge" title="running / done / error"></span>
-                    <button id="job-cancel" class="hidden" title="Kill the running splat-transform process">cancel</button></h2>
-                <code id="job-command" title="The exact CLI command this job ran — copy it to reproduce outside the GUI"></code>
-                <pre id="job-log" class="log" title="Live output from the splat-transform process"></pre>
+                <h2 title="Background jobs — each is one splat-transform CLI run. New jobs queue and start when a slot frees up; click a job to see its command and log">Jobs
+                    <label class="job-parallel" title="How many jobs may run at once — the rest wait in a queue. GPU-heavy jobs (collision, cluster filter) share one GPU: keep this at 1 if they fail with device errors">
+                        <span>parallel</span>
+                        <input type="number" id="job-parallel" value="1" min="1" max="8" step="1" />
+                    </label></h2>
+                <ul id="job-list" class="job-list" title="Queued, running and finished jobs — newest first. Click one to inspect it; ✕ cancels a queued or running job"></ul>
+                <code id="job-command" title="The exact CLI command the selected job ran — copy it to reproduce outside the GUI"></code>
+                <pre id="job-log" class="log" title="Output from the selected job's splat-transform process"></pre>
             </section>
             <main id="viewport">
                 <canvas id="gs-canvas"></canvas>

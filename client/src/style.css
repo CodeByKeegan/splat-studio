@@ -192,16 +192,18 @@ button.primary:focus-visible { outline-color: var(--text); }
 #panel-collision h2 { --panel-hue: var(--accent-2); }
 #panel-viewer h2 { --panel-hue: var(--purple); }
 #panel-job h2 { --panel-hue: var(--orange); cursor: default; }
-.job-title {
+.job-parallel {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     text-transform: none;
     letter-spacing: normal;
     font-weight: 400;
-    color: var(--text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
 }
+.job-parallel input { width: 42px; padding: 1px 4px; font-size: var(--fs-xs); }
 
 .field { display: block; margin-bottom: 8px; }
 .field > span {
@@ -789,7 +791,7 @@ body.dropping #viewport::after {
 }
 .badge.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .badge.error { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
-#job-cancel { margin-left: auto; padding: 0 8px; font-size: var(--fs-xs); color: var(--error); flex-shrink: 0; }
+.badge.queued { color: var(--text-dim); }
 
 #lod-file-rows .lod-row {
     display: flex;
@@ -818,9 +820,39 @@ body.dropping #viewport::after {
 #lod-file-rows .lod-row .lod-env input { margin: 0; }
 #lod-add-level { margin-top: 2px; font-size: var(--fs-sm); }
 
-/* the console grows/shrinks with the Job tab */
+/* the console grows/shrinks with the Jobs tab */
 #panel-job { display: flex; flex-direction: column; }
 #panel-job h2, #job-command { flex-shrink: 0; }
+.job-list {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    max-height: 40%;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+.job-list:empty { display: none; }
+.job-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+}
+.job-row:hover { background: var(--bg-input); }
+.job-row.selected { background: color-mix(in srgb, var(--selection) 14%, transparent); }
+.job-row .badge { flex-shrink: 0; min-width: 58px; justify-content: center; }
+.job-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+}
+.job-row-time { color: var(--text-dim); font-size: var(--fs-xs); flex-shrink: 0; }
+.job-row-cancel { padding: 0 6px; font-size: var(--fs-xs); color: var(--error); flex-shrink: 0; }
 #job-command {
     display: block;
     font-size: var(--fs-sm);
@@ -844,7 +876,7 @@ body.dropping #viewport::after {
     word-break: break-word;
 }
 .log:empty::before {
-    content: 'No job yet — Export / Generate runs stream their CLI output here.';
+    content: 'No job selected — Export / Generate runs stream their CLI output here.';
     color: var(--text-dim);
     font-family: "Segoe UI", system-ui, sans-serif;
     font-size: var(--fs-sm);

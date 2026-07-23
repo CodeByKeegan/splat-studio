@@ -31,8 +31,6 @@ const toastStack = $<HTMLDivElement>('toast-stack');
 const hudSplat = $<HTMLSpanElement>('hud-splat');
 const hudCollision = $<HTMLSpanElement>('hud-collision');
 const hudVoxel = $<HTMLSpanElement>('hud-voxel');
-const jobTitle = $<HTMLSpanElement>('job-title');
-const jobStatus = $<HTMLSpanElement>('job-status');
 const jobCommand = $<HTMLElement>('job-command');
 const jobLog = $<HTMLPreElement>('job-log');
 
@@ -985,19 +983,13 @@ $<HTMLButtonElement>('add-sample-generator').onclick = () => {
 };
 
 // ---------- jobs ----------
-const jobCancel = $<HTMLButtonElement>('job-cancel');
+const jobList = $<HTMLUListElement>('job-list');
+const jobParallel = $<HTMLInputElement>('job-parallel');
 const convertRun = $<HTMLButtonElement>('convert-run');
 const lodRun = $<HTMLButtonElement>('lod-run');
 const renderRun = $<HTMLButtonElement>('render-run');
 const collisionRun = $<HTMLButtonElement>('collision-run');
 const analyzeRun = $<HTMLButtonElement>('analyze-run');
-// every run button is disabled together while a job runs (one GPU, one Job panel)
-const RUN_BUTTONS = [convertRun, lodRun, renderRun, collisionRun, analyzeRun];
-let activeJobId: string | null = null;
-
-jobCancel.onclick = () => {
-    if (activeJobId) void api.cancelJob(activeJobId).catch((err) => showToast(`Cancel failed: ${err}`, true));
-};
 
 /** every visible number input in the panel must hold a valid value */
 const panelValid = (panelId: string): boolean => {
@@ -1008,28 +1000,129 @@ const panelValid = (panelId: string): boolean => {
     return true;
 };
 
-// jobs are serialized: one GPU, one Job panel — and concurrent GPU jobs
-// multiply the TDR risk
-let jobBusy = false;
-const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
-    const prevLabel = button.textContent;
-    jobBusy = true;
-    for (const b of RUN_BUTTONS) b.disabled = true;
-    button.textContent = 'Running…';
+// Jobs queue server-side (FIFO, concurrency-capped) — the panel lists them all,
+// with the selected job's command + log shown below the list.
+let selectedJobId: string | null = null;
+let jobsCache: api.JobSummary[] = [];
+
+const fmtDuration = (ms: number): string => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
+};
+
+// skip the (potentially 200 KB) log rewrite + forced relayout when nothing changed
+let lastDetail = '';
+const renderJobDetail = (job: api.Job): void => {
+    const key = `${job.id}:${job.status}:${job.log.length}`;
+    if (key === lastDetail) return;
+    lastDetail = key;
+    jobCommand.textContent = job.command;
+    jobLog.textContent = job.status === 'queued' ? 'Waiting for a free slot…' : job.log;
+    jobLog.scrollTop = jobLog.scrollHeight;
+};
+
+const selectJob = (id: string): void => {
+    selectedJobId = id;
+    renderJobList();
+    // one-shot fetch so finished rows show their detail; active rows stay fresh via the poller
+    void api.getJob(id).then((j) => { if (selectedJobId === id) renderJobDetail(j); }).catch(() => { /* pruned */ });
+};
+
+const renderJobList = (): void => {
+    jobList.innerHTML = '';
+    // newest first — the row you just queued lands on top
+    for (const j of [...jobsCache].sort((a, b) => Number(b.id) - Number(a.id))) {
+        const li = document.createElement('li');
+        li.className = `job-row${j.id === selectedJobId ? ' selected' : ''}`;
+        const badge = document.createElement('span');
+        badge.className = `badge ${j.status}`;
+        badge.textContent = j.status;
+        const title = document.createElement('span');
+        title.className = 'job-row-title';
+        title.textContent = j.title;
+        title.title = j.title;
+        const time = document.createElement('span');
+        time.className = 'job-row-time';
+        if (j.startedAt != null) time.textContent = fmtDuration((j.endedAt ?? Date.now()) - j.startedAt);
+        li.append(badge, title, time);
+        if (api.isJobActive(j)) {
+            const cancel = document.createElement('button');
+            cancel.className = 'job-row-cancel';
+            cancel.textContent = '✕';
+            cancel.title = j.status === 'queued' ? 'Remove from the queue' : 'Kill the running splat-transform process';
+            cancel.onclick = (e) => {
+                e.stopPropagation();
+                void api.cancelJob(j.id).catch((err) => showToast(`Cancel failed: ${err}`, true));
+            };
+            li.append(cancel);
+        }
+        li.onclick = () => selectJob(j.id);
+        jobList.append(li);
+    }
+};
+
+// One shared poller owns all Jobs-panel refreshes while anything is queued or
+// running: the list, the selected job's detail, and the completion waiters that
+// runJob awaits. It also catches jobs submitted outside the GUI (MCP).
+const jobWaiters = new Map<string, (job: api.Job) => void>();
+let jobsPolling = false;
+const pollJobs = async (): Promise<boolean> => {
+    const { jobs, concurrency } = await api.getJobs();
+    jobsCache = jobs;
+    if (document.activeElement !== jobParallel) jobParallel.value = String(concurrency);
+    renderJobList();
+    // settle waiters for jobs that finished (or were pruned before we saw it)
+    for (const [id, resolve] of [...jobWaiters]) {
+        const j = jobs.find((x) => x.id === id);
+        if (j && api.isJobActive(j)) continue;
+        jobWaiters.delete(id);
+        resolve(await api.getJob(id));
+    }
+    if (selectedJobId) {
+        // refresh the detail while the selected job moves, incl. its final transition;
+        // a settled-and-rendered selection costs nothing further
+        const sel = jobs.find((j) => j.id === selectedJobId);
+        if (sel && (api.isJobActive(sel) || !lastDetail.startsWith(`${sel.id}:${sel.status}`))) {
+            renderJobDetail(await api.getJob(selectedJobId));
+        }
+    }
+    return jobWaiters.size > 0 || jobs.some(api.isJobActive);
+};
+const ensureJobsPolling = (): void => {
+    if (jobsPolling) return;
+    jobsPolling = true;
+    void (async () => {
+        try {
+            while (await pollJobs()) await new Promise((r) => setTimeout(r, 700));
+        } catch { /* server gone — the next submit restarts the poller */ }
+        jobsPolling = false;
+    })();
+};
+const waitForJob = (id: string): Promise<api.Job> =>
+    new Promise((resolve) => { jobWaiters.set(id, resolve); ensureJobsPolling(); });
+
+jobParallel.onchange = () => {
+    void api.setJobConcurrency(Number(jobParallel.value))
+        .then((n) => { jobParallel.value = String(n); })
+        .catch((err) => showToast(`Couldn't set parallel jobs: ${err}`, true));
+};
+
+// Fan-out flows own their button's disabled state for the whole run and pass no
+// button here; single-shot buttons are disabled only while the submit is in flight.
+const runJob = async (start: () => Promise<string>, button?: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
+    let jobId: string;
+    if (button) button.disabled = true;
     try {
-        const jobId = await start();
-        activeJobId = jobId;
-        jobCancel.classList.remove('hidden');
-        const job = await api.watchJob(jobId, (j) => {
-            if (activeJobId !== jobId) return;
-            jobTitle.textContent = j.title;
-            jobStatus.textContent = j.status;
-            jobStatus.className = `badge ${j.status}`;
-            jobCommand.textContent = j.command;
-            jobLog.textContent = j.log;
-            jobLog.scrollTop = jobLog.scrollHeight;
-            jobCancel.classList.toggle('hidden', j.status !== 'running');
-        });
+        jobId = await start();
+    } catch (err) {
+        showToast(`Couldn't start job: ${err}`, true);
+        return undefined;
+    } finally {
+        if (button) button.disabled = false;
+    }
+    selectJob(jobId);
+    try {
+        const job = await waitForJob(jobId);
         await refreshFiles(new Set(job.outputs));
         if (job.status === 'done') {
             // load results into the viewer (when requested), then toast so 'done' stays visible
@@ -1043,19 +1136,16 @@ const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, a
             showToast(`${job.title} — the GPU watchdog reset the device (TDR). On large scenes this is usually the cluster-filter pass: retry with "Filter to connected cluster" unchecked.`, true);
         } else {
             const lastLine = job.log.split('\n').map((l) => l.trim()).filter(Boolean).pop();
-            showToast(`${job.title} — failed: ${lastLine?.slice(0, 160) ?? 'see the Job panel log'}`, true);
+            showToast(`${job.title} — failed: ${lastLine?.slice(0, 160) ?? 'see the Jobs panel log'}`, true);
         }
         return job;
     } catch (err) {
-        showToast(`Couldn't start job: ${err}`, true);
+        showToast(`Lost track of job: ${err}`, true);
         return undefined;
-    } finally {
-        jobBusy = false;
-        for (const b of RUN_BUTTONS) b.disabled = false;
-        button.textContent = prevLabel;
-        updateConvertRows(); // restores the format-specific Convert label
     }
 };
+
+ensureJobsPolling(); // pick up jobs already queued/running (e.g. MCP-submitted)
 
 // ---------- convert panel ----------
 const convertFormat = $<HTMLSelectElement>('convert-format');
@@ -1217,18 +1307,12 @@ lodAutotuneBtn.onclick = () => {
     const input = lodInput.value;
     if (!input) return showToast('Pick a LOD input first', true);
     if (input.toLowerCase().endsWith('.mjs')) return showToast('Auto-tune reads existing splats, not generators — convert the generator to a splat first', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
-    // mirror runJob's serialization (no server-side queue): block concurrent jobs
-    jobBusy = true;
-    for (const b of RUN_BUTTONS) b.disabled = true;
     lodAutotuneBtn.disabled = true;
     const prevLabel = lodAutotuneBtn.textContent;
     lodAutotuneBtn.textContent = 'Reading stats…';
     const run = lodMode.value === 'combine' ? autotuneCombine(input) : autotuneDecimate(input);
     void run.catch((err) => showToast(`Auto-tune failed: ${err}`, true))
         .finally(() => {
-            jobBusy = false;
-            for (const b of RUN_BUTTONS) b.disabled = false;
             lodAutotuneBtn.disabled = false;
             lodAutotuneBtn.textContent = prevLabel;
         });
@@ -1386,11 +1470,14 @@ for (const id of [...vecFieldIds('webp-camera'), ...vecFieldIds('webp-lookat'), 
 // the render-camera scene item appears/disappears with the projection
 $('webp-projection').addEventListener('change', () => rebuildSceneList());
 
+let genPreviewBusy = false;
 const doGenerateView = (): void => {
     const input = genInput.value;
     if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator in the Generate tab', true); return; }
-    if (jobBusy) { scheduleGenPreview(); return; } // coalesce while a job runs
-    void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn);
+    if (genPreviewBusy) { scheduleGenPreview(); return; } // coalesce slider spam into one queued job
+    genPreviewBusy = true;
+    void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn)
+        .finally(() => { genPreviewBusy = false; });
 };
 let genPreviewTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleGenPreview(): void {
@@ -1509,7 +1596,6 @@ carveRemoveBtn.onclick = () => {
     if (!input) return showToast('Pick a splat to edit first', true);
     const region = carveRegion();
     if (!region) return showToast('Enable a Box or Sphere region first', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     const mode = regionMode();
     const ask = mode === 'keep'
         ? `Keep only the gaussians inside the region from ${input} (crop)? This writes a new trimmed .ply — the source is left untouched.`
@@ -1791,7 +1877,6 @@ const loadGroup = async (): Promise<void> => {
 groupApplyBtn.onclick = async () => {
     const members = checkedMembers();
     if (!members.length) return showToast('Tick at least one member', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     if (!panelValid('panel-convert')) return;
     const format = convertFormat.value;
     if (format === 'csv') {
@@ -1812,14 +1897,15 @@ groupApplyBtn.onclick = async () => {
                 if (!confirm('These members have quite different extents and may not be the same location. Apply the transforms to all of them anyway?')) return;
             }
         }
-        // fan the Edit transform out to each member, sequentially (jobBusy + runJob serialize)
+        // fan the Edit transform out to each member, one at a time — a member's
+        // failure stops the loop before the rest submit
         const options = {
             ...editTransformOptions(),
             device: $<HTMLSelectElement>('convert-device').value
         };
         const outputs: string[] = [];
         for (const member of members) {
-            const job = await runJob(() => api.startConvert({ input: member, format, options }), groupApplyBtn, false);
+            const job = await runJob(() => api.startConvert({ input: member, format, options }), undefined, false);
             if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
             outputs.push(...job.outputs);
         }
@@ -1837,7 +1923,6 @@ groupApplyRegionBtn.onclick = async () => {
     if (!members.length) return showToast('Tick at least one member', true);
     const region = carveRegion();
     if (!region) return showToast('Enable a Box or Sphere region in the Edit panel first', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     const mode = regionMode();
     const verb = mode === 'keep' ? 'Crop (keep only inside the region)' : 'Carve (remove inside the region)';
     if (!confirm(`${verb} on ${members.length} member${members.length > 1 ? 's' : ''}? Each writes a new trimmed .ply — the sources are left untouched.`)) return;
@@ -1847,7 +1932,7 @@ groupApplyRegionBtn.onclick = async () => {
     try {
         const outputs: string[] = [];
         for (const member of members) {
-            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), groupApplyRegionBtn, false);
+            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), undefined, false);
             if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
             outputs.push(...job.outputs);
         }
@@ -2319,7 +2404,7 @@ const WINDOWS: Win[] = [
     { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
     { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
     { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
-    { id: 'panel-job', component: 'panel-job', title: 'Job', closable: false }
+    { id: 'panel-job', component: 'panel-job', title: 'Jobs', closable: false }
 ];
 const winById = (id: string): Win | undefined => WINDOWS.find((w) => w.id === id);
 const nodeOf = (component: string): HTMLElement => $(component === 'viewer' ? 'viewport' : component);
@@ -2404,7 +2489,7 @@ function applyDefaultLayout(): void {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Job', position: { referencePanel: 'viewer', direction: 'below' } });
+    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Jobs', position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
     dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });
@@ -3150,6 +3235,7 @@ startMcpBridge({
     onEvent: (name) => {
         if (name === 'workspace-changed') void refreshFiles();
         else if (name === 'workspace-switched') void onWorkspaceSwitched();
+        else if (name === 'job-updated') ensureJobsPolling(); // MCP-submitted jobs surface in the panel
     },
     onStatus: updateMcpStatus
 });

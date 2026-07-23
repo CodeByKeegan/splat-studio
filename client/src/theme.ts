@@ -40,7 +40,7 @@ export const TOKEN_GROUPS: TokenGroup[] = [
             { v: '--selection', label: 'Selection & focus', hint: 'Selected items, focus rings, active tools' },
             { v: '--accent-2', label: 'Collision accent', hint: 'Collision wireframe tags + group actions' },
             { v: '--purple', label: 'Render hue', hint: 'Render/Viewer panel dot, LOD tags' },
-            { v: '--orange', label: 'Job hue', hint: 'Job panel dot, voxel tags' },
+            { v: '--orange', label: 'Jobs hue', hint: 'Jobs panel dot, voxel tags' },
             { v: '--teal', label: 'Generator hue', hint: 'Generator file tags' }
         ]
     },
