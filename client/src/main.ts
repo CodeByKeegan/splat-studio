@@ -2,10 +2,10 @@
 // collision, generate, jobs, settings) to the API and the 3D viewer, owns the
 // dockable layout, app state, undo/redo, and the MCP editor-command handlers.
 import './boot-theme'; // theme first — before any UI paints
-import { $, fileList, projectSelect } from './dom';
-import { viewer, setViewer, layerVisible, currentSplatName, lodMetaCache, hooks } from './state';
+import { $, projectSelect } from './dom';
+import { viewer, setViewer, layerVisible, currentSplatName, hooks } from './state';
 import type { LayerId } from './state';
-import { showToast, promptText } from './ui';
+import { showToast } from './ui';
 import { formState, restoreFormState } from './form-state';
 import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, getCameraViewCanvas, persistNow, bootLayout } from './dockview';
 import { toggleLayer, clearViewport, SCENE_ITEMS, rebuildSceneList, selectScene } from './viewport';
@@ -19,68 +19,18 @@ import { syncPreview, syncCropViz, ownerBoxFields, ownerSphFields, syncCarveBtn,
 import { regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR, regionShadeEl, syncRegionViz, updateRegionEstimate } from './region-panel';
 import { syncCollisionRows, seedX, seedY, seedZ, syncSeedViz } from './collision-panel';
 import './upload';
-import { loadGroup } from './groups';
+import './groups';
 import './analyze-panel';
-import { canUndo, canRedo, doUndo, doRedo, clearUndoHistory, enableUndo, isUndoApplying } from './undo';
-import type { DesktopApi } from './desktop-types';
+import { canUndo, canRedo, doUndo, doRedo, enableUndo, isUndoApplying } from './undo';
 import { isSettingsOpen, openSettings, closeSettings } from './settings';
 import './menubar';
+import { loadProjects, PROJECT_KEY } from './projects';
+import { onWorkspaceSwitched } from './workspace';
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
 import { startMcpBridge, editorError } from './mcp-bridge';
 import type { DockviewApi } from 'dockview-core';
-
-// ---------- projects ----------
-const PROJECT_KEY = 'splat-studio.project';
-
-const switchProject = async (name: string) => {
-    api.setProject(name);
-    projectSelect.value = name;
-    localStorage.setItem(PROJECT_KEY, name);
-    lodMetaCache.clear(); // keyed name@mtime within a project
-    // loaded layers belong to the project we're leaving
-    clearViewport();
-    await refreshFiles();
-    await loadGroup(); // tick the saved group members for this project
-    clearUndoHistory(); // undo history doesn't span a project switch
-};
-
-// refresh the project picker; selects `preferred` (or the first project)
-const loadProjects = async (preferred?: string) => {
-    const projects = await api.listProjects();
-    projectSelect.innerHTML = '';
-    for (const name of projects) {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        projectSelect.appendChild(opt);
-    }
-    if (projects.length === 0) {
-        api.setProject('');
-        // clear anything from the workspace we just left (no project to refreshFiles)
-        clearViewport();
-        fileList.innerHTML = '';
-        showToast('No projects yet — click "+ New" to create one', true);
-        return;
-    }
-    await switchProject(projects.includes(preferred ?? '') ? preferred! : projects[0]);
-};
-
-projectSelect.onchange = () => void switchProject(projectSelect.value)
-    .catch((err) => showToast(`Couldn't switch project: ${err}`, true));
-
-$<HTMLButtonElement>('project-new').onclick = async () => {
-    const name = await promptText('New project name', { okLabel: 'Create', placeholder: 'my-scene' });
-    if (!name) return;
-    try {
-        await api.createProject(name);
-        await loadProjects(name);
-        showToast(`Created project "${name}"`);
-    } catch (err) {
-        showToast(`Couldn't create project: ${err}`, true);
-    }
-};
 
 // ---------- boot ----------
 // keep the scene list fresh when tabs change (the capsule item depends on the
@@ -392,63 +342,6 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     }
 };
 
-// ---------- workspace folder (Settings) ----------
-// The native folder picker lives in Electron (preload -> main); the actual switch
-// goes through POST /api/workspace so it works headlessly (MCP) and in the browser.
-const desktop = (window as unknown as { desktop?: DesktopApi }).desktop;
-let currentWorkspace = '';
-let wsSwitching = false;
-const wsPathEl = $<HTMLInputElement>('ws-path');
-
-const showWorkspace = (p: string): void => {
-    currentWorkspace = p;
-    wsPathEl.value = p;
-    wsPathEl.title = p;
-};
-
-const applyWorkspace = async (target: string): Promise<void> => {
-    wsSwitching = true;
-    try {
-        const ws = await api.setWorkspace(target);
-        await desktop?.persistWorkspace(ws.path);
-        showWorkspace(ws.path);
-        await loadProjects();
-        void syncEditorStatus(); // consent reset on switch — reflect it
-        showToast(`Workspace set to ${ws.path}`);
-    } finally {
-        wsSwitching = false;
-    }
-};
-
-const chooseWorkspaceFolder = async (): Promise<void> => {
-    const target = desktop?.pickFolder
-        ? await desktop.pickFolder(currentWorkspace)
-        : await promptText('Workspace folder (absolute path)', { value: currentWorkspace, okLabel: 'Set' });
-    if (!target) return;
-    try { await applyWorkspace(target); }
-    catch (err) { showToast(`Couldn't set workspace: ${err}`, true); }
-};
-
-// a workspace switch initiated elsewhere (an MCP agent) — reflect it live
-const onWorkspaceSwitched = async (): Promise<void> => {
-    if (wsSwitching) return; // our own switch already handles the UI
-    try {
-        const ws = await api.getWorkspace();
-        if (ws.path === currentWorkspace) return;
-        await desktop?.persistWorkspace(ws.path);
-        showWorkspace(ws.path);
-        await loadProjects();
-        void syncEditorStatus(); // consent reset on switch — reflect it
-        showToast(`Workspace set to ${ws.path}`);
-    } catch { /* server momentarily unavailable */ }
-};
-
-$<HTMLButtonElement>('ws-change').onclick = () => void chooseWorkspaceFolder();
-const wsOpenBtn = $<HTMLButtonElement>('ws-open');
-if (desktop?.openWorkspace) { wsOpenBtn.hidden = false; wsOpenBtn.onclick = () => void desktop.openWorkspace(); }
-desktop?.onChooseWorkspace(() => void chooseWorkspaceFolder());
-void api.getWorkspace().then((ws) => showWorkspace(ws.path)).catch(() => { /* server not up yet */ });
-
 // ---------- MCP consent toggle (Settings) + bridge startup ----------
 const mcpControl = $<HTMLInputElement>('mcp-control');
 const mcpStatusEl = $('mcp-status');
@@ -466,6 +359,7 @@ mcpControl.onchange = () => {
 // re-run after a workspace switch (consent is per-workspace and resets on switch)
 const syncEditorStatus = (): Promise<void> =>
     api.getEditorStatus().then((s) => { mcpControl.checked = s.controlEnabled; updateMcpStatus(s.connected); }).catch(() => { /* server not up yet */ });
+hooks.syncEditorStatus = syncEditorStatus; // workspace.ts re-syncs consent through this after a switch
 void syncEditorStatus();
 
 ensureJobsPolling(); // pick up jobs already queued/running (e.g. MCP-submitted)
