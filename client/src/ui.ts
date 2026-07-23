@@ -63,6 +63,33 @@ export const promptText = (title: string, opts: { value?: string; okLabel?: stri
         ok.onclick = submit;
     });
 
+// Two-stage confirm for destructive/heavy buttons: the first confirm() arms the
+// button (.armed class + label swap, auto-disarming after ttl ms); a second call
+// within the window disarms and returns true. disarm() resets it externally.
+export interface ArmedConfirm { confirm: (armLabel?: string) => boolean; disarm: () => void }
+export const twoStageConfirm = (
+    btn: HTMLButtonElement,
+    opts: { armLabel?: string; resetLabel?: string; ttl?: number; onArm?: () => void; onDisarm?: () => void } = {}
+): ArmedConfirm => {
+    const resetLabel = opts.resetLabel ?? btn.textContent ?? '';
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const disarm = (): void => {
+        clearTimeout(timer);
+        btn.classList.remove('armed');
+        if (opts.onDisarm) opts.onDisarm();
+        else btn.textContent = resetLabel;
+    };
+    const confirm = (armLabel?: string): boolean => {
+        if (btn.classList.contains('armed')) { disarm(); return true; }
+        btn.classList.add('armed');
+        if (opts.onArm) opts.onArm();
+        else btn.textContent = armLabel ?? opts.armLabel ?? resetLabel;
+        timer = setTimeout(disarm, opts.ttl ?? 2500);
+        return false;
+    };
+    return { confirm, disarm };
+};
+
 // bytes -> human size ('1.2 GB')
 export const fmtSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
