@@ -9,10 +9,9 @@ import { closestPointOnAxisToRay, flipRowsBottomUp, hexColor, lineBoxMesh, lineS
 import {
     makeBoundsMaterial, makeCapsuleMaterial, makeCropMaterial, makeDepthMaterial, makeEditMaterial,
     makeRegionFillMaterial, makeRegionHandleMaterial, makeRegionMaterial, makeSeedMaterial,
-    makeSolidMaterial, makeVoxelMaterial, makeWireMaterial
+    makeSolidMaterial, makeWireMaterial
 } from './viewer-materials';
-import { parseVoxelOctree } from './voxel-parser';
-import type { VoxelMeta } from './voxel-parser';
+import { VoxelLayer } from './voxel-layer';
 
 /** Selectable scene-hierarchy objects. 'capsule', 'render-camera', 'collision-region' and 'collision-sphere' carry a gizmo. */
 export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'render-camera' | 'collision-region' | 'collision-sphere';
@@ -59,11 +58,7 @@ export class SplatViewer {
     private activeFile: string | null = null;
     private collisionEntity: pc.Entity | null = null;
     private collisionAsset: pc.Asset | null = null;
-    private voxelEntity: pc.Entity | null = null;
-    private voxelBounds: pc.BoundingBox | null = null;
-    private voxelMesh: pc.Mesh | null = null;
-    private voxelVb: pc.VertexBuffer | null = null;
-    private voxelMaterial!: pc.StandardMaterial;
+    private voxels!: VoxelLayer;
     private boundsEntity: pc.Entity | null = null;
     private boundsMaterial!: pc.StandardMaterial;
     private boundsVisible = false;
@@ -122,7 +117,6 @@ export class SplatViewer {
     onRenderCameraMove?: (camera: { x: number; y: number; z: number }, lookAt: { x: number; y: number; z: number }) => void;
     private splatSeq = 0;
     private collisionSeq = 0;
-    private voxelSeq = 0;
     private skyboxSeq = 0;
     private skyboxCubemap: pc.Texture | null = null;
     private skyboxAsset: pc.Asset | null = null;
@@ -217,6 +211,7 @@ export class SplatViewer {
 
         this.app = app;
         this.cameraPreview = new CameraPreview(app, () => this.renderFrustum);
+        this.voxels = new VoxelLayer(app);
 
         this.sceneRoot = new pc.Entity('scene-root');
         this.sceneRoot.setLocalEulerAngles(180, 0, 0);
@@ -277,7 +272,6 @@ export class SplatViewer {
         this.camera.addChild(light);
 
         this.wireMaterial = makeWireMaterial();
-        this.voxelMaterial = makeVoxelMaterial();
         // axis-aligned bounding-box overlay (drawn as a wireframe unit cube,
         // scaled/positioned to the loaded splat's world AABB)
         this.boundsMaterial = makeBoundsMaterial();
@@ -661,82 +655,15 @@ export class SplatViewer {
         }
     }
 
-    /**
-     * Renders a sparse voxel octree (.voxel.json + sibling .voxel.bin) as
-     * hardware-instanced translucent boxes. Box transforms are baked from
-     * splat-transform's voxel space into viewer space (180° about Y), since
-     * per-instance matrices replace the node's world transform.
-     */
+    /** Load a voxel-octree overlay (.voxel.json + sibling .voxel.bin) — see VoxelLayer. */
     async loadVoxels(url: string): Promise<{ count: number; truncated: boolean; applied: boolean }> {
-        this.clearVoxels(); // bumps voxelSeq, superseding any in-flight load
-        const seq = this.voxelSeq;
-
-        const meta = (await (await fetch(url)).json()) as VoxelMeta;
-        const binUrl = url.replace(/\.voxel\.json$/, '.voxel.bin');
-        const bin = await (await fetch(binUrl)).arrayBuffer();
-        if (seq !== this.voxelSeq) return { count: 0, truncated: false, applied: false };
-
-        const { boxes, count, truncated } = parseVoxelOctree(meta, bin);
-
-        // mat4 per instance: diag(-sx, sy, -sz) + translation (-cx, cy, -cz)
-        // is R_y(180) · translate · scale — det > 0, so winding is preserved
-        const matrices = new Float32Array(count * 16);
-        for (let i = 0; i < count; i++) {
-            const b = i * 6;
-            const m = i * 16;
-            matrices[m] = -boxes[b + 3];
-            matrices[m + 5] = boxes[b + 4];
-            matrices[m + 10] = -boxes[b + 5];
-            matrices[m + 12] = -boxes[b];
-            matrices[m + 13] = boxes[b + 1];
-            matrices[m + 14] = -boxes[b + 2];
-            matrices[m + 15] = 1;
-        }
-
-        const device = this.app.graphicsDevice;
-        const mesh = pc.Mesh.fromGeometry(device, new pc.BoxGeometry());
-        const mi = new pc.MeshInstance(mesh, this.voxelMaterial);
-        const vb = new pc.VertexBuffer(
-            device,
-            pc.VertexFormat.getDefaultInstancingFormat(device),
-            count,
-            { data: matrices.buffer }
-        );
-        mi.setInstancing(vb);
-        this.voxelMesh = mesh;
-        this.voxelVb = vb;
-
-        const entity = new pc.Entity('voxels');
-        entity.addComponent('render', {
-            meshInstances: [mi],
-            layers: [pc.LAYERID_IMMEDIATE]
-        });
-        this.app.root.addChild(entity);
-        this.voxelEntity = entity;
-
-        // bounds in viewer space (x and z negate, so recompute min/max)
-        const [ax, ay, az] = meta.gridBounds.min;
-        const [bx, by, bz] = meta.gridBounds.max;
-        this.voxelBounds = new pc.BoundingBox();
-        this.voxelBounds.setMinMax(
-            new pc.Vec3(Math.min(-ax, -bx), ay, Math.min(-az, -bz)),
-            new pc.Vec3(Math.max(-ax, -bx), by, Math.max(-az, -bz))
-        );
-
-        if (!this.splatEntity && !this.collisionEntity) this.frame();
-        return { count, truncated, applied: true };
+        const res = await this.voxels.load(url);
+        if (res.applied && !this.splatEntity && !this.collisionEntity) this.frame();
+        return res;
     }
 
     clearVoxels(): void {
-        this.voxelSeq++; // invalidate any in-flight loadVoxels
-        this.voxelEntity?.render?.meshInstances[0]?.setInstancing(null);
-        this.voxelEntity?.destroy();
-        this.voxelEntity = null;
-        this.voxelVb?.destroy();
-        this.voxelVb = null;
-        this.voxelMesh?.destroy();
-        this.voxelMesh = null;
-        this.voxelBounds = null;
+        this.voxels.clear();
     }
 
     /** Unload every layer and empty the viewport. */
@@ -771,20 +698,18 @@ export class SplatViewer {
         if (this.skyboxAsset) { this.app.assets.remove(this.skyboxAsset); this.skyboxAsset.unload(); this.skyboxAsset = null; }
     }
 
-    get hasVoxels(): boolean { return this.voxelEntity !== null; }
+    get hasVoxels(): boolean { return this.voxels.loaded; }
 
     setVoxelsVisible(visible: boolean): void {
-        if (this.voxelEntity) this.voxelEntity.enabled = visible;
+        this.voxels.setVisible(visible);
     }
 
     setVoxelColor(hex: string): void {
-        this.voxelMaterial.emissive = hexColor(hex);
-        this.voxelMaterial.update();
+        this.voxels.setColor(hex);
     }
 
     setVoxelOpacity(opacity: number): void {
-        this.voxelMaterial.opacity = opacity;
-        this.voxelMaterial.update();
+        this.voxels.setOpacity(opacity);
     }
 
     // ----- bounding-box overlay -----
@@ -1703,8 +1628,9 @@ export class SplatViewer {
             }
             if (!first) return { center: aabb.center.clone(), radius: aabb.halfExtents.length() };
         }
-        if (this.voxelBounds) {
-            return { center: this.voxelBounds.center.clone(), radius: this.voxelBounds.halfExtents.length() };
+        const vb = this.voxels.bounds;
+        if (vb) {
+            return { center: vb.center.clone(), radius: vb.halfExtents.length() };
         }
         return null;
     }
