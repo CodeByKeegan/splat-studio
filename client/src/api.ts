@@ -261,8 +261,12 @@ export const createProject = async (name: string): Promise<void> => {
     }));
 };
 
-export const listFiles = async (): Promise<FileEntry[]> =>
-    (await jsonOrThrow(await fetch(`/api/files?${pq()}`))).files;
+export const listFiles = async (): Promise<FileEntry[]> => {
+    const body = await jsonOrThrow(await fetch(`/api/files?${pq()}`));
+    // spot-check the shape: server drift should fail here, not as downstream undefineds
+    if (!Array.isArray(body.files)) throw new Error('Malformed /api/files response');
+    return body.files;
+};
 
 /** XHR instead of fetch so large uploads (30–270 MB splats) report progress. */
 export const uploadFile = (file: File, onProgress?: (pct: number) => void): Promise<void> =>
@@ -333,8 +337,11 @@ export const getStats = async (input: string): Promise<FileStats> =>
 export const getGeneratorParams = async (input: string): Promise<GenParam[] | null> =>
     (await jsonOrThrow(await fetch(`/api/generator-params?${pq()}&input=${encodeURIComponent(input)}`))).params;
 
-export const getJob = async (id: string): Promise<Job> =>
-    jsonOrThrow(await fetch(`/api/jobs/${id}`));
+export const getJob = async (id: string): Promise<Job> => {
+    const job = await jsonOrThrow(await fetch(`/api/jobs/${id}`));
+    if (typeof job?.id !== 'string' || typeof job?.status !== 'string') throw new Error('Malformed job response');
+    return job;
+};
 
 /** All jobs (queued/running/finished, no logs) + the current concurrency cap. */
 export const getJobs = async (): Promise<{ jobs: JobSummary[]; concurrency: number }> =>
