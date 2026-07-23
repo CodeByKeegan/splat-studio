@@ -2,251 +2,31 @@
 // collision, generate, jobs, settings) to the API and the 3D viewer, owns the
 // dockable layout, app state, undo/redo, and the MCP editor-command handlers.
 import './boot-theme'; // theme first — before any UI paints
-import { $, fileList, convertInput, analyzeInput, analyzeRun, convertFormat, projectSelect } from './dom';
-import { viewer, setViewer, layerVisible, currentSplatName, splatFileNames, lodMetaCache, hooks } from './state';
+import { $, fileList, projectSelect } from './dom';
+import { viewer, setViewer, layerVisible, currentSplatName, lodMetaCache, hooks } from './state';
 import type { LayerId } from './state';
 import { showToast, promptText } from './ui';
 import { formState, FORM_KEY, EXTERNAL_STATE_IDS, restoreFormState } from './form-state';
 import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, getCameraViewCanvas, persistNow, makeMenu, bootLayout } from './dockview';
 import { toggleLayer, removeSplat, clearViewport, SCENE_ITEMS, rebuildSceneList, selectScene } from './viewport';
-import { filesRefreshHooks, afterViewFileHooks, fileActionCallbacks, selectedFiles, fillSelect, refreshFiles, viewFile } from './files-panel';
-import { panelValid, runJob, ensureJobsPolling } from './jobs';
+import { refreshFiles, viewFile } from './files-panel';
+import { ensureJobsPolling } from './jobs';
 import { updateGenRows } from './generate-panel';
 import { updateConvertRows, updateInputRows, syncActionRows } from './convert-panel';
-import { updateLodRows, baseLabel } from './lod-panel';
+import { updateLodRows } from './lod-panel';
 import { vecFieldIds, writeVecField, updateRenderFrustum } from './render-panel';
-import { syncPreview, syncCropViz, ownerBoxFields, ownerSphFields, syncCarveBtn, carveRegion, regionMode, editTransformOptions, measureToggle, originToggle, updateMeasureReadout, reflectActiveMarker } from './edit-panel';
+import { syncPreview, syncCropViz, ownerBoxFields, ownerSphFields, syncCarveBtn, measureToggle, originToggle, updateMeasureReadout, reflectActiveMarker } from './edit-panel';
 import { regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR, regionShadeEl, syncRegionViz, updateRegionEstimate } from './region-panel';
 import { syncCollisionRows, seedX, seedY, seedZ, syncSeedViz } from './collision-panel';
 import './upload';
+import { loadGroup } from './groups';
+import './analyze-panel';
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
 import { startMcpBridge, editorError } from './mcp-bridge';
 import { initThemeSettings } from './theme';
 import type { DockviewApi } from 'dockview-core';
-
-// ---------- linked group: apply the Convert transforms/filters to every member ----------
-// Edit on a proxy (the loaded splat / Convert input), then fan the same transform +
-// filter ops out to every ticked member — the LODs of one location stay consistent.
-const groupMembersEl = $<HTMLDivElement>('group-members');
-const groupApplyBtn = $<HTMLButtonElement>('group-apply');
-const groupApplyRegionBtn = $<HTMLButtonElement>('group-apply-region');
-const groupWarn = $<HTMLDivElement>('group-warn');
-
-const checkedMembers = (): string[] =>
-    [...groupMembersEl.querySelectorAll<HTMLInputElement>('input:checked')].map((i) => i.value);
-
-const updateGroupApply = (): void => {
-    const n = checkedMembers().length;
-    const suffix = n ? `to ${n} member${n > 1 ? 's' : ''}` : 'to members';
-    groupApplyBtn.textContent = `Apply transforms ${suffix}`;
-    groupApplyBtn.disabled = n === 0;
-    groupApplyRegionBtn.textContent = `Apply region ${suffix}`;
-    groupApplyRegionBtn.disabled = n === 0 || !carveRegion(); // needs a box/sphere set in Edit
-};
-
-const persistGroup = (): void => {
-    void api.saveGroup({ members: checkedMembers(), proxy: convertInput.value || null }).catch(() => { /* best-effort */ });
-};
-
-// (re)build the member checkboxes from the project splats, preserving the ticked set
-const renderGroupMembers = (preselect: Set<string>): void => {
-    groupMembersEl.innerHTML = '';
-    for (const name of splatFileNames) {
-        const row = document.createElement('label');
-        row.className = 'group-member';
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = name;
-        cb.checked = preselect.has(name);
-        cb.onchange = () => { updateGroupApply(); persistGroup(); };
-        const span = document.createElement('span');
-        span.textContent = name;
-        row.append(cb, span);
-        groupMembersEl.appendChild(row);
-    }
-    updateGroupApply();
-};
-filesRefreshHooks.push(() => renderGroupMembers(new Set(checkedMembers()))); // keep ticks across refreshes
-// until groups.ts exists: the group apply buttons track the Edit carve toggles
-for (const id of ['carve-box-on', 'carve-sphere-on']) $(id).addEventListener('change', () => updateGroupApply());
-
-// load the saved group for the active project and tick its members
-const loadGroup = async (): Promise<void> => {
-    let saved: api.LocationGroup = { members: [], proxy: null };
-    try { saved = await api.getGroup(); } catch { /* none yet */ }
-    renderGroupMembers(new Set(saved.members.filter((m) => splatFileNames.includes(m))));
-};
-
-// Files-panel bulk bar: add the selected splats to the linked group
-$<HTMLButtonElement>('bulk-group').onclick = () => {
-    const adds = [...selectedFiles].filter((n) => splatFileNames.includes(n));
-    if (!adds.length) return showToast('No splat files selected — only splat files can join a linked group', true);
-    renderGroupMembers(new Set([...checkedMembers(), ...adds]));
-    persistGroup();
-    showToast(`Added ${adds.length} file${adds.length > 1 ? 's' : ''} to the linked group`);
-};
-
-groupApplyBtn.onclick = async () => {
-    const members = checkedMembers();
-    if (!members.length) return showToast('Tick at least one member', true);
-    if (!panelValid('panel-convert')) return;
-    const format = convertFormat.value;
-    if (format === 'csv') {
-        return showToast('Pick a splat output format in the Export panel (PLY / SOG / …) — CSV doesn’t carry these per-gaussian edits', true);
-    }
-    groupWarn.classList.add('hidden');
-    groupApplyBtn.disabled = true;
-    groupApplyRegionBtn.disabled = true; // claim both buttons — the stats await below is a re-entrancy gap
-    try {
-        // frame-compat guard: members of one location should have similar extents
-        const stats = (await Promise.all(members.map((m) => api.getStats(m).catch(() => null)))).filter(Boolean);
-        const sizes = stats.map((s) => Math.max(...s!.extents.filter(Number.isFinite))).filter(Number.isFinite);
-        if (sizes.length > 1) {
-            const ratio = Math.max(...sizes) / Math.max(Math.min(...sizes), 1e-6);
-            if (ratio > 3) {
-                groupWarn.textContent = `These members span very different sizes (≈${ratio.toFixed(1)}× extent) — they may not be the same location.`;
-                groupWarn.className = 'hint warn';
-                if (!confirm('These members have quite different extents and may not be the same location. Apply the transforms to all of them anyway?')) return;
-            }
-        }
-        // fan the Edit transform out to each member, one at a time — a member's
-        // failure stops the loop before the rest submit
-        const options = {
-            ...editTransformOptions(),
-            device: $<HTMLSelectElement>('convert-device').value
-        };
-        const outputs: string[] = [];
-        for (const member of members) {
-            const job = await runJob(() => api.startConvert({ input: member, format, options }), undefined, false);
-            if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
-            outputs.push(...job.outputs);
-        }
-        if (outputs.length) showToast(`Applied to ${outputs.length} member${outputs.length > 1 ? 's' : ''}: ${outputs.join(', ')}`);
-    } finally {
-        updateGroupApply(); // restore the enabled state + count label
-    }
-};
-
-// fan the Edit-panel Region (carve / crop) out to every ticked member — a removal or
-// crop on the proxy propagates to all its LODs. Any-format members work (non-PLY ones
-// are decompressed to PLY by the trim worker); each writes a trimmed .ply.
-groupApplyRegionBtn.onclick = async () => {
-    const members = checkedMembers();
-    if (!members.length) return showToast('Tick at least one member', true);
-    const region = carveRegion();
-    if (!region) return showToast('Enable a Box or Sphere region in the Edit panel first', true);
-    const mode = regionMode();
-    const verb = mode === 'keep' ? 'Crop (keep only inside the region)' : 'Carve (remove inside the region)';
-    if (!confirm(`${verb} on ${members.length} member${members.length > 1 ? 's' : ''}? Each writes a new trimmed .ply — the sources are left untouched.`)) return;
-    groupWarn.classList.add('hidden');
-    groupApplyBtn.disabled = true;
-    groupApplyRegionBtn.disabled = true; // claim both buttons for the run
-    try {
-        const outputs: string[] = [];
-        for (const member of members) {
-            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), undefined, false);
-            if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
-            outputs.push(...job.outputs);
-        }
-        if (outputs.length) showToast(`Region applied to ${outputs.length} member${outputs.length > 1 ? 's' : ''}: ${outputs.join(', ')}`);
-    } finally {
-        updateGroupApply();
-    }
-};
-
-// ---------- analyze panel + persistent stats card ----------
-interface StatRow { col: string; min: string; max: string; median: string; mean: string; std: string; nans: string; infs: string; hist: string; }
-
-// parse the CLI's --stats text output (job log): a "gaussians: N" header then a
-// | Column | min | max | median | mean | stdDev | nans | infs | histogram | table
-const parseSummary = (log: string): { rowCount: number; rows: StatRow[] } | null => {
-    const rc = log.match(/^gaussians:\s*(\d+)/m);
-    if (!rc) return null;
-    const rows: StatRow[] = [];
-    for (const line of log.split('\n')) {
-        if (!line.trim().startsWith('|')) continue;
-        const c = line.split('|').slice(1, -1).map((s) => s.trim());
-        if (c.length < 9 || c[0] === 'Column' || /^-+$/.test(c[0])) continue;
-        rows.push({ col: c[0], min: c[1], max: c[2], median: c[3], mean: c[4], std: c[5], nans: c[6], infs: c[7], hist: c[8] });
-    }
-    return rows.length ? { rowCount: Number(rc[1]), rows } : null;
-};
-
-const fmtNum = (s: string): string => {
-    const n = Number(s);
-    if (!Number.isFinite(n)) return s;
-    if (n !== 0 && (Math.abs(n) >= 100000 || Math.abs(n) < 0.001)) return n.toPrecision(4);
-    return String(Math.round(n * 1000) / 1000);
-};
-
-let lastSummaryMarkdown = '';
-// render the persistent Analyze card from a summary job's --stats log
-const renderSummaryCard = (name: string, log: string): void => {
-    const result = $('analyze-result');
-    const summary = parseSummary(log);
-    if (!summary) { result.classList.add('hidden'); showToast('Could not parse summary output', true); return; }
-    const head = log.search(/^gaussians:/m);
-    lastSummaryMarkdown = (head >= 0 ? log.slice(head) : log).trim();
-    $('analyze-result-name').textContent = name;
-
-    const extent = (col: string): number => {
-        const r = summary.rows.find((x) => x.col === col);
-        return r ? Number(r.max) - Number(r.min) : NaN;
-    };
-    const [ex, ey, ez] = ['x', 'y', 'z'].map(extent);
-    const issues = summary.rows.reduce((a, r) => a + (Number(r.nans) || 0) + (Number(r.infs) || 0), 0);
-
-    const tiles = $('stat-tiles');
-    tiles.innerHTML = '';
-    const tile = (label: string, value: string, cls = ''): void => {
-        const t = document.createElement('div');
-        t.className = `tile ${cls}`.trim();
-        const v = document.createElement('span'); v.className = 'tile-val'; v.textContent = value;
-        const l = document.createElement('span'); l.className = 'tile-label'; l.textContent = label;
-        t.append(v, l);
-        tiles.appendChild(t);
-    };
-    tile('Gaussians', Number.isFinite(summary.rowCount) ? summary.rowCount.toLocaleString() : '—');
-    tile('Extent (m)', [ex, ey, ez].every(Number.isFinite)
-        ? `${fmtNum(String(ex))} × ${fmtNum(String(ey))} × ${fmtNum(String(ez))}` : '—');
-    tile(issues ? 'NaN / Inf' : 'Data', issues ? String(issues) : '✓ clean', issues ? 'bad' : 'good');
-
-    const table = $<HTMLTableElement>('stats-table');
-    table.innerHTML = '';
-    const thead = table.createTHead().insertRow();
-    for (const h of ['Column', 'min', 'max', 'median', 'mean', 'σ', 'NaN', 'Inf', 'dist']) {
-        const th = document.createElement('th'); th.textContent = h; thead.appendChild(th);
-    }
-    const tbody = table.createTBody();
-    for (const r of summary.rows) {
-        const tr = tbody.insertRow();
-        if ((Number(r.nans) || 0) + (Number(r.infs) || 0) > 0) tr.className = 'row-bad';
-        const cells = [r.col, fmtNum(r.min), fmtNum(r.max), fmtNum(r.median), fmtNum(r.mean), fmtNum(r.std), r.nans, r.infs, r.hist];
-        cells.forEach((text, i) => {
-            const td = tr.insertCell();
-            td.textContent = text;
-            if (i === 0) td.className = 'col';
-            if (i === 8) td.className = 'hist';
-        });
-    }
-    result.classList.remove('hidden');
-};
-
-$<HTMLButtonElement>('stats-copy').onclick = () => {
-    if (!lastSummaryMarkdown) return;
-    void navigator.clipboard.writeText(lastSummaryMarkdown)
-        .then(() => showToast('Summary copied'))
-        .catch(() => showToast('Copy failed', true));
-};
-
-analyzeRun.onclick = async () => {
-    const input = analyzeInput.value;
-    if (!input) return showToast('Pick a file to analyze first', true);
-    const job = await runJob(() => api.startAnalyze(input), analyzeRun);
-    if (job?.status === 'done') renderSummaryCard(input, job.log);
-};
 
 // Settings ▸ About: component versions (PlayCanvas from the bundled engine, app + splat-transform from the server)
 void (async () => {
