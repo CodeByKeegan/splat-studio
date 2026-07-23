@@ -3,6 +3,7 @@
 // render-camera preview. Driven by main.ts through methods and callbacks.
 import * as pc from 'playcanvas';
 import { CameraControls } from 'playcanvas/scripts/esm/camera-controls.mjs';
+import { closestPointOnAxisToRay, flipRowsBottomUp, hexColor, lineBoxMesh, lineSphereMesh, round } from './line-meshes';
 import { parseVoxelOctree } from './voxel-parser';
 import type { VoxelMeta } from './voxel-parser';
 
@@ -13,50 +14,11 @@ export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'ren
 export type FileKind = 'splat' | 'lod';
 type LoadedFile = { entity: pc.Entity; asset: pc.Asset; kind: FileKind; url: string };
 
-// 2-decimal rounding for values emitted back into form fields
-const round = (v: number) => Math.round(v * 100) / 100;
-
 /** An in-flight handle drag: a box face or a sphere's radius knob, on the collision region or the Edit crop. */
 type RegionDrag =
     | { kind: 'face'; axis: 0 | 1 | 2; sign: 1 | -1; family: 'region' | 'crop' }
     | { kind: 'radius'; family: 'region' | 'crop' }
     | null;
-
-/** 12-edge unit line box — no triangle diagonals. */
-const lineBoxMesh = (device: pc.GraphicsDevice): pc.Mesh => {
-    const mesh = new pc.Mesh(device);
-    const h = 0.5;
-    const pos: number[] = [];
-    for (const z of [-h, h]) for (const y of [-h, h]) for (const x of [-h, h]) pos.push(x, y, z); // idx = x + 2y + 4z
-    mesh.setPositions(pos);
-    mesh.setIndices([0, 1, 1, 5, 5, 4, 4, 0, 2, 3, 3, 7, 7, 6, 6, 2, 0, 2, 1, 3, 5, 7, 4, 6]);
-    mesh.update(pc.PRIMITIVE_LINES);
-    return mesh;
-};
-
-/** Three orthogonal unit circles — reads much cleaner over a splat than a triangle wireframe. */
-const lineSphereMesh = (device: pc.GraphicsDevice): pc.Mesh => {
-    const mesh = new pc.Mesh(device);
-    const SEG = 64;
-    const pos: number[] = [];
-    const idx: number[] = [];
-    let base = 0;
-    for (const plane of [0, 1, 2]) {
-        for (let i = 0; i < SEG; i++) {
-            const a = (i / SEG) * Math.PI * 2;
-            const c = Math.cos(a), s = Math.sin(a);
-            if (plane === 0) pos.push(0, c, s);
-            else if (plane === 1) pos.push(c, 0, s);
-            else pos.push(c, s, 0);
-            idx.push(base + i, base + ((i + 1) % SEG));
-        }
-        base += SEG;
-    }
-    mesh.setPositions(pos);
-    mesh.setIndices(idx);
-    mesh.update(pc.PRIMITIVE_LINES);
-    return mesh;
-};
 
 /**
  * PlayCanvas viewer: renders a gaussian splat plus its generated collision mesh
@@ -901,13 +863,8 @@ export class SplatViewer {
         if (this.voxelEntity) this.voxelEntity.enabled = visible;
     }
 
-    // '#rrggbb' -> pc.Color
-    private static hexColor(hex: string): pc.Color {
-        return new pc.Color(parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255);
-    }
-
     setVoxelColor(hex: string): void {
-        this.voxelMaterial.emissive = SplatViewer.hexColor(hex);
+        this.voxelMaterial.emissive = hexColor(hex);
         this.voxelMaterial.update();
     }
 
@@ -987,7 +944,7 @@ export class SplatViewer {
     }
 
     setWireColor(hex: string): void {
-        this.wireMaterial.emissive = SplatViewer.hexColor(hex);
+        this.wireMaterial.emissive = hexColor(hex);
         this.wireMaterial.update();
     }
 
@@ -1331,8 +1288,7 @@ export class SplatViewer {
             this.previewReading = false;
             const ctx = this.previewCtx, img = this.previewImg;
             if (!ctx || !img || !data) return;
-            const out = img.data, row = w * 4;
-            for (let y = 0; y < h; y++) out.set(data.subarray((h - 1 - y) * row, (h - y) * row), y * row); // RT is bottom-up
+            flipRowsBottomUp(data, img.data, w, h); // RT is bottom-up
             ctx.putImageData(img, 0, 0);
         }).catch(() => { this.previewReading = false; });
     }
@@ -1400,8 +1356,7 @@ export class SplatViewer {
             const ctx = canvas.getContext('2d');
             if (!ctx || !data) throw new Error('screenshot readback failed');
             const img = ctx.createImageData(w, h);
-            const row = w * 4;
-            for (let y = 0; y < h; y++) img.data.set(data.subarray((h - 1 - y) * row, (h - y) * row), y * row); // RT is bottom-up
+            flipRowsBottomUp(data, img.data, w, h); // RT is bottom-up
             ctx.putImageData(img, 0, 0);
             return { png: canvas.toDataURL('image/png').split(',')[1], width: w, height: h };
         } finally {
@@ -1813,10 +1768,8 @@ export class SplatViewer {
         const wt = this.cropHolder.getWorldTransform();
         const centerWorld = wt.transformPoint(node.getLocalPosition().clone());
         const A = wt.transformVector(this.radiusHandleDir.clone()).normalize();
-        const w0 = centerWorld.clone().sub(R0);
-        const b = A.dot(D), denom = 1 - b * b;
-        if (Math.abs(denom) < 1e-3) return; // direction edge-on to the view — skip this frame
-        const sc = (b * D.dot(w0) - A.dot(w0)) / denom; // signed world units along A from centre
+        const sc = closestPointOnAxisToRay(centerWorld, A, R0, D); // signed world units along A from centre
+        if (sc === null) return; // direction edge-on to the view — skip this frame
         const r = Math.max(Math.abs(sc), 0.01);
         node.setLocalScale(r, r, r);
         if (drag.family === 'crop') this.onCropSphereRadius?.(round(r));
@@ -1840,10 +1793,8 @@ export class SplatViewer {
         const unit = new pc.Vec3(drag.axis === 0 ? 1 : 0, drag.axis === 1 ? 1 : 0, drag.axis === 2 ? 1 : 0);
         const A = wt.transformVector(unit).normalize();
         // closest approach between the axis line (centerWorld, A) and the camera ray (R0, D)
-        const w0 = centerWorld.clone().sub(R0);
-        const b = A.dot(D), denom = 1 - b * b;
-        if (Math.abs(denom) < 1e-3) return; // face edge-on to the view — skip this frame
-        const sc = (b * D.dot(w0) - A.dot(w0)) / denom; // signed world units along A from centre
+        const sc = closestPointOnAxisToRay(centerWorld, A, R0, D); // signed world units along A from centre
+        if (sc === null) return; // face edge-on to the view — skip this frame
         const k = drag.axis;
         const cArr = [center.x, center.y, center.z], sArr = [scale.x, scale.y, scale.z];
         let lo = cArr[k] - sArr[k] / 2, hi = cArr[k] + sArr[k] / 2;
