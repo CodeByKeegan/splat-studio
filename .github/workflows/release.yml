@@ -34,17 +34,26 @@ jobs:
 
       - name: Resolve channel + version
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Betas are release candidates for the NEXT stable: after stable X.Y.Z the
+          # betas are X.Y.(Z+1)-beta.1, -beta.2, ...; promoting dev cuts X.Y.(Z+1).
+          # Semver order stays monotonic for electron-updater either way.
+          LAST_STABLE=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName')
+          BASE=${LAST_STABLE#v}; BASE=${BASE:-0.0.0}  # e.g. 0.0.37
+          NEXT="${BASE%.*}.$(( ${BASE##*.} + 1 ))"  # e.g. 0.0.38
           if [ "${{ github.ref_name }}" = "dev" ]; then
             CHANNEL=beta
-            # -beta.<run> so successive betas compare as increasing semver, and the
-            # prerelease tag makes electron-builder write beta.yml (+ latest.yml via
+            # next free -beta.N for this target; the prerelease tag makes
+            # electron-builder write beta.yml (+ latest.yml via
             # generateUpdatesFilesForAllChannels)
-            VERSION="0.0.${{ github.run_number }}-beta.${{ github.run_number }}"
+            N=$(gh release list --limit 100 --json tagName -q "[.[].tagName | select(startswith(\"v$NEXT-beta.\"))] | length")
+            VERSION="$NEXT-beta.$(( N + 1 ))"
             PRERELEASE_FLAG="--prerelease"
           else
             CHANNEL=stable
-            VERSION="0.0.${{ github.run_number }}"
+            VERSION="$NEXT"
             PRERELEASE_FLAG=""
           fi
           npm version "$VERSION" --no-git-tag-version --allow-same-version
