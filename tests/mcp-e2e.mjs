@@ -45,7 +45,16 @@ let server, client, ed;
 try {
     const ws = await fsp.mkdtemp(path.join(os.tmpdir(), 'mcp-e2e-'));
     await fsp.mkdir(path.join(ws, 'Demo'), { recursive: true });
-    if (fs.existsSync(DEMO)) await fsp.copyFile(DEMO, path.join(ws, 'Demo', 'demo-room.ply'));
+    // fixture: reuse the capture-workspace copy if present, else generate it
+    const demoTarget = path.join(ws, 'Demo', 'demo-room.ply');
+    if (fs.existsSync(DEMO)) {
+        await fsp.copyFile(DEMO, demoTarget);
+    } else {
+        await new Promise((resolve, reject) => {
+            const p = spawn(process.execPath, [path.join(repo, 'scripts', 'make-test-splat.mjs'), demoTarget], { cwd: repo, stdio: 'ignore' });
+            p.on('close', (c) => (c === 0 ? resolve() : reject(new Error(`make-test-splat exit ${c}`))));
+        });
+    }
     const port = await freePort();
     server = spawn(process.execPath, [path.join(repo, 'server', 'index.mjs')], { cwd: repo, env: { ...process.env, API_PORT: String(port), SPLAT_WORKSPACE: ws }, stdio: ['ignore', 'ignore', 'pipe'] });
     server.stderr.on('data', () => { /* quiet */ });

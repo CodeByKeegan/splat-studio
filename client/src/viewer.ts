@@ -6,6 +6,10 @@ import type { VoxelMeta } from './voxel-parser';
 /** Selectable scene-hierarchy objects. 'capsule', 'render-camera', 'collision-region' and 'collision-sphere' carry a gizmo. */
 export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'render-camera' | 'collision-region' | 'collision-sphere';
 
+/** A splat-kind file resident in the viewer ('lod' = streamed multi-LOD bundle). */
+export type FileKind = 'splat' | 'lod';
+type LoadedFile = { entity: pc.Entity; asset: pc.Asset; kind: FileKind; url: string };
+
 /** An in-flight handle drag: a box face or a sphere's radius knob, on the collision region or the Edit crop. */
 type RegionDrag =
     | { kind: 'face'; axis: 0 | 1 | 2; sign: 1 | -1; family: 'region' | 'crop' }
@@ -69,8 +73,12 @@ export class SplatViewer {
     private collisionHolder!: pc.Entity;
     private wireMaterial!: pc.StandardMaterial;
 
+    /** active splat entity — the most recently shown splat-kind file */
     private splatEntity: pc.Entity | null = null;
-    private splatAsset: pc.Asset | null = null;
+    /** loaded splat-kind files; the last map entry is the most recently shown */
+    private files = new Map<string, LoadedFile>();
+    private filePending = new Map<string, { token: number; promise: Promise<boolean> }>();
+    private activeFile: string | null = null;
     private collisionEntity: pc.Entity | null = null;
     private collisionAsset: pc.Asset | null = null;
     private voxelEntity: pc.Entity | null = null;
@@ -559,32 +567,127 @@ export class SplatViewer {
         });
     }
 
-    /** @returns true if this load applied; false if superseded by a newer load or a remove. */
-    async loadSplat(url: string, filename: string): Promise<boolean> {
-        this.clearSplat(); // bumps splatSeq, superseding any in-flight load (incl. a remove)
-        const seq = this.splatSeq;
-        const asset = await this.loadAsset(url, filename, 'gsplat');
-        if (seq !== this.splatSeq) {
-            // superseded by a newer load or a remove; don't unload an asset the
-            // winner may own (same-url loads dedupe to one asset object)
-            if (asset !== this.splatAsset) {
-                this.app.assets.remove(asset);
-                asset.unload();
-            }
-            return false;
+    /**
+     * Load (once) and show a splat-kind file; re-show reuses the loaded entity.
+     * The shown file becomes the ACTIVE splat — the target of picking/measure/
+     * bounds/framing and the live preview transform.
+     * @returns true if this show applied; false if superseded by an unload.
+     */
+    async showFile(name: string, url: string, filename: string): Promise<boolean> {
+        const have = this.files.get(name);
+        if (have) {
+            have.entity.enabled = true;
+            this.setActiveFile(name);
+            return true;
         }
-        const entity = new pc.Entity(filename);
-        entity.addComponent('gsplat', { asset });
-        this.sceneRoot.addChild(entity);
-        this.splatEntity = entity;
-        this.splatAsset = asset;
-        this.buildCenterCaches(asset);
-        this.applyPreviewXform(); // a newly loaded splat inherits the active preview transform
+        const inFlight = this.filePending.get(name);
+        if (inFlight) return inFlight.promise;
+        const token = ++this.splatSeq;
+        const promise = (async (): Promise<boolean> => {
+            let asset: pc.Asset;
+            try {
+                asset = await this.loadAsset(url, filename, 'gsplat');
+            } catch (err) {
+                if (this.filePending.get(name)?.token === token) this.filePending.delete(name);
+                throw err;
+            }
+            if (this.filePending.get(name)?.token !== token) {
+                // superseded by an unload; a newer load of the same url may share
+                // this asset object (registry dedupe), so don't strand it
+                if (!this.filePending.has(name) && this.files.get(name)?.asset !== asset) {
+                    this.app.assets.remove(asset);
+                    asset.unload();
+                }
+                return false;
+            }
+            this.filePending.delete(name);
+            const kind: FileKind = filename === 'lod-meta.json' ? 'lod' : 'splat';
+            const entity = new pc.Entity(filename);
+            entity.addComponent('gsplat', { asset });
+            this.sceneRoot.addChild(entity);
+            this.files.set(name, { entity, asset, kind, url });
+            this.setActiveFile(name);
+            // customAabb appears once the engine has run a frame; don't block the
+            // load on that (rAF stalls entirely in hidden tabs) — frame when ready.
+            void this.frameWhenReady(entity);
+            return true;
+        })();
+        this.filePending.set(name, { token, promise });
+        return promise;
+    }
 
-        // customAabb appears once the engine has run a frame; don't block the
-        // load on that (rAF stalls entirely in hidden tabs) — frame when ready.
-        void this.frameWhenReady(entity);
-        return true;
+    /** Hide a loaded file — entity disabled, resources kept, so re-show is instant. */
+    hideFile(name: string): void {
+        const f = this.files.get(name);
+        if (f) f.entity.enabled = false;
+    }
+
+    /** Fully release a file (call on delete). The newest remaining file becomes active. */
+    unloadFile(name: string): void {
+        this.filePending.delete(name); // cancels an in-flight show
+        const f = this.files.get(name);
+        if (!f) return;
+        this.files.delete(name);
+        f.entity.destroy();
+        this.app.assets.remove(f.asset);
+        f.asset.unload();
+        if (this.activeFile === name) {
+            const rest = [...this.files.keys()];
+            this.activeFile = null;
+            this.setActiveFile(rest.length ? rest[rest.length - 1] : null);
+        }
+    }
+
+    /** Release every loaded splat-kind file. */
+    unloadAllFiles(): void {
+        this.filePending.clear();
+        this.activeFile = null;
+        this.setActiveFile(null);
+        for (const f of this.files.values()) {
+            f.entity.destroy();
+            this.app.assets.remove(f.asset);
+            f.asset.unload();
+        }
+        this.files.clear();
+    }
+
+    isFileLoaded(name: string): boolean { return this.files.has(name); }
+
+    isFileVisible(name: string): boolean { return this.files.get(name)?.entity.enabled ?? false; }
+
+    /** Name of the active splat (Edit/Analyze/measure/collision target), or null. */
+    get activeSplatName(): string | null { return this.activeFile; }
+
+    /** Every loaded splat-kind file, oldest-shown first. */
+    loadedFiles(): { name: string; kind: FileKind; visible: boolean; active: boolean }[] {
+        return [...this.files].map(([name, f]) => ({ name, kind: f.kind, visible: f.entity.enabled, active: name === this.activeFile }));
+    }
+
+    /** Point every single-splat consumer (picking, measure, bounds, preview) at a file. */
+    private setActiveFile(name: string | null): void {
+        const cur = name ? this.files.get(name) ?? null : null;
+        if (name && !cur) return;
+        if (name === this.activeFile && (cur?.entity ?? null) === this.splatEntity) return;
+        // the live preview transform belongs to the active splat only
+        const prev = this.activeFile ? this.files.get(this.activeFile) : null;
+        if (prev && prev !== cur) {
+            prev.entity.setLocalPosition(0, 0, 0);
+            prev.entity.setLocalEulerAngles(0, 0, 0);
+            prev.entity.setLocalScale(1, 1, 1);
+        }
+        this.activeFile = name;
+        this.splatEntity = cur?.entity ?? null;
+        if (cur) {
+            this.files.delete(name!); // most recently shown = last map entry
+            this.files.set(name!, cur);
+            this.buildCenterCaches(cur.asset);
+            this.applyPreviewXform();
+            this.refreshBounds();
+        } else {
+            this.pickCenters = null;
+            this.occCenters = null;
+            if (this.boundsEntity) this.boundsEntity.enabled = false;
+        }
     }
 
     private async frameWhenReady(entity: pc.Entity): Promise<void> {
@@ -748,7 +851,7 @@ export class SplatViewer {
 
     /** Unload every layer and empty the viewport. */
     clearAll(): void {
-        this.clearSplat();
+        this.unloadAllFiles();
         this.clearCollision();
         this.clearVoxels();
     }
@@ -843,20 +946,6 @@ export class SplatViewer {
             (b.min.y + b.max.y) / 2,
             (b.min.z + b.max.z) / 2
         );
-    }
-
-    clearSplat(): void {
-        this.splatSeq++; // invalidate any in-flight loadSplat
-        this.splatEntity?.destroy();
-        this.splatEntity = null;
-        this.pickCenters = null;
-        this.occCenters = null;
-        if (this.boundsEntity) this.boundsEntity.enabled = false;
-        if (this.splatAsset) {
-            this.app.assets.remove(this.splatAsset);
-            this.splatAsset.unload();
-            this.splatAsset = null;
-        }
     }
 
     clearCollision(): void {

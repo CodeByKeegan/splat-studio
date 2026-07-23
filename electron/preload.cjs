@@ -19,5 +19,13 @@ contextBridge.exposeInMainWorld('desktop', {
     // current channel: 'stable' | 'beta'
     getUpdateChannel: () => ipcRenderer.invoke('updates:get-channel'),
     // switch channel; persists and re-checks. Resolves to the applied channel.
-    setUpdateChannel: (channel) => ipcRenderer.invoke('updates:set-channel', channel)
+    setUpdateChannel: (channel) => ipcRenderer.invoke('updates:set-channel', channel),
+    // live updater state for the settings status line: {phase, version?, percent?, ...}
+    getUpdateStatus: () => ipcRenderer.invoke('updates:get-status'),
+    onUpdateStatus: (cb) => ipcRenderer.on('updates:status', (_e, status) => cb(status)),
+    // start downloading the update found by the last check
+    downloadUpdate: () => ipcRenderer.invoke('updates:download'),
+    // auto-download toggle: true = downloads start without the Download button
+    getUpdateAuto: () => ipcRenderer.invoke('updates:get-auto'),
+    setUpdateAuto: (on) => ipcRenderer.invoke('updates:set-auto', on)
 });

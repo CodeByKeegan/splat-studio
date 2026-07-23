@@ -31,21 +31,18 @@ const toastStack = $<HTMLDivElement>('toast-stack');
 const hudSplat = $<HTMLSpanElement>('hud-splat');
 const hudCollision = $<HTMLSpanElement>('hud-collision');
 const hudVoxel = $<HTMLSpanElement>('hud-voxel');
-const jobTitle = $<HTMLSpanElement>('job-title');
-const jobStatus = $<HTMLSpanElement>('job-status');
 const jobCommand = $<HTMLElement>('job-command');
 const jobLog = $<HTMLPreElement>('job-log');
 
 let viewer: SplatViewer | undefined;
 
-const showToast = (message: string, isError = false, pre = false) => {
+const showToast = (message: string, isError = false) => {
     const el = document.createElement('div');
     el.className = isError ? 'toast error' : 'toast';
-    if (pre) el.style.whiteSpace = 'pre-line'; // multi-line detail toast, longer dwell
     el.textContent = message;
     toastStack.appendChild(el);
     while (toastStack.children.length > 4) toastStack.firstChild?.remove();
-    setTimeout(() => el.remove(), pre ? 12000 : isError ? 8000 : 4000);
+    setTimeout(() => el.remove(), isError ? 8000 : 4000);
 };
 
 // In-app text prompt — Electron's renderer has no window.prompt(). Resolves the
@@ -123,6 +120,7 @@ const formState: Record<string, string | boolean> = (() => {
 document.addEventListener('change', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || !t.id) return;
+    if (t.id === 'files-select-all') return; // transient bulk-select state, not a form value
     formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
     localStorage.setItem(FORM_KEY, JSON.stringify(formState));
     scheduleUndoCapture(); // record an undo step for this committed change
@@ -140,9 +138,20 @@ const restoreFormState = () => {
 
 // ---------- file list ----------
 let splatFileNames: string[] = [];
-// the splat currently shown in the viewport — the live Convert preview only
+let lastFiles: api.FileEntry[] = [];
+// the ACTIVE splat (most recently shown) — the live Convert preview only
 // applies while this is the Convert input, so baked outputs aren't double-transformed
 let currentSplatName: string | null = null;
+// which files the single collision / voxel overlays were loaded from
+let currentCollisionName: string | null = null;
+let currentVoxelName: string | null = null;
+// rows with an open details card / a ticked checkbox — survive list re-renders
+const expandedFiles = new Set<string>();
+const selectedFiles = new Set<string>();
+// live row elements for the expandable (splat/lod) rows, rebuilt per render
+const fileRows = new Map<string, { li: HTMLLIElement; chev: HTMLButtonElement }>();
+// build-meta.json per LOD bundle, keyed name@mtime; null = none on disk (404)
+const lodMetaCache = new Map<string, api.LodBuildMeta | null>();
 
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
@@ -169,6 +178,11 @@ const fillSelect = (select: HTMLSelectElement, names: string[]) => {
 
 const refreshFiles = async (highlight?: Set<string>) => {
     const files = await api.listFiles();
+    lastFiles = files;
+    // drop expansion/selection state for names no longer listed
+    const listed = new Set(files.map((f) => f.name));
+    for (const n of [...expandedFiles]) if (!listed.has(n)) expandedFiles.delete(n);
+    for (const n of [...selectedFiles]) if (!listed.has(n)) selectedFiles.delete(n);
 
     // anything the CLI can read (incl. .spz/.splat/.ksplat/.lcc/.lcc2), not just
     // what the engine can render
@@ -220,15 +234,61 @@ const refreshFiles = async (highlight?: Set<string>) => {
     renderGroupMembers(new Set(checkedMembers())); // refresh the member list, keep ticks
 
     fileList.innerHTML = '';
+    fileRows.clear();
     let firstNew: HTMLLIElement | null = null;
     for (const f of files) {
         // derive voxel viewability client-side too, so a server started before
-        // this feature still gets the view button
+        // this feature still gets the eye toggle
         if (!f.viewable && f.name.endsWith('.voxel.json')) f.viewable = 'voxel';
         const li = document.createElement('li');
         if (highlight?.has(f.name)) {
             li.classList.add('new');
             firstNew ??= li;
+        }
+
+        // bulk-select checkbox
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.className = 'file-check';
+        check.title = 'Select for bulk actions';
+        check.checked = selectedFiles.has(f.name);
+        check.onchange = () => {
+            if (check.checked) selectedFiles.add(f.name);
+            else selectedFiles.delete(f.name);
+            updateBulkBar();
+        };
+        li.appendChild(check);
+
+        // details chevron (splat/lod rows only)
+        const expandable = f.kind === 'splat' || f.kind === 'lod';
+        if (expandable) {
+            const chev = document.createElement('button');
+            chev.className = 'file-chevron';
+            chev.title = 'Details (counts, dates, LOD build recipe)';
+            chev.textContent = expandedFiles.has(f.name) ? '▾' : '▸';
+            chev.onclick = () => toggleDetails(f);
+            li.appendChild(chev);
+            fileRows.set(f.name, { li, chev });
+        } else {
+            li.appendChild(document.createElement('span'));
+        }
+
+        if (f.viewable) {
+            const EYE_HINTS: Record<string, string> = {
+                splat: 'Show / hide this splat in the 3D viewer. First show loads it; the last shown splat is the active one (Edit / Analyze / Collision).',
+                collision: 'Show / hide this collision mesh as a wireframe overlay (loading replaces any other overlay)',
+                voxel: 'Show / hide this voxel octree as translucent boxes (loading replaces any other voxel layer)'
+            };
+            const eye = document.createElement('button');
+            eye.className = 'file-eye unloaded';
+            eye.textContent = '👁';
+            eye.dataset.name = f.name;
+            eye.dataset.view = f.viewable;
+            eye.title = EYE_HINTS[f.viewable];
+            eye.onclick = () => void toggleFileEye(eye, f.name, f.viewable!);
+            li.appendChild(eye);
+        } else {
+            li.appendChild(document.createElement('span')); // keep the grid aligned
         }
 
         const KIND_HINTS: Record<string, string> = {
@@ -286,21 +346,6 @@ const refreshFiles = async (highlight?: Set<string>) => {
         size.textContent = fmtSize(f.size);
         li.appendChild(size);
 
-        if (f.viewable) {
-            const VIEW_HINTS: Record<string, string> = {
-                splat: 'Load this splat in the 3D viewer (replaces the current splat)',
-                collision: 'Overlay this collision mesh as a wireframe (replaces the current overlay)',
-                voxel: 'Render the voxel octree as translucent boxes (replaces the current voxels)'
-            };
-            const view = document.createElement('button');
-            view.textContent = 'view';
-            view.title = VIEW_HINTS[f.viewable];
-            view.onclick = () => void viewFile(f.name, f.viewable!);
-            li.appendChild(view);
-        } else {
-            li.appendChild(document.createElement('span')); // keep ✕ in its grid column
-        }
-
         // ⋯ actions button (and right-click anywhere on the row) → file menu
         const more = document.createElement('button');
         more.className = 'row-more';
@@ -327,6 +372,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
             }
             clearTimeout(disarmTimer);
             try {
+                unloadDeleted(f.name);
                 await api.deleteFile(f.name);
                 await refreshFiles();
             } catch (err) {
@@ -335,8 +381,11 @@ const refreshFiles = async (highlight?: Set<string>) => {
         };
         li.appendChild(del);
 
+        if (expandable && expandedFiles.has(f.name)) li.appendChild(buildDetails(f));
         fileList.appendChild(li);
     }
+    updateFileEyes();
+    updateBulkBar();
     firstNew?.scrollIntoView({ block: 'nearest' });
 };
 
@@ -358,9 +407,10 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
     try {
         const url = api.fileUrl(name);
         const filename = name.split('/').pop()!;
-        showToast(`Loading ${name}…`);
+        if (!(as === 'splat' && v.isFileLoaded(name))) showToast(`Loading ${name}…`); // re-show is instant
+
         if (as === 'splat') {
-            if (!(await v.loadSplat(url, filename))) return false; // superseded by a newer load / remove
+            if (!(await v.showFile(name, url, filename))) return false; // superseded by an unload
             setChip(hudSplat, `splat: ${name}`);
             layerVisible.splat = true;
             v.setSplatVisible(true);
@@ -369,6 +419,7 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
             syncRegionViz(); updateRegionEstimate(); // re-fit/recompute the region box for the new splat
         } else if (as === 'collision') {
             if (!(await v.loadCollision(url, filename))) return false;
+            currentCollisionName = name;
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
             layerVisible.collision = true;
             v.setCollisionVisible(true);
@@ -382,6 +433,7 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
         } else {
             const { count, truncated, applied } = await v.loadVoxels(url);
             if (!applied) return false;
+            currentVoxelName = name;
             setChip(hudVoxel, `voxels: ${name} (${count.toLocaleString()} boxes)`);
             layerVisible.voxels = true;
             v.setVoxelsVisible(true);
@@ -395,6 +447,302 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
     } catch (err) {
         showToast(`Failed to load ${name}: ${err}`, true);
         return false;
+    }
+};
+
+// ---------- per-row eye toggles + Show all / Hide all ----------
+type EyeState = 'visible' | 'hidden' | 'unloaded';
+const fileEyeState = (name: string, as: api.ViewKind): EyeState => {
+    const v = viewer;
+    if (!v) return 'unloaded';
+    if (as === 'splat') return v.isFileLoaded(name) ? (v.isFileVisible(name) ? 'visible' : 'hidden') : 'unloaded';
+    if (as === 'collision') return name === currentCollisionName && v.hasCollision ? (layerVisible.collision ? 'visible' : 'hidden') : 'unloaded';
+    return name === currentVoxelName && v.hasVoxels ? (layerVisible.voxels ? 'visible' : 'hidden') : 'unloaded';
+};
+
+/** Repaint every row eye (bright = visible, dim = loaded + hidden, faint = not loaded). */
+const updateFileEyes = (): void => {
+    for (const b of fileList.querySelectorAll<HTMLButtonElement>('button.file-eye')) {
+        if (b.classList.contains('loading')) continue;
+        const state = fileEyeState(b.dataset.name!, b.dataset.view as api.ViewKind);
+        b.textContent = state === 'hidden' ? '🙈' : '👁';
+        b.classList.toggle('off', state === 'hidden');
+        b.classList.toggle('unloaded', state === 'unloaded');
+    }
+};
+
+const toggleFileEye = async (eye: HTMLButtonElement, name: string, as: api.ViewKind): Promise<void> => {
+    const v = viewer;
+    if (!v) return showToast('Viewer is still starting up', true);
+    if (fileEyeState(name, as) === 'visible') {
+        if (as === 'splat') {
+            v.hideFile(name);
+            if (name === v.activeSplatName) layerVisible.splat = false;
+        } else if (as === 'collision') {
+            layerVisible.collision = false;
+            applyLayerVisible('collision');
+        } else {
+            layerVisible.voxels = false;
+            applyLayerVisible('voxels');
+        }
+        rebuildSceneList();
+    } else {
+        // not loaded → load + show; loaded + hidden → show (either way it becomes active)
+        eye.classList.add('loading');
+        eye.textContent = '◌';
+        eye.disabled = true;
+        try { await viewFile(name, as); }
+        finally { eye.disabled = false; eye.classList.remove('loading'); }
+    }
+    updateFileEyes();
+};
+
+/** Reflect the viewer's active splat into the HUD chip + preview plumbing. */
+const syncActiveSplatChip = (): void => {
+    currentSplatName = viewer?.activeSplatName ?? null;
+    if (currentSplatName) setChip(hudSplat, `splat: ${currentSplatName}`);
+    else hideChip(hudSplat);
+};
+
+/** A deleted file must release whatever the viewer holds for it first. */
+const unloadDeleted = (name: string): void => {
+    const v = viewer;
+    if (v?.isFileLoaded(name)) {
+        v.unloadFile(name);
+        syncActiveSplatChip();
+        syncPreview();
+        rebuildSceneList();
+    }
+    if (name === currentCollisionName) removeCollision();
+    if (name === currentVoxelName) removeVoxels();
+};
+
+// two-stage >20M-gaussian confirm + sequential load, shared by Show all / Show selected
+const wireShowButton = (btn: HTMLButtonElement, label: string, pickTargets: () => api.FileEntry[]): void => {
+    let disarmTimer: ReturnType<typeof setTimeout> | undefined;
+    const disarm = (): void => {
+        clearTimeout(disarmTimer);
+        btn.classList.remove('armed');
+        btn.textContent = label;
+    };
+    btn.onclick = async () => {
+        const v = viewer;
+        if (!v) return showToast('Viewer is still starting up', true);
+        const targets = pickTargets();
+        if (!targets.length) return showToast('No viewable splat files to show', true);
+        // confirm when the files that would NEWLY load sum past 20M gaussians
+        const fresh = targets.filter((f) => !v.isFileLoaded(f.name));
+        const total = fresh.reduce((s, f) => s + (f.gaussians ?? 0), 0);
+        if (total > 20_000_000 && !btn.classList.contains('armed')) {
+            btn.classList.add('armed');
+            btn.textContent = `Load ~${fmtCount(total)} gaussians?`;
+            disarmTimer = setTimeout(disarm, 2500);
+            return;
+        }
+        disarm();
+        btn.disabled = true;
+        try {
+            for (const f of targets) await viewFile(f.name, 'splat');
+        } finally {
+            btn.disabled = false;
+            updateFileEyes();
+        }
+    };
+};
+wireShowButton($<HTMLButtonElement>('files-show-all'), 'Show all', () => lastFiles.filter((f) => f.viewable === 'splat'));
+
+$<HTMLButtonElement>('files-hide-all').onclick = () => {
+    const v = viewer;
+    if (!v) return;
+    for (const lf of v.loadedFiles()) if (lf.visible) v.hideFile(lf.name);
+    if (v.hasSplat) layerVisible.splat = false;
+    if (v.hasCollision && layerVisible.collision) { layerVisible.collision = false; applyLayerVisible('collision'); }
+    if (v.hasVoxels && layerVisible.voxels) { layerVisible.voxels = false; applyLayerVisible('voxels'); }
+    rebuildSceneList();
+};
+
+// ---------- row selection + bulk actions ----------
+const selectAllBox = $<HTMLInputElement>('files-select-all');
+const bulkBar = $<HTMLDivElement>('file-bulk-bar');
+const bulkCount = $<HTMLSpanElement>('bulk-count');
+const bulkDeleteBtn = $<HTMLButtonElement>('bulk-delete');
+
+let bulkDeleteDisarm: ReturnType<typeof setTimeout> | undefined;
+const disarmBulkDelete = (): void => {
+    clearTimeout(bulkDeleteDisarm);
+    bulkDeleteBtn.classList.remove('armed');
+    bulkDeleteBtn.textContent = 'Delete selected';
+};
+
+/** Sync the select-all tri-state + bulk bar to the current selection. */
+const updateBulkBar = (): void => {
+    const n = selectedFiles.size;
+    selectAllBox.checked = n > 0 && n === lastFiles.length;
+    selectAllBox.indeterminate = n > 0 && n < lastFiles.length;
+    bulkBar.classList.toggle('hidden', n === 0);
+    bulkCount.textContent = n ? `${n} selected` : '';
+    disarmBulkDelete();
+};
+
+selectAllBox.onchange = () => {
+    selectedFiles.clear();
+    if (selectAllBox.checked) for (const f of lastFiles) selectedFiles.add(f.name);
+    for (const box of fileList.querySelectorAll<HTMLInputElement>('input.file-check')) box.checked = selectAllBox.checked;
+    updateBulkBar();
+};
+
+wireShowButton($<HTMLButtonElement>('bulk-show'), 'Show selected',
+    () => lastFiles.filter((f) => f.viewable === 'splat' && selectedFiles.has(f.name)));
+
+$<HTMLButtonElement>('bulk-hide').onclick = () => {
+    const v = viewer;
+    if (!v) return;
+    for (const lf of v.loadedFiles()) if (lf.visible && selectedFiles.has(lf.name)) v.hideFile(lf.name);
+    if (v.activeSplatName && selectedFiles.has(v.activeSplatName)) layerVisible.splat = false;
+    if (currentCollisionName && selectedFiles.has(currentCollisionName) && layerVisible.collision) { layerVisible.collision = false; applyLayerVisible('collision'); }
+    if (currentVoxelName && selectedFiles.has(currentVoxelName) && layerVisible.voxels) { layerVisible.voxels = false; applyLayerVisible('voxels'); }
+    rebuildSceneList();
+};
+
+$<HTMLButtonElement>('bulk-group').onclick = () => {
+    const adds = [...selectedFiles].filter((n) => splatFileNames.includes(n));
+    if (!adds.length) return showToast('No splat files selected — only splat files can join a linked group', true);
+    renderGroupMembers(new Set([...checkedMembers(), ...adds]));
+    persistGroup();
+    showToast(`Added ${adds.length} file${adds.length > 1 ? 's' : ''} to the linked group`);
+};
+
+// two-stage delete, then unload + delete each selected file sequentially
+bulkDeleteBtn.onclick = async () => {
+    const names = lastFiles.filter((f) => selectedFiles.has(f.name)).map((f) => f.name);
+    if (!names.length) return;
+    if (!bulkDeleteBtn.classList.contains('armed')) {
+        bulkDeleteBtn.classList.add('armed');
+        bulkDeleteBtn.textContent = `Delete ${names.length} file${names.length > 1 ? 's' : ''}?`;
+        bulkDeleteDisarm = setTimeout(disarmBulkDelete, 2500);
+        return;
+    }
+    disarmBulkDelete();
+    bulkDeleteBtn.disabled = true;
+    try {
+        for (const name of names) {
+            unloadDeleted(name);
+            try {
+                await api.deleteFile(name);
+                selectedFiles.delete(name);
+            } catch (err) {
+                showToast(`Delete failed (${name}): ${err}`, true);
+            }
+        }
+    } finally {
+        bulkDeleteBtn.disabled = false;
+        await refreshFiles();
+    }
+};
+
+// ---------- row details card ----------
+const detailRow = (label: string, value: string): HTMLDivElement => {
+    const row = document.createElement('div');
+    row.className = 'detail-row';
+    const l = document.createElement('span');
+    l.textContent = label;
+    const v = document.createElement('span');
+    v.textContent = value;
+    row.append(l, v);
+    return row;
+};
+
+/** The bundle's sibling build-meta.json; null = none on disk. Cached per name+mtime. */
+const fetchLodMeta = async (f: api.FileEntry): Promise<api.LodBuildMeta | null> => {
+    const key = `${f.name}@${f.mtime}`;
+    const hit = lodMetaCache.get(key);
+    if (hit !== undefined) return hit;
+    const res = await fetch(api.fileUrl(f.name.replace(/lod-meta\.json$/, 'build-meta.json')));
+    if (res.status === 404) { lodMetaCache.set(key, null); return null; }
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const meta = (await res.json()) as api.LodBuildMeta;
+    lodMetaCache.set(key, meta);
+    return meta;
+};
+
+// per-level table + settings + bake line from a bundle's build recipe
+const renderRecipe = (host: HTMLElement, recipe: api.LodBuildMeta): void => {
+    const table = document.createElement('table');
+    table.className = 'lod-recipe';
+    const head = table.createTHead().insertRow();
+    for (const h of ['Level', 'Source', 'Keep %', 'Gaussians']) {
+        const th = document.createElement('th');
+        th.textContent = h;
+        head.appendChild(th);
+    }
+    const body = table.createTBody();
+    for (const l of recipe.levels ?? []) {
+        const tr = body.insertRow();
+        if (l.environment) tr.className = 'env';
+        tr.insertCell().textContent = l.environment ? 'env' : `LOD ${l.level}`;
+        tr.insertCell().textContent = l.source;
+        tr.insertCell().textContent = typeof l.keepPercent === 'number' ? `${l.keepPercent}%` : '';
+        tr.insertCell().textContent = typeof l.gaussians === 'number' ? l.gaussians.toLocaleString() : '';
+    }
+    host.appendChild(table);
+    const s = recipe.settings ?? {};
+    const parts = [
+        `mode ${recipe.mode}`,
+        s.iterations != null ? `iterations ${s.iterations}` : '',
+        s.maxWorkers != null ? `workers ${s.maxWorkers}` : '',
+        s.device != null ? `device ${s.device}` : '',
+        s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : ''
+    ].filter(Boolean);
+    if (parts.length) host.appendChild(detailRow('Settings', parts.join(' · ')));
+    const versions = [
+        recipe.generator?.app ? `Splat Studio ${recipe.generator.app}` : '',
+        recipe.generator?.splatTransform ? `splat-transform ${recipe.generator.splatTransform}` : ''
+    ].filter(Boolean).join(' · ');
+    const baked = recipe.createdAt ? new Date(recipe.createdAt).toLocaleString() : '';
+    if (baked || versions) host.appendChild(detailRow('Baked', [baked, versions].filter(Boolean).join(' — ')));
+};
+
+const buildDetails = (f: api.FileEntry): HTMLDivElement => {
+    const card = document.createElement('div');
+    card.className = 'file-details';
+    if (typeof f.gaussians === 'number') card.appendChild(detailRow('Gaussians', f.gaussians.toLocaleString()));
+    card.appendChild(detailRow('Size', `${fmtSize(f.size)} (${f.size.toLocaleString()} bytes)`));
+    card.appendChild(detailRow('Modified', new Date(f.mtime).toLocaleString()));
+    card.appendChild(detailRow('Kind', f.kind));
+    card.appendChild(detailRow('Path', f.name));
+    if (f.kind !== 'lod') return card;
+    const recipeHost = document.createElement('div');
+    const note = document.createElement('div');
+    note.className = 'detail-note';
+    note.textContent = 'Loading build recipe…';
+    recipeHost.appendChild(note);
+    card.appendChild(recipeHost);
+    void fetchLodMeta(f).then((recipe) => {
+        note.remove();
+        if (recipe) return renderRecipe(recipeHost, recipe);
+        const miss = document.createElement('div');
+        miss.className = 'detail-note';
+        miss.textContent = 'No build recipe (built before this feature)';
+        recipeHost.appendChild(miss);
+        if (f.lodCounts?.length) {
+            recipeHost.appendChild(detailRow('Levels', f.lodCounts.map((c, i) => `LOD ${i}: ${c.toLocaleString()}`).join(' · ')));
+        }
+    }).catch((err) => { note.textContent = `Couldn't read build recipe: ${err}`; });
+    return card;
+};
+
+const toggleDetails = (f: api.FileEntry): void => {
+    const row = fileRows.get(f.name);
+    if (!row) return;
+    const open = row.li.querySelector('.file-details');
+    if (open) {
+        open.remove();
+        expandedFiles.delete(f.name);
+        row.chev.textContent = '▸';
+    } else {
+        row.li.appendChild(buildDetails(f));
+        expandedFiles.add(f.name);
+        row.chev.textContent = '▾';
     }
 };
 
@@ -455,42 +803,10 @@ const prefillSelect = (select: HTMLSelectElement, name: string): void => {
     select.value = name;
     select.dispatchEvent(new Event('change', { bubbles: true })); // refresh dependent rows + persist
 };
-// LOD 'Build info': fetch the bundle's build-meta.json (sibling of lod-meta.json)
-// and toast a compact recipe summary
-const showLodBuildInfo = async (name: string): Promise<void> => {
-    let recipe: api.LodBuildMeta;
-    try {
-        const res = await fetch(api.fileUrl(name.replace(/lod-meta\.json$/, 'build-meta.json')));
-        if (res.status === 404) return showToast('No build recipe (built before this feature)', true);
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        recipe = await res.json();
-    } catch (err) {
-        return showToast(`Couldn't read build recipe: ${err}`, true);
-    }
-    const levels = recipe.levels ?? [];
-    const real = levels.filter((l) => !l.environment).length;
-    const hasEnv = levels.length > real;
-    const lines = [`LOD build — ${recipe.mode}, ${real} level${real === 1 ? '' : 's'}${hasEnv ? ' + env' : ''}`];
-    for (const l of levels) {
-        const label = l.environment ? 'env' : `LOD ${l.level}`;
-        const pct = typeof l.keepPercent === 'number' ? ` (keep ${l.keepPercent}%)` : '';
-        const n = typeof l.gaussians === 'number' ? ` — ${l.gaussians.toLocaleString()}` : '';
-        lines.push(`${label}: ${l.source}${pct}${n}`);
-    }
-    const s = recipe.settings ?? {};
-    const parts = [
-        s.iterations != null ? `iterations ${s.iterations}` : '',
-        s.maxWorkers != null ? `workers ${s.maxWorkers}` : '',
-        s.device != null ? `device ${s.device}` : '',
-        s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : ''
-    ].filter(Boolean);
-    if (parts.length) lines.push(`Settings: ${parts.join(' · ')}`);
-    showToast(lines.join('\n'), false, true);
-};
-
 const deleteFromMenu = (f: api.FileEntry): void => {
     const folder = f.name.includes('/') && (f.name.endsWith('meta.json') || f.name.endsWith('lod-meta.json'));
     if (!confirm(`Delete ${f.name}?${folder ? ' This removes the whole output folder.' : ''}`)) return;
+    unloadDeleted(f.name);
     void api.deleteFile(f.name).then(() => refreshFiles()).catch((err) => showToast(`Delete failed (${f.name}): ${err}`, true));
 };
 
@@ -505,6 +821,7 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
     const isRaw = isSplat && !isSog;                              // an uncompressed source worth compressing to SOG
 
     if (f.viewable) items.push({ label: '👁  View in viewport', hint: 'Load this file into the 3D viewer', run: () => void viewFile(f.name, f.viewable!) });
+    if (isSplat || isLod) items.push({ label: 'Details', hint: 'Expand the row\'s inline details card (counts, dates, LOD build recipe)', run: () => toggleDetails(f) });
 
     if (isGenerator) {
         items.push({ label: '✨  Generate & view', hint: 'Run the .mjs generator and load the result', run: () => { prefillSelect(genInput, f.name); openPanel('panel-generate'); void updateGenRows().then(() => generateViewBtn.click()); } });
@@ -524,10 +841,6 @@ const fileActions = (f: api.FileEntry, all: api.FileEntry[]): CtxItem[] => {
         items.push({ label: hasCollision ? 'Regenerate collision…' : 'Generate collision…', hint: 'Open the Collision panel with this file selected', run: () => { prefillSelect(collisionInput, f.name); openPanel('panel-collision'); } });
         items.push({ label: 'Edit (scale / origin)…', hint: 'Measure to set real scale, or pick a new origin', run: () => { prefillSelect(editInput, f.name); if (f.viewable) void viewFile(f.name, f.viewable); openPanel('panel-edit'); } });
     }
-    if (isLod) {
-        items.push({ label: 'Build info', hint: 'Show the recipe this bundle was baked from (build-meta.json)', run: () => void showLodBuildInfo(f.name) });
-    }
-
     items.push('sep');
     items.push({ label: 'Copy file path', hint: f.name, run: () => void navigator.clipboard.writeText(f.name).then(() => showToast('Path copied')).catch(() => showToast('Copy failed', true)) });
     items.push({ label: 'Delete', danger: true, hint: 'Remove from the workspace', run: () => deleteFromMenu(f) });
@@ -670,19 +983,13 @@ $<HTMLButtonElement>('add-sample-generator').onclick = () => {
 };
 
 // ---------- jobs ----------
-const jobCancel = $<HTMLButtonElement>('job-cancel');
+const jobList = $<HTMLUListElement>('job-list');
+const jobParallel = $<HTMLInputElement>('job-parallel');
 const convertRun = $<HTMLButtonElement>('convert-run');
 const lodRun = $<HTMLButtonElement>('lod-run');
 const renderRun = $<HTMLButtonElement>('render-run');
 const collisionRun = $<HTMLButtonElement>('collision-run');
 const analyzeRun = $<HTMLButtonElement>('analyze-run');
-// every run button is disabled together while a job runs (one GPU, one Job panel)
-const RUN_BUTTONS = [convertRun, lodRun, renderRun, collisionRun, analyzeRun];
-let activeJobId: string | null = null;
-
-jobCancel.onclick = () => {
-    if (activeJobId) void api.cancelJob(activeJobId).catch((err) => showToast(`Cancel failed: ${err}`, true));
-};
 
 /** every visible number input in the panel must hold a valid value */
 const panelValid = (panelId: string): boolean => {
@@ -693,28 +1000,129 @@ const panelValid = (panelId: string): boolean => {
     return true;
 };
 
-// jobs are serialized: one GPU, one Job panel — and concurrent GPU jobs
-// multiply the TDR risk
-let jobBusy = false;
-const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
-    const prevLabel = button.textContent;
-    jobBusy = true;
-    for (const b of RUN_BUTTONS) b.disabled = true;
-    button.textContent = 'Running…';
+// Jobs queue server-side (FIFO, concurrency-capped) — the panel lists them all,
+// with the selected job's command + log shown below the list.
+let selectedJobId: string | null = null;
+let jobsCache: api.JobSummary[] = [];
+
+const fmtDuration = (ms: number): string => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
+};
+
+// skip the (potentially 200 KB) log rewrite + forced relayout when nothing changed
+let lastDetail = '';
+const renderJobDetail = (job: api.Job): void => {
+    const key = `${job.id}:${job.status}:${job.log.length}`;
+    if (key === lastDetail) return;
+    lastDetail = key;
+    jobCommand.textContent = job.command;
+    jobLog.textContent = job.status === 'queued' ? 'Waiting for a free slot…' : job.log;
+    jobLog.scrollTop = jobLog.scrollHeight;
+};
+
+const selectJob = (id: string): void => {
+    selectedJobId = id;
+    renderJobList();
+    // one-shot fetch so finished rows show their detail; active rows stay fresh via the poller
+    void api.getJob(id).then((j) => { if (selectedJobId === id) renderJobDetail(j); }).catch(() => { /* pruned */ });
+};
+
+const renderJobList = (): void => {
+    jobList.innerHTML = '';
+    // newest first — the row you just queued lands on top
+    for (const j of [...jobsCache].sort((a, b) => Number(b.id) - Number(a.id))) {
+        const li = document.createElement('li');
+        li.className = `job-row${j.id === selectedJobId ? ' selected' : ''}`;
+        const badge = document.createElement('span');
+        badge.className = `badge ${j.status}`;
+        badge.textContent = j.status;
+        const title = document.createElement('span');
+        title.className = 'job-row-title';
+        title.textContent = j.title;
+        title.title = j.title;
+        const time = document.createElement('span');
+        time.className = 'job-row-time';
+        if (j.startedAt != null) time.textContent = fmtDuration((j.endedAt ?? Date.now()) - j.startedAt);
+        li.append(badge, title, time);
+        if (api.isJobActive(j)) {
+            const cancel = document.createElement('button');
+            cancel.className = 'job-row-cancel';
+            cancel.textContent = '✕';
+            cancel.title = j.status === 'queued' ? 'Remove from the queue' : 'Kill the running splat-transform process';
+            cancel.onclick = (e) => {
+                e.stopPropagation();
+                void api.cancelJob(j.id).catch((err) => showToast(`Cancel failed: ${err}`, true));
+            };
+            li.append(cancel);
+        }
+        li.onclick = () => selectJob(j.id);
+        jobList.append(li);
+    }
+};
+
+// One shared poller owns all Jobs-panel refreshes while anything is queued or
+// running: the list, the selected job's detail, and the completion waiters that
+// runJob awaits. It also catches jobs submitted outside the GUI (MCP).
+const jobWaiters = new Map<string, (job: api.Job) => void>();
+let jobsPolling = false;
+const pollJobs = async (): Promise<boolean> => {
+    const { jobs, concurrency } = await api.getJobs();
+    jobsCache = jobs;
+    if (document.activeElement !== jobParallel) jobParallel.value = String(concurrency);
+    renderJobList();
+    // settle waiters for jobs that finished (or were pruned before we saw it)
+    for (const [id, resolve] of [...jobWaiters]) {
+        const j = jobs.find((x) => x.id === id);
+        if (j && api.isJobActive(j)) continue;
+        jobWaiters.delete(id);
+        resolve(await api.getJob(id));
+    }
+    if (selectedJobId) {
+        // refresh the detail while the selected job moves, incl. its final transition;
+        // a settled-and-rendered selection costs nothing further
+        const sel = jobs.find((j) => j.id === selectedJobId);
+        if (sel && (api.isJobActive(sel) || !lastDetail.startsWith(`${sel.id}:${sel.status}`))) {
+            renderJobDetail(await api.getJob(selectedJobId));
+        }
+    }
+    return jobWaiters.size > 0 || jobs.some(api.isJobActive);
+};
+const ensureJobsPolling = (): void => {
+    if (jobsPolling) return;
+    jobsPolling = true;
+    void (async () => {
+        try {
+            while (await pollJobs()) await new Promise((r) => setTimeout(r, 700));
+        } catch { /* server gone — the next submit restarts the poller */ }
+        jobsPolling = false;
+    })();
+};
+const waitForJob = (id: string): Promise<api.Job> =>
+    new Promise((resolve) => { jobWaiters.set(id, resolve); ensureJobsPolling(); });
+
+jobParallel.onchange = () => {
+    void api.setJobConcurrency(Number(jobParallel.value))
+        .then((n) => { jobParallel.value = String(n); })
+        .catch((err) => showToast(`Couldn't set parallel jobs: ${err}`, true));
+};
+
+// Fan-out flows own their button's disabled state for the whole run and pass no
+// button here; single-shot buttons are disabled only while the submit is in flight.
+const runJob = async (start: () => Promise<string>, button?: HTMLButtonElement, autoLoad = true): Promise<api.Job | undefined> => {
+    let jobId: string;
+    if (button) button.disabled = true;
     try {
-        const jobId = await start();
-        activeJobId = jobId;
-        jobCancel.classList.remove('hidden');
-        const job = await api.watchJob(jobId, (j) => {
-            if (activeJobId !== jobId) return;
-            jobTitle.textContent = j.title;
-            jobStatus.textContent = j.status;
-            jobStatus.className = `badge ${j.status}`;
-            jobCommand.textContent = j.command;
-            jobLog.textContent = j.log;
-            jobLog.scrollTop = jobLog.scrollHeight;
-            jobCancel.classList.toggle('hidden', j.status !== 'running');
-        });
+        jobId = await start();
+    } catch (err) {
+        showToast(`Couldn't start job: ${err}`, true);
+        return undefined;
+    } finally {
+        if (button) button.disabled = false;
+    }
+    selectJob(jobId);
+    try {
+        const job = await waitForJob(jobId);
         await refreshFiles(new Set(job.outputs));
         if (job.status === 'done') {
             // load results into the viewer (when requested), then toast so 'done' stays visible
@@ -728,19 +1136,16 @@ const runJob = async (start: () => Promise<string>, button: HTMLButtonElement, a
             showToast(`${job.title} — the GPU watchdog reset the device (TDR). On large scenes this is usually the cluster-filter pass: retry with "Filter to connected cluster" unchecked.`, true);
         } else {
             const lastLine = job.log.split('\n').map((l) => l.trim()).filter(Boolean).pop();
-            showToast(`${job.title} — failed: ${lastLine?.slice(0, 160) ?? 'see the Job panel log'}`, true);
+            showToast(`${job.title} — failed: ${lastLine?.slice(0, 160) ?? 'see the Jobs panel log'}`, true);
         }
         return job;
     } catch (err) {
-        showToast(`Couldn't start job: ${err}`, true);
+        showToast(`Lost track of job: ${err}`, true);
         return undefined;
-    } finally {
-        jobBusy = false;
-        for (const b of RUN_BUTTONS) b.disabled = false;
-        button.textContent = prevLabel;
-        updateConvertRows(); // restores the format-specific Convert label
     }
 };
+
+ensureJobsPolling(); // pick up jobs already queued/running (e.g. MCP-submitted)
 
 // ---------- convert panel ----------
 const convertFormat = $<HTMLSelectElement>('convert-format');
@@ -902,18 +1307,12 @@ lodAutotuneBtn.onclick = () => {
     const input = lodInput.value;
     if (!input) return showToast('Pick a LOD input first', true);
     if (input.toLowerCase().endsWith('.mjs')) return showToast('Auto-tune reads existing splats, not generators — convert the generator to a splat first', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
-    // mirror runJob's serialization (no server-side queue): block concurrent jobs
-    jobBusy = true;
-    for (const b of RUN_BUTTONS) b.disabled = true;
     lodAutotuneBtn.disabled = true;
     const prevLabel = lodAutotuneBtn.textContent;
     lodAutotuneBtn.textContent = 'Reading stats…';
     const run = lodMode.value === 'combine' ? autotuneCombine(input) : autotuneDecimate(input);
     void run.catch((err) => showToast(`Auto-tune failed: ${err}`, true))
         .finally(() => {
-            jobBusy = false;
-            for (const b of RUN_BUTTONS) b.disabled = false;
             lodAutotuneBtn.disabled = false;
             lodAutotuneBtn.textContent = prevLabel;
         });
@@ -1071,11 +1470,14 @@ for (const id of [...vecFieldIds('webp-camera'), ...vecFieldIds('webp-lookat'), 
 // the render-camera scene item appears/disappears with the projection
 $('webp-projection').addEventListener('change', () => rebuildSceneList());
 
+let genPreviewBusy = false;
 const doGenerateView = (): void => {
     const input = genInput.value;
     if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator in the Generate tab', true); return; }
-    if (jobBusy) { scheduleGenPreview(); return; } // coalesce while a job runs
-    void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn);
+    if (genPreviewBusy) { scheduleGenPreview(); return; } // coalesce slider spam into one queued job
+    genPreviewBusy = true;
+    void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn)
+        .finally(() => { genPreviewBusy = false; });
 };
 let genPreviewTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleGenPreview(): void {
@@ -1194,7 +1596,6 @@ carveRemoveBtn.onclick = () => {
     if (!input) return showToast('Pick a splat to edit first', true);
     const region = carveRegion();
     if (!region) return showToast('Enable a Box or Sphere region first', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     const mode = regionMode();
     const ask = mode === 'keep'
         ? `Keep only the gaussians inside the region from ${input} (crop)? This writes a new trimmed .ply — the source is left untouched.`
@@ -1349,6 +1750,7 @@ convertRun.onclick = () => {
             maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
             spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
             decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
             filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
             device: $<HTMLSelectElement>('convert-device').value,
             verbose: $<HTMLInputElement>('convert-verbose').checked,
@@ -1400,6 +1802,7 @@ lodRun.onclick = () => {
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
+            scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
             lodFiles,
             lodEnvFlags
         }
@@ -1474,7 +1877,6 @@ const loadGroup = async (): Promise<void> => {
 groupApplyBtn.onclick = async () => {
     const members = checkedMembers();
     if (!members.length) return showToast('Tick at least one member', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     if (!panelValid('panel-convert')) return;
     const format = convertFormat.value;
     if (format === 'csv') {
@@ -1495,14 +1897,15 @@ groupApplyBtn.onclick = async () => {
                 if (!confirm('These members have quite different extents and may not be the same location. Apply the transforms to all of them anyway?')) return;
             }
         }
-        // fan the Edit transform out to each member, sequentially (jobBusy + runJob serialize)
+        // fan the Edit transform out to each member, one at a time — a member's
+        // failure stops the loop before the rest submit
         const options = {
             ...editTransformOptions(),
             device: $<HTMLSelectElement>('convert-device').value
         };
         const outputs: string[] = [];
         for (const member of members) {
-            const job = await runJob(() => api.startConvert({ input: member, format, options }), groupApplyBtn, false);
+            const job = await runJob(() => api.startConvert({ input: member, format, options }), undefined, false);
             if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
             outputs.push(...job.outputs);
         }
@@ -1520,7 +1923,6 @@ groupApplyRegionBtn.onclick = async () => {
     if (!members.length) return showToast('Tick at least one member', true);
     const region = carveRegion();
     if (!region) return showToast('Enable a Box or Sphere region in the Edit panel first', true);
-    if (jobBusy) return showToast('A job is running — wait for it to finish', true);
     const mode = regionMode();
     const verb = mode === 'keep' ? 'Crop (keep only inside the region)' : 'Carve (remove inside the region)';
     if (!confirm(`${verb} on ${members.length} member${members.length > 1 ? 's' : ''}? Each writes a new trimmed .ply — the sources are left untouched.`)) return;
@@ -1530,7 +1932,7 @@ groupApplyRegionBtn.onclick = async () => {
     try {
         const outputs: string[] = [];
         for (const member of members) {
-            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), groupApplyRegionBtn, false);
+            const job = await runJob(() => api.startTrim({ input: member, options: { mode, ...region } }), undefined, false);
             if (!job || job.status !== 'done') { showToast(`Stopped — ${baseLabel(member)} did not finish`, true); break; }
             outputs.push(...job.outputs);
         }
@@ -1860,22 +2262,32 @@ $<HTMLInputElement>('collision-flip').onchange = (e) =>
     viewer?.setCollisionFlipped((e.currentTarget as HTMLInputElement).checked);
 $<HTMLButtonElement>('frame-scene').onclick = () => viewer?.frame();
 
-// remove (unload) layers — distinct from the show/hide checkboxes above
-const removeSplat = () => { viewer?.clearSplat(); hideChip(hudSplat); currentSplatName = null; syncPreview(); rebuildSceneList(); scheduleUndoCapture(); };
-const removeCollision = () => { viewer?.clearCollision(); hideChip(hudCollision); rebuildSceneList(); };
-const removeVoxels = () => { viewer?.clearVoxels(); hideChip(hudVoxel); rebuildSceneList(); };
-hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
-hudCollision.querySelector('.chip-remove')?.addEventListener('click', removeCollision);
-hudVoxel.querySelector('.chip-remove')?.addEventListener('click', removeVoxels);
-$<HTMLButtonElement>('clear-viewport').onclick = () => {
+// remove (unload) layers — distinct from the show/hide eyes above
+const removeSplat = () => {
+    const n = viewer?.activeSplatName;
+    if (n) viewer?.unloadFile(n); // the newest remaining shown file becomes active
+    syncActiveSplatChip();
+    syncPreview();
+    rebuildSceneList();
+    scheduleUndoCapture();
+};
+const removeCollision = () => { viewer?.clearCollision(); currentCollisionName = null; hideChip(hudCollision); rebuildSceneList(); };
+const removeVoxels = () => { viewer?.clearVoxels(); currentVoxelName = null; hideChip(hudVoxel); rebuildSceneList(); };
+const clearViewport = () => {
     viewer?.clearAll();
     hideChip(hudSplat);
     hideChip(hudCollision);
     hideChip(hudVoxel);
     currentSplatName = null;
+    currentCollisionName = null;
+    currentVoxelName = null;
     syncPreview();
     rebuildSceneList();
 };
+hudSplat.querySelector('.chip-remove')?.addEventListener('click', removeSplat);
+hudCollision.querySelector('.chip-remove')?.addEventListener('click', removeCollision);
+hudVoxel.querySelector('.chip-remove')?.addEventListener('click', removeVoxels);
+$<HTMLButtonElement>('clear-viewport').onclick = clearViewport;
 
 // ---------- scene hierarchy panel ----------
 $<HTMLSelectElement>('camera-mode').onchange = (e) =>
@@ -1949,6 +2361,7 @@ function rebuildSceneList(): void {
         sceneList.appendChild(li);
     }
     $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
+    updateFileEyes(); // file-row eyes mirror the same visibility state
 }
 
 function selectScene(id: SelId): void {
@@ -1991,7 +2404,7 @@ const WINDOWS: Win[] = [
     { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
     { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
     { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
-    { id: 'panel-job', component: 'panel-job', title: 'Job', closable: false }
+    { id: 'panel-job', component: 'panel-job', title: 'Jobs', closable: false }
 ];
 const winById = (id: string): Win | undefined => WINDOWS.find((w) => w.id === id);
 const nodeOf = (component: string): HTMLElement => $(component === 'viewer' ? 'viewport' : component);
@@ -2076,7 +2489,7 @@ function applyDefaultLayout(): void {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
     dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: 'Scene', position: { referencePanel: 'viewer', direction: 'right' } });
-    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Job', position: { referencePanel: 'viewer', direction: 'below' } });
+    dock.addPanel({ id: 'panel-job', component: 'panel-job', title: 'Jobs', position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
     dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });
@@ -2300,34 +2713,83 @@ initThemeSettings({ promptText, showToast });
 // the viewport toolbar's ⚙ opens the settings dialog
 $<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 
-// ---------- Settings ▸ Updates (channel switch + manual check) ----------
-// Only meaningful in the packaged desktop app; drop the page in the browser dev build.
+// ---------- Settings ▸ Updates + bottom-right status widget ----------
+// Only meaningful in the packaged desktop app; drop both in the browser dev build.
 void (async () => {
+    interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
     const bridge = (window as unknown as { desktop?: {
         checkForUpdates?: () => Promise<void>;
         getUpdateChannel?: () => Promise<'stable' | 'beta'>;
         setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
+        getUpdateStatus?: () => Promise<UpdateStatus>;
+        onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
+        downloadUpdate?: () => Promise<void>;
+        getUpdateAuto?: () => Promise<boolean>;
+        setUpdateAuto?: (on: boolean) => Promise<boolean>;
     } }).desktop;
     const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
     const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
-    if (!bridge?.getUpdateChannel) { navItem?.remove(); page?.remove(); return; }
+    const widget = $<HTMLDivElement>('update-widget');
+    if (!bridge?.getUpdateChannel) { navItem?.remove(); page?.remove(); widget.remove(); return; }
 
     const channelSel = $<HTMLSelectElement>('update-channel');
     const checkBtn = $<HTMLButtonElement>('check-updates');
+    const downloadBtn = $<HTMLButtonElement>('download-update');
+    const autoChk = $<HTMLInputElement>('update-auto');
+    const statusEl = $<HTMLSpanElement>('update-status');
+    const statusText = $<HTMLSpanElement>('update-status-text');
+    const widgetText = $<HTMLSpanElement>('update-widget-text');
+    const widgetBar = $<HTMLSpanElement>('update-widget-bar');
+    const widgetFill = $<HTMLSpanElement>('update-widget-fill');
+    const widgetDownload = $<HTMLButtonElement>('update-widget-download');
     try { channelSel.value = await bridge.getUpdateChannel(); } catch { /* keep default */ }
+    try { autoChk.checked = await bridge.getUpdateAuto?.() ?? true; } catch { /* keep default */ }
 
-    channelSel.addEventListener('change', async () => {
-        channelSel.disabled = true;
-        try { await bridge.setUpdateChannel?.(channelSel.value as 'stable' | 'beta'); }
-        finally { channelSel.disabled = false; }
-    });
-    checkBtn.addEventListener('click', async () => {
-        checkBtn.disabled = true;
-        const label = checkBtn.textContent;
-        checkBtn.textContent = 'Checking…';
-        try { await bridge.checkForUpdates?.(); }
-        finally { checkBtn.disabled = false; checkBtn.textContent = label ?? 'Check for updates'; }
-    });
+    // settings status line + bottom-right widget both mirror main-process updater
+    // state; checks/downloads keep running with the settings dialog closed
+    const showStatus = (s: UpdateStatus): void => {
+        const busy = s.phase === 'checking' || s.phase === 'downloading';
+        const pct = Math.round(s.percent ?? 0);
+        const text =
+            s.phase === 'checking' ? 'Checking for updates…' :
+            s.phase === 'available' ? `${s.version} available` :
+            s.phase === 'downloading' ? `Downloading ${s.version ?? 'update'}… ${pct}%` :
+            s.phase === 'ready' ? `${s.version} downloaded — restart to install` :
+            s.phase === 'up-to-date' ? `Up to date (${s.version}, ${s.channel})` :
+            s.phase === 'error' ? 'Check failed — see error dialog' : '';
+        statusEl.classList.toggle('hidden', !text);
+        statusEl.classList.toggle('busy', busy);
+        statusEl.classList.toggle('error', s.phase === 'error');
+        statusText.textContent = text;
+        checkBtn.disabled = busy;
+        channelSel.disabled = busy;
+        downloadBtn.classList.toggle('hidden', s.phase !== 'available');
+
+        const widgetLabel =
+            s.phase === 'checking' ? 'Checking for updates…' :
+            s.phase === 'available' ? `⬇ ${s.version} available` :
+            s.phase === 'downloading' ? `${pct}%` :
+            s.phase === 'ready' ? `↻ Restart to update` :
+            s.phase === 'up-to-date' ? '✓ Up to date' :
+            s.phase === 'error' ? '⚠ Update failed' : '';
+        widget.classList.toggle('hidden', !widgetLabel);
+        widget.classList.toggle('busy', s.phase === 'checking');
+        widget.classList.toggle('error', s.phase === 'error');
+        widgetText.textContent = widgetLabel;
+        widgetBar.classList.toggle('hidden', s.phase !== 'downloading');
+        widgetFill.style.width = `${pct}%`;
+        widgetDownload.classList.toggle('hidden', s.phase !== 'available');
+    };
+    bridge.onUpdateStatus?.(showStatus);
+    try { showStatus(await bridge.getUpdateStatus?.() ?? { phase: 'idle' }); } catch { /* keep hidden */ }
+
+    channelSel.addEventListener('change', () => { void bridge.setUpdateChannel?.(channelSel.value as 'stable' | 'beta'); });
+    checkBtn.addEventListener('click', () => { void bridge.checkForUpdates?.(); });
+    autoChk.addEventListener('change', () => { void bridge.setUpdateAuto?.(autoChk.checked); });
+    downloadBtn.addEventListener('click', () => { void bridge.downloadUpdate?.(); });
+    widgetDownload.addEventListener('click', () => { void bridge.downloadUpdate?.(); });
+    // the widget body always leads to the settings page, whatever the state
+    $<HTMLButtonElement>('update-widget-main').addEventListener('click', () => openSettings('updates'));
 })();
 
 // ---------- per-workspace layout persistence ----------
@@ -2352,12 +2814,7 @@ const switchProject = async (name: string) => {
     projectSelect.value = name;
     localStorage.setItem(PROJECT_KEY, name);
     // loaded layers belong to the project we're leaving
-    viewer?.clearAll();
-    hideChip(hudSplat);
-    hideChip(hudCollision);
-    hideChip(hudVoxel);
-    currentSplatName = null;
-    syncPreview();
+    clearViewport();
     await refreshFiles();
     await loadGroup(); // tick the saved group members for this project
     clearUndoHistory(); // undo history doesn't span a project switch
@@ -2375,12 +2832,7 @@ const loadProjects = async (preferred?: string) => {
     if (projects.length === 0) {
         api.setProject('');
         // clear anything from the workspace we just left (no project to refreshFiles)
-        viewer?.clearAll();
-        hideChip(hudSplat);
-        hideChip(hudCollision);
-        hideChip(hudVoxel);
-        currentSplatName = null;
-        syncPreview();
+        clearViewport();
         fileList.innerHTML = '';
         showToast('No projects yet — click "+ New" to create one', true);
         return;
@@ -2539,7 +2991,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
         return editorError('bad-input', `unknown layout action "${action}"`);
     },
     load_into_viewport: async ({ action, project, file }) => {
-        if (action === 'clear') { removeSplat(); removeCollision(); removeVoxels(); return { cleared: true }; }
+        if (action === 'clear') { clearViewport(); return { cleared: true }; }
         if (project != null && String(project) !== projectSelect.value) {
             return editorError('bad-input', `project "${project}" is not the app's current project ("${projectSelect.value}") — the viewport loads from the current project only`);
         }
@@ -2742,6 +3194,21 @@ if (desktop?.openWorkspace) { wsOpenBtn.hidden = false; wsOpenBtn.onclick = () =
 desktop?.onChooseWorkspace(() => void chooseWorkspaceFolder());
 void api.getWorkspace().then((ws) => showWorkspace(ws.path)).catch(() => { /* server not up yet */ });
 
+// ---------- Settings ▸ Advanced: decimation scratch dir (--scratch-dir) ----------
+const scratchDirEl = $<HTMLInputElement>('scratch-dir');
+const setScratchDir = (v: string): void => {
+    scratchDirEl.value = v;
+    scratchDirEl.dispatchEvent(new Event('change', { bubbles: true })); // persist via formState
+};
+const chooseScratchDirFolder = async (): Promise<void> => {
+    const target = desktop?.pickFolder
+        ? await desktop.pickFolder(scratchDirEl.value || undefined)
+        : await promptText('Scratch directory (absolute path)', { value: scratchDirEl.value, okLabel: 'Set' });
+    if (target) setScratchDir(target);
+};
+$<HTMLButtonElement>('scratch-dir-change').onclick = () => void chooseScratchDirFolder();
+$<HTMLButtonElement>('scratch-dir-clear').onclick = () => setScratchDir('');
+
 // ---------- MCP consent toggle (Settings) + bridge startup ----------
 const mcpControl = $<HTMLInputElement>('mcp-control');
 const mcpStatusEl = $('mcp-status');
@@ -2768,6 +3235,7 @@ startMcpBridge({
     onEvent: (name) => {
         if (name === 'workspace-changed') void refreshFiles();
         else if (name === 'workspace-switched') void onWorkspaceSwitched();
+        else if (name === 'job-updated') ensureJobsPolling(); // MCP-submitted jobs surface in the panel
     },
     onStatus: updateMcpStatus
 });

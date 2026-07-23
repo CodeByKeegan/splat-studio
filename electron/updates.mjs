@@ -42,6 +42,20 @@ export function getChannel() {
     return CHANNELS.includes(c) ? c : DEFAULT_CHANNEL;
 }
 
+// auto-download toggle (Settings > Updates): on = downloads start as soon as a
+// check finds an update; off = the user clicks Download.
+export function getAutoDownload() {
+    return readCfg().updateAutoDownload !== false; // default on
+}
+export function setAutoDownload(on, win) {
+    if (win) getWin = () => win;
+    writeCfg({ ...readCfg(), updateAutoDownload: !!on });
+    autoUpdater.autoDownload = !!on;
+    // flipping it on with an update already found starts that download right away
+    if (on && lastStatus.phase === 'available') void downloadUpdate();
+    return getAutoDownload();
+}
+
 // electron-updater's channel setter uses the file name: 'latest' -> latest.yml,
 // anything else -> <name>.yml. Map our 'stable' onto 'latest'.
 const feedChannel = (c) => (c === 'beta' ? 'beta' : 'latest');
@@ -59,13 +73,22 @@ const applyChannel = (c) => {
 
 const clearBar = () => { const w = getWin(); if (w && !w.isDestroyed()) w.setProgressBar(-1); };
 
+// push updater state to the renderer (Settings > Updates status line)
+let lastStatus = { phase: 'idle' };
+const sendStatus = (phase, extra = {}) => {
+    lastStatus = { phase, ...extra };
+    const w = getWin();
+    if (w && !w.isDestroyed()) w.webContents.send('updates:status', lastStatus);
+};
+export const getStatus = () => lastStatus;
+
 const wire = () => {
     if (wired) return;
     wired = true;
 
-    // Low friction: download in the background, prompt only once at install time,
-    // and install on quit if the user never clicks Restart.
-    autoUpdater.autoDownload = true;
+    // Auto-download is a user toggle; either way, a downloaded update installs on
+    // quit if the user never clicks Restart.
+    autoUpdater.autoDownload = getAutoDownload();
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = {
         info: (...a) => console.log('[update]', ...a),
@@ -76,16 +99,15 @@ const wire = () => {
 
     autoUpdater.on('update-available', (info) => {
         const v = info?.version;
-        // With autoDownload on we don't prompt here; the download starts automatically
-        // and we prompt once it's ready. Only surface a note for a truly manual check.
-        if (manualCheck) {
-            const w = getWin();
-            if (w && !w.isDestroyed()) w.setProgressBar(0); // show activity immediately
-        }
         lastPromptedVersion = v;
+        manualCheck = false;
+        // with auto-download on, electron-updater starts the download by itself
+        if (getAutoDownload()) sendStatus('downloading', { version: v, percent: 0 });
+        else sendStatus('available', { version: v });
     });
 
     autoUpdater.on('update-not-available', () => {
+        sendStatus('up-to-date', { version: app.getVersion(), channel: getChannel() });
         if (manualCheck) {
             dialog.showMessageBox(getWin() ?? undefined, {
                 type: 'info', title: 'Up to date',
@@ -96,6 +118,7 @@ const wire = () => {
     });
 
     autoUpdater.on('download-progress', (p) => {
+        sendStatus('downloading', { version: lastPromptedVersion, percent: p?.percent ?? 0 });
         const w = getWin();
         if (w && !w.isDestroyed()) w.setProgressBar(Math.max(0, Math.min(1, (p?.percent ?? 0) / 100)));
     });
@@ -103,6 +126,7 @@ const wire = () => {
     autoUpdater.on('update-downloaded', async (info) => {
         clearBar();
         const v = info?.version;
+        sendStatus('ready', { version: v });
         // one prompt, only when the bits are ready (skip re-nagging the same version on periodic ticks)
         if (!manualCheck && v && v === lastInstalledPromptFor) return;
         lastInstalledPromptFor = v;
@@ -118,6 +142,7 @@ const wire = () => {
 
     autoUpdater.on('error', (err) => {
         clearBar();
+        sendStatus('error', { message: String(err?.message || err) });
         if (manualCheck) dialog.showErrorBox('Update check failed', String(err?.message || err));
         manualCheck = false;
         console.error('[update] error:', err?.message || err);
@@ -130,9 +155,19 @@ const wire = () => {
     }, 3 * 60 * 60 * 1000);
 };
 
+/** Start downloading the update found by the last check (no-op unless one is available). */
+export async function downloadUpdate(win) {
+    if (win) getWin = () => win;
+    if (lastStatus.phase !== 'available') return;
+    sendStatus('downloading', { version: lastPromptedVersion, percent: 0 });
+    try { await autoUpdater.downloadUpdate(); }
+    catch { /* 'error' event handles it */ }
+}
+
 async function runCheck({ silent }) {
     manualCheck = !silent;
     applyChannel(getChannel());
+    sendStatus('checking', { channel: getChannel() });
     checking = true;
     try { await autoUpdater.checkForUpdates(); }
     catch { /* 'error' event handles it */ }

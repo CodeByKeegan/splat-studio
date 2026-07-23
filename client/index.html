@@ -19,12 +19,21 @@
             </div>
         </header>
         <div id="dock" class="dockview-theme-abyss"></div>
+        <!-- update status widget — bottom-right pill; click opens Settings ▸ Updates -->
+        <div id="update-widget" class="update-widget hidden">
+            <button id="update-widget-main" class="update-widget-main" title="Update status — click for update settings">
+                <span class="spinner"></span>
+                <span id="update-widget-text"></span>
+                <span id="update-widget-bar" class="update-widget-bar hidden"><span id="update-widget-fill"></span></span>
+            </button>
+            <button id="update-widget-download" class="update-widget-download hidden" title="Download the update now">Download</button>
+        </div>
     </div>
     <!-- panels + viewport live here at boot (queryable by id); the dock adopts each node -->
     <div id="panel-pool" hidden>
 
             <section class="panel" id="panel-files">
-                <h2 title="Files live in the local workspace/ folder. Click 'view' to display one in the 3D viewer.">Files</h2>
+                <h2 title="Files live in the local workspace/ folder. Click a row's eye to show it in the 3D viewer.">Files</h2>
                 <div id="drop-zone" title="Drop anywhere in the window — files land in the workspace">
                     Drop splat files anywhere or
                     <button type="button" class="link" id="browse-btn">browse</button>
@@ -33,6 +42,19 @@
                     <span class="hint">.ply · .compressed.ply · .sog · .spz · .splat · .ksplat · .lcc · .lcc2 · meta.json · .mjs generator</span>
                     <button type="button" class="link" id="add-sample-generator"
                         title="Drop a ready-to-run .mjs generator (gen-grid.mjs) into this project, then run it from the Generate tab with params like width=16,height=16,scale=4 (.mjs generator input + -p/--params)">+ sample generator</button>
+                </div>
+                <!-- list-wide actions: select-all + Show/Hide all; bulk bar appears when rows are ticked -->
+                <div id="file-list-bar">
+                    <input type="checkbox" id="files-select-all" title="Select / clear every file (bulk actions appear while files are selected)" />
+                    <button type="button" id="files-show-all" title="Load and show every viewable splat file in this project (asks first above 20M gaussians)">Show all</button>
+                    <button type="button" id="files-hide-all" title="Hide every loaded file — keeps them loaded for instant re-show">Hide all</button>
+                    <div id="file-bulk-bar" class="hidden">
+                        <span id="bulk-count"></span>
+                        <button type="button" id="bulk-show" title="Load and show the selected splat files (asks first above 20M gaussians)">Show selected</button>
+                        <button type="button" id="bulk-hide" title="Hide the selected loaded files — keeps them loaded for instant re-show">Hide selected</button>
+                        <button type="button" id="bulk-group" title="Tick the selected splat files in the Linked group member list below">Add to linked group</button>
+                        <button type="button" id="bulk-delete" title="Delete every selected file from the workspace. Click twice.">Delete selected</button>
+                    </div>
                 </div>
                 <ul id="file-list" class="file-list"></ul>
 
@@ -192,10 +214,10 @@
                 </div>
                 <div class="field-row">
                     <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
-                    <label class="check" title="Verbose CLI diagnostics + peak memory in the Job log (--verbose --memory)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
+                    <label class="check" title="Verbose CLI diagnostics + peak memory in the job log (--verbose --memory)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
                 <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
-                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Job panel">Export</button>
+                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Jobs panel">Export</button>
             </section>
 
             <section class="panel" id="panel-lod">
@@ -255,7 +277,7 @@
                     <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
                 <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
-                <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Job panel">Generate streamed LOD</button>
+                <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Jobs panel">Generate streamed LOD</button>
             </section>
 
             <section class="panel" id="panel-render">
@@ -306,7 +328,7 @@
                     <span>Device</span>
                     <select id="render-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
-                <button id="render-run" class="primary" title="Render the WebP image as a background job — the exact CLI command appears in the Job panel">Render WebP image</button>
+                <button id="render-run" class="primary" title="Render the WebP image as a background job — the exact CLI command appears in the Jobs panel">Render WebP image</button>
             </section>
 
             <section class="panel" id="panel-analyze">
@@ -552,18 +574,20 @@
             </section>
 
             <section class="panel" id="panel-job">
-                <h2 title="The most recent background job. Each job is one splat-transform CLI run">Job
-                    <span id="job-title" class="job-title"></span>
-                    <span id="job-status" class="badge" title="running / done / error"></span>
-                    <button id="job-cancel" class="hidden" title="Kill the running splat-transform process">cancel</button></h2>
-                <code id="job-command" title="The exact CLI command this job ran — copy it to reproduce outside the GUI"></code>
-                <pre id="job-log" class="log" title="Live output from the splat-transform process"></pre>
+                <h2 title="Background jobs — each is one splat-transform CLI run. New jobs queue and start when a slot frees up; click a job to see its command and log">Jobs
+                    <label class="job-parallel" title="How many jobs may run at once — the rest wait in a queue. GPU-heavy jobs (collision, cluster filter) share one GPU: keep this at 1 if they fail with device errors">
+                        <span>parallel</span>
+                        <input type="number" id="job-parallel" value="1" min="1" max="8" step="1" />
+                    </label></h2>
+                <ul id="job-list" class="job-list" title="Queued, running and finished jobs — newest first. Click one to inspect it; ✕ cancels a queued or running job"></ul>
+                <code id="job-command" title="The exact CLI command the selected job ran — copy it to reproduce outside the GUI"></code>
+                <pre id="job-log" class="log" title="Output from the selected job's splat-transform process"></pre>
             </section>
             <main id="viewport">
                 <canvas id="gs-canvas"></canvas>
                 <div id="viewport-welcome">
                     <div class="vw-title">Nothing loaded yet</div>
-                    <div class="vw-line"><strong>Drop a splat file anywhere</strong> — or click <strong>view</strong> next to a file in the Files panel.</div>
+                    <div class="vw-line"><strong>Drop a splat file anywhere</strong> — or click a file's <strong>👁 eye</strong> in the Files panel.</div>
                     <div class="vw-line">Hover any control for what it does and the CLI flag it maps to.</div>
                     <div class="vw-line">Camera: <strong>WASD</strong> + mouse-look to fly · scroll zooms (<strong>Shift</strong> fast, <strong>Ctrl</strong> slow).</div>
                 </div>
@@ -606,6 +630,7 @@
                     <button class="settings-nav-item" data-page="viewport" title="3D viewport overlay colors">🧊 Viewport</button>
                     <button class="settings-nav-item" data-page="workspace" title="Workspace folder">📁 Workspace</button>
                     <button class="settings-nav-item" data-page="agent" title="MCP agent control of the editor">🤖 Agent (MCP)</button>
+                    <button class="settings-nav-item" data-page="advanced" title="Advanced options">🔧 Advanced</button>
                     <button class="settings-nav-item" data-page="updates" title="Release channel + check for updates">⬇️ Updates</button>
                     <button class="settings-nav-item" data-page="about" title="Component versions">ℹ️ About</button>
                 </nav>
@@ -668,6 +693,18 @@
                         <span class="hint" id="mcp-status">Editor bridge: connecting…</span>
                         <span class="hint">When on, an MCP client on this machine can observe and drive the editor. Loopback-only; turn it off to revoke access instantly.</span>
                     </section>
+                    <section class="settings-page hidden" data-page="advanced">
+                        <div class="group">Advanced</div>
+                        <label class="field" title="Directory for decimation spill files on very large scenes (--scratch-dir). Blank = alongside the output. Only matters when the output drive is low on space.">
+                            <span>Scratch directory for large decimations</span>
+                            <input type="text" id="scratch-dir" readonly placeholder="— default: alongside the output —" />
+                        </label>
+                        <div class="field-row">
+                            <button id="scratch-dir-change" title="Choose a folder for decimation spill files (--scratch-dir)">Choose folder…</button>
+                            <button id="scratch-dir-clear" title="Back to the default — spill alongside the output">Clear</button>
+                        </div>
+                        <span class="hint">Used only while a decimate (or decimate-mode LOD) job runs. Point it at a roomier drive if the output drive is tight on space.</span>
+                    </section>
                     <section class="settings-page hidden" data-page="updates">
                         <div class="group">Updates</div>
                         <label class="field" title="Stable: tested releases. Beta: early builds from the dev branch — newer, less tested.">
@@ -677,10 +714,13 @@
                                 <option value="beta">Beta (early access)</option>
                             </select>
                         </label>
+                        <label class="check" title="On: an update found by a check starts downloading immediately. Off: the status bar and this page show a Download button instead."><input type="checkbox" id="update-auto" checked /> Download updates automatically</label>
                         <div class="field-row">
                             <button id="check-updates" title="Check GitHub for a newer release now">Check for updates</button>
+                            <button id="download-update" class="primary hidden" title="Download the update found by the last check">Download</button>
+                            <span id="update-status" class="update-status hidden"><span class="spinner"></span><span id="update-status-text"></span></span>
                         </div>
-                        <span class="hint">Updates download in the background and install when you restart (or on next quit). Beta builds come from the <code>dev</code> branch — newer, with rougher edges. Update checks run in the installed app only.</span>
+                        <span class="hint">Downloads run in the background and install when you restart (or on next quit) — closing this dialog doesn't interrupt them. Beta builds come from the <code>dev</code> branch — newer, with rougher edges. Update checks run in the installed app only.</span>
                     </section>
                     <section class="settings-page hidden" data-page="about">
                         <div class="group">About</div>

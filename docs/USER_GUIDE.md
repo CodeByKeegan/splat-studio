@@ -41,8 +41,8 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
 - **Top menu bar** — the app title, the **Window** and **Layout** menus, and the
   project picker.
 - **Dock** — the default layout puts the panel tabs (Files, Export, Generate, LOD, Render,
-  Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Job** panel
-  (live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
+  Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Jobs** panel
+  (the job queue + live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
   to rearrange; drag a tab out to float it in its own window. **Settings** opens as
   its own dialog (⚙ in the viewport toolbar, or **Window ▸ Settings…**).
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
@@ -61,7 +61,7 @@ Every control has a tooltip — hover to see what it does and which CLI flag it 
   typing in a field. Running a job or deleting a file is **not** undoable (those write to
   disk), and the history resets when you switch projects.
 - **Window** — lists every panel with a checkmark for the ones that are open. Click to
-  **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Job** tabs
+  **reopen a closed panel** or close an open one. (The 3D **Viewer** and **Jobs** tabs
   can't be closed.) **Settings…** at the bottom opens the settings dialog.
 - **Layout** — **Reset to default** restores the standard arrangement; **Save layout**
   checkpoints the current one. The layout is **saved per workspace**, so each workspace
@@ -86,18 +86,40 @@ To add splats:
 1. **Drop** files anywhere in the window, or click **browse**. Supported inputs:
    `.ply`, `.compressed.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`, `.lcc`, `.lcc2`,
    `meta.json`, and `.mjs` generators.
-2. The **file list** shows every source in the project. Splat rows also show the
-   **gaussian count**, read straight from the file's own metadata — instant, no analysis
-   run. Hover the count for the exact number; on LOD bundles it breaks down per level.
-   (Formats that don't store a readable count — `.ksplat`, `.lcc` — just omit it.)
-   Click **view** to display a
-   splat (or collision mesh / voxel octree) in the viewport, or **✕** to delete it.
-3. **Right-click any file** — or click its **⋯** button — for an actions menu of
+2. The **file list** shows every source in the project, one row per file:
+   **checkbox · ▸ chevron · 👁 eye · kind tag · name · gaussian count · size · ⋯ · ✕**.
+
+   - The **gaussian count** is read straight from the file's own metadata — instant, no
+     analysis run. Hover it for the exact number; on LOD bundles it breaks down per
+     level. (Formats that don't store a readable count — `.ksplat`, `.lcc` — omit it.)
+   - The **👁 eye** shows or hides the file in the viewport. Several splats (and streamed
+     LOD bundles) can be shown at once: a bright eye is visible, a dim 🙈 is loaded but
+     hidden (re-show is instant), a faint eye is not loaded yet. The most recently shown
+     splat is the **active** one — the Edit / Analyze / Collision panels and the viewport
+     HUD chip target it. Collision meshes and voxel octrees each have a single overlay
+     slot, so showing one replaces the previous overlay.
+   - The **▸ chevron** (splat and LOD rows) expands an inline **details card**: exact
+     gaussian count, size, modified date, kind, and full path. On streamed-LOD bundles
+     the card also shows the **build recipe** — a per-level table (level, source file,
+     keep %, gaussian count; the environment shell is flagged), the effective settings,
+     and the bake date + generator versions — read from the bundle's `build-meta.json`
+     (bundles baked before that file existed report "No build recipe" and list the
+     per-level counts instead).
+   - The **checkbox** selects the row for bulk actions; **✕** (click twice) deletes the
+     file.
+3. The **bar above the list** holds the list-wide controls: a **select-all** checkbox
+   (indeterminate when only some rows are ticked), **Show all** and **Hide all** (showing
+   more than 20M new gaussians asks first — click again to confirm), and, while any rows
+   are selected, the **bulk actions**: **Show selected** / **Hide selected** (same rules
+   as Show/Hide all, selected files only), **Add to linked group** (ticks the selected
+   splats in the Linked group below and saves), and **Delete selected** (click twice to
+   confirm; removes every selected file).
+4. **Right-click any file** — or click its **⋯** button — for an actions menu of
    everything you can do with that file. The menu adapts to the file's type:
 
    ![File actions menu](screenshots/files-context-menu.png)
 
-   - **View in viewport**
+   - **View in viewport** and **Details** (toggles the row's details card).
    - **Export → SOG bundle** / **Export as…** — jumps to the Export
      panel with the file selected and the format preset; **Export → Streamed LOD**
      jumps to the LOD panel.
@@ -106,7 +128,7 @@ To add splats:
    - **Analyze stats** — runs the summary and shows the stats card.
    - **Edit (scale / origin)…**, **Generate & view** (`.mjs` generators),
      **Copy file path**, and **Delete**.
-4. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
+5. **+ sample generator** drops a ready-to-run `.mjs` scene generator into the
    project — run it from the [Generate tab](#generate-procedural-mjs-generators).
 
 > **Linked group — edit a proxy, apply to every LOD:** the **Linked group** section at
@@ -163,8 +185,11 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
    paired **SH iterations** / **Encoder workers** row — iterations trade quality
    for speed, while Encoder workers (`--max-workers`) only changes encode speed,
    not the output (`0` = serial). Other formats surface SPZ version, HTML viewer
-   options, etc. Then click **Export**. The exact CLI command and live output appear
-   in the **Job** panel. With **Load result into viewport** checked (default), any
+   options, etc. Then click **Export**. The job lands in the **Jobs** panel — click it
+   there for its exact CLI command and live output. Jobs queue up and run one at a
+   time by default; the panel's **parallel** field raises how many may run at once
+   (keep it at 1 for GPU-heavy jobs like collision), and **✕** on a row cancels a
+   queued or running job. With **Load result into viewport** checked (default), any
    viewable result loads automatically when the job finishes.
 
 ## Generate: procedural .mjs generators
@@ -225,9 +250,9 @@ folders that the engine streams by camera distance, for scenes too big to load a
 
 Every bake also writes a `build-meta.json` next to the bundle's `lod-meta.json` — the
 recipe it was built from: the source file per level, the environment selection, the
-effective settings, and per-level gaussian counts. Pick **Build info** from the bundle's
-**⋯** menu in the Files panel for a quick summary (bundles baked before this file
-existed report "No build recipe").
+effective settings, and per-level gaussian counts. Expand the bundle's row in the Files
+panel (its **▸** chevron, or **Details** in the **⋯** menu) to read the recipe inline
+(bundles baked before this file existed report "No build recipe").
 
 > **⚡ Auto-tune from splat stats:** the **Auto-tune** button reads each source's
 > gaussian count and world-space extents (a quick CPU summary, cached) and fills the
@@ -311,7 +336,7 @@ but local and driven by `splat-transform`.
 
 **Measure → real-world scale:**
 
-1. Pick the splat in **Input** (and **view** it so you can see it).
+1. Pick the splat in **Input** (and show it with its **eye** so you can see it).
 2. Check **Measure mode**.
 3. **Click the splat** to drop point **A** (green), then click again for point **B**
    (orange) across a feature whose real size you know. **Place A / Place B** choose
@@ -434,6 +459,10 @@ buttons in the [Scene panel](#scene-hierarchy)**.
 - **Viewport** — the **wire / voxel colors & opacity** for the 3D overlays.
 - **Workspace** — the folder whose subfolders are your projects.
 - **Agent (MCP)** — agent control of the live editor (below).
+- **Advanced** — a **scratch directory for large decimations** (`--scratch-dir`): where
+  decimation spills temp files on very large scenes. Blank (the default) spills
+  alongside the output; point it at another drive only if the output drive is low on
+  space. Applies to Export **Decimate** runs and the decimated levels of **Streamed LOD**.
 - **About** — component versions.
 
 **Agent (MCP)** holds a single toggle that lets a connected AI agent drive the live
@@ -514,10 +543,14 @@ portable exe) and publishes it to
 [AUTOMATION.md](AUTOMATION.md) for the release pipeline.
 
 The installed app **updates itself**: on launch (and every few hours) it checks for a
-newer release and, if one exists, offers to **download** it. The download runs in the
-background — progress shows on the taskbar icon — and when it's ready the app offers to
-**restart and install**, or installs automatically the next time you quit. You can
-trigger a check any time via **Help → Check for Updates…**. (The NSIS installer build
+newer release. With **Download updates automatically** on (Settings ▸ Updates, the
+default), a found update starts downloading right away; turned off, the status pill in
+the bottom-right corner (and the settings page) show a **Download** button instead.
+The pill tracks the whole flow — checking, download progress, "restart to update" —
+and clicking it opens Settings ▸ Updates. Downloads run in the background (progress
+also shows on the taskbar icon); when ready the app offers to **restart and install**,
+or installs automatically the next time you quit. You can trigger a check any time via
+**Help → Check for Updates…** or the settings page. (The NSIS installer build
 self-updates; the standalone portable exe does not.)
 
 ---

@@ -192,16 +192,18 @@ button.primary:focus-visible { outline-color: var(--text); }
 #panel-collision h2 { --panel-hue: var(--accent-2); }
 #panel-viewer h2 { --panel-hue: var(--purple); }
 #panel-job h2 { --panel-hue: var(--orange); cursor: default; }
-.job-title {
+.job-parallel {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     text-transform: none;
     letter-spacing: normal;
     font-weight: 400;
-    color: var(--text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
 }
+.job-parallel input { width: 42px; padding: 1px 4px; font-size: var(--fs-xs); }
 
 .field { display: block; margin-bottom: 8px; }
 .field > span {
@@ -235,6 +237,89 @@ button.primary:focus-visible { outline-color: var(--text); }
 }
 .hint.warn { color: var(--warn); }
 .hint.danger { color: var(--error); }
+
+.update-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
+    align-self: center;
+    white-space: nowrap;
+}
+#download-update { width: auto; margin-top: 0; }
+.update-status .spinner { display: none; }
+.update-status.busy .spinner {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+.update-status.error { color: var(--error); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* bottom-right update pill (VS Code-style); sits under modals, above the dock */
+.update-widget {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 900;
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--overlay-strong);
+    box-shadow: 0 4px 16px var(--shadow-color);
+    overflow: hidden;
+}
+.update-widget-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: var(--fs-xs);
+    padding: 4px 9px;
+    cursor: pointer;
+}
+.update-widget-main:hover { background: var(--hover); color: var(--text); }
+.update-widget.error .update-widget-main { color: var(--error); }
+.update-widget .spinner { display: none; }
+.update-widget.busy .spinner {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+.update-widget-bar {
+    display: inline-block;
+    width: 90px;
+    height: 4px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    overflow: hidden;
+}
+.update-widget-bar span { display: block; height: 100%; width: 0; background: var(--accent); }
+.update-widget-download {
+    border: none;
+    border-left: 1px solid var(--border);
+    background: var(--accent);
+    color: var(--on-accent);
+    font: inherit;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+}
+.update-widget-download:hover { filter: brightness(1.12); }
 
 .about-list { display: flex; flex-direction: column; gap: 5px; margin-top: 3px; }
 .about-row { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-sm); }
@@ -375,9 +460,10 @@ body.dropping #viewport::after {
     font-style: italic;
     padding: 6px 2px;
 }
+/* row cells: checkbox · chevron · eye · tag · name · count · size · ⋯ · ✕ */
 .file-list li {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto auto auto;
+    grid-template-columns: auto auto auto auto minmax(0, 1fr) auto auto auto auto;
     align-items: center;
     gap: 6px;
     padding: 5px 2px;
@@ -442,6 +528,99 @@ body.dropping #viewport::after {
     color: var(--error);
     border-color: var(--error);
 }
+/* per-row visibility eye (same idiom as the Scene panel's .scene-eye):
+   bright = visible, dim 🙈 = loaded but hidden, faint = not loaded */
+.file-list .file-eye {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 13px;
+    line-height: 1;
+    opacity: 0.9;
+    justify-self: center;
+}
+.file-list .file-eye.off { opacity: 0.45; }
+.file-list .file-eye.unloaded { opacity: 0.3; filter: grayscale(1); }
+.file-list .file-eye:hover { opacity: 1; filter: none; }
+@keyframes file-eye-spin { to { transform: rotate(360deg); } }
+.file-list .file-eye.loading {
+    animation: file-eye-spin 0.9s linear infinite;
+    opacity: 0.7;
+    cursor: default;
+}
+/* bulk-selection checkbox + details chevron — icon-width cells */
+.file-list .file-check { margin: 0; justify-self: center; }
+.file-list .file-chevron {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--text-dim);
+    justify-self: center;
+}
+.file-list .file-chevron:hover { color: var(--text); }
+/* inline details card — spans every column below the row cells */
+.file-list .file-details {
+    grid-column: 1 / -1;
+    margin: 2px 0 4px;
+    padding: 7px 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--group-border);
+    border-radius: 6px;
+    font-size: var(--fs-sm);
+}
+.file-details .detail-row { display: flex; gap: 8px; margin: 1px 0; }
+.file-details .detail-row > span:first-child { color: var(--text-dim); flex: 0 0 72px; }
+.file-details .detail-row > span:last-child { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.file-details .detail-note { color: var(--text-dim); font-style: italic; margin: 3px 0 1px; }
+.file-details .lod-recipe {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 5px;
+    font-size: var(--fs-xs);
+}
+.file-details .lod-recipe th {
+    text-align: left;
+    font-weight: 400;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--group-border);
+    padding: 1px 10px 2px 0;
+}
+.file-details .lod-recipe td {
+    padding: 2px 10px 1px 0;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.file-details .lod-recipe tr.env td { color: var(--teal); font-style: italic; }
+
+/* list-wide action bar above the file list: select-all · Show/Hide all · bulk bar */
+#file-list-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 4px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+#file-list-bar button {
+    padding: 3px 10px;
+    font-size: var(--fs-sm);
+}
+#file-list-bar button.armed {
+    color: var(--error);
+    border-color: var(--error);
+}
+#file-list-bar input[type="checkbox"] { margin: 0 2px; }
+#file-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+#bulk-count { color: var(--text-dim); font-size: var(--fs-xs); }
 .file-list li.uploading {
     display: block;
     padding: 6px 2px;
@@ -612,7 +791,7 @@ body.dropping #viewport::after {
 }
 .badge.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .badge.error { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
-#job-cancel { margin-left: auto; padding: 0 8px; font-size: var(--fs-xs); color: var(--error); flex-shrink: 0; }
+.badge.queued { color: var(--text-dim); }
 
 #lod-file-rows .lod-row {
     display: flex;
@@ -641,9 +820,39 @@ body.dropping #viewport::after {
 #lod-file-rows .lod-row .lod-env input { margin: 0; }
 #lod-add-level { margin-top: 2px; font-size: var(--fs-sm); }
 
-/* the console grows/shrinks with the Job tab */
+/* the console grows/shrinks with the Jobs tab */
 #panel-job { display: flex; flex-direction: column; }
 #panel-job h2, #job-command { flex-shrink: 0; }
+.job-list {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    max-height: 40%;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+.job-list:empty { display: none; }
+.job-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+}
+.job-row:hover { background: var(--bg-input); }
+.job-row.selected { background: color-mix(in srgb, var(--selection) 14%, transparent); }
+.job-row .badge { flex-shrink: 0; min-width: 58px; justify-content: center; }
+.job-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+}
+.job-row-time { color: var(--text-dim); font-size: var(--fs-xs); flex-shrink: 0; }
+.job-row-cancel { padding: 0 6px; font-size: var(--fs-xs); color: var(--error); flex-shrink: 0; }
 #job-command {
     display: block;
     font-size: var(--fs-sm);
@@ -667,7 +876,7 @@ body.dropping #viewport::after {
     word-break: break-word;
 }
 .log:empty::before {
-    content: 'No job yet — Export / Generate runs stream their CLI output here.';
+    content: 'No job selected — Export / Generate runs stream their CLI output here.';
     color: var(--text-dim);
     font-family: "Segoe UI", system-ui, sans-serif;
     font-size: var(--fs-sm);

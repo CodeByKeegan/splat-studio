@@ -52,18 +52,24 @@ const api = async (method, route, body) => {
 };
 
 const PROJECT = 'test';
-// run a job (convert/collision/summary) to completion; returns the finished job
-const runJob = async (route, payload, timeoutMs = 120000) => {
+// submit a job without waiting; returns the jobId
+const submitJob = async (route, payload) => {
     const { status, json } = await api('POST', route, { ...payload, project: PROJECT });
     if (status !== 200 || !json.jobId) throw new Error(`${route} -> ${status} ${JSON.stringify(json)}`);
+    return json.jobId;
+};
+// poll until the job settles (done/error); returns the finished job
+const waitJob = async (id, timeoutMs = 120000) => {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-        const { json: job } = await api('GET', `/api/jobs/${json.jobId}`);
-        if (job.status !== 'running') return job;
-        if (Date.now() > deadline) throw new Error(`job timed out: ${job.title}`);
+        const { json: job } = await api('GET', `/api/jobs/${id}`);
+        if (job.status === 'done' || job.status === 'error') return job;
+        if (Date.now() > deadline) throw new Error(`job ${id} timed out: ${job.title}`);
         await new Promise((r) => setTimeout(r, 300));
     }
 };
+// run a job (convert/collision/summary) to completion; returns the finished job
+const runJob = async (route, payload, timeoutMs = 120000) => waitJob(await submitJob(route, payload), timeoutMs);
 
 const waitHealth = (port) => new Promise((resolve, reject) => {
     const deadline = Date.now() + 30000;
@@ -202,6 +208,7 @@ try {
         const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
         assert(meta.lodLevels === 3, `expected 3 LOD levels, got ${meta.lodLevels}`);
         assert(!fs.existsSync(path.join(projectDir, 'demo-room-lod-src')), 'temp decimate dir not cleaned up');
+        assert(!job.command.includes('--scratch-dir'), `--scratch-dir without scratchDir option: ${job.command}`);
     });
 
     // build recipe persisted inside the bundle, before the job flips to 'done'
@@ -252,6 +259,61 @@ try {
     await check('decimate to a non-PLY format is rejected', async () => {
         const { status, json } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'sog', options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' } });
         assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);
+    });
+
+    // --scratch-dir: decimation spill location — emitted only when decimate is active
+    await check('decimate + scratchDir emits --scratch-dir', async () => {
+        const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'splat-studio-scratch-'));
+        try {
+            const job = await runJob('/api/convert', {
+                input: 'demo-room.ply', format: 'ply',
+                options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto', scratchDir: scratch }
+            });
+            assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+            assert(job.command.includes(`--scratch-dir ${scratch}`), `no --scratch-dir in cmd: ${job.command}`);
+        } finally {
+            await fsp.rm(scratch, { recursive: true, force: true });
+        }
+    });
+
+    await check('scratchDir without decimate is silently ignored (never emitted)', async () => {
+        // bogus value on purpose: without decimate it must not even be validated
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'csv',
+            options: { scratchDir: 'not-an-absolute-path' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(!job.command.includes('--scratch-dir'), `--scratch-dir leaked into cmd: ${job.command}`);
+    });
+
+    await check('decimate + invalid scratchDir is rejected up front', async () => {
+        const rel = await api('POST', '/api/convert', {
+            project: PROJECT, input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', scratchDir: 'relative/spill' }
+        });
+        assert(rel.status === 400 && /absolute/i.test(rel.json.error || ''), `relative path: ${rel.status} ${JSON.stringify(rel.json)}`);
+        const missing = await api('POST', '/api/convert', {
+            project: PROJECT, input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', scratchDir: path.join(os.tmpdir(), 'splat-studio-scratch-does-not-exist') }
+        });
+        assert(missing.status === 400 && /not found|existing directory/i.test(missing.json.error || ''), `missing dir: ${missing.status} ${JSON.stringify(missing.json)}`);
+    });
+
+    await check('LOD decimate mode: --scratch-dir on each pre-command, not the combine', async () => {
+        const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'splat-studio-scratch-'));
+        try {
+            const job = await runJob('/api/convert', {
+                input: 'demo-room.ply', format: 'lod',
+                options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 3, lodKeepPercent: 50, scratchDir: scratch }
+            });
+            assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+            const lines = job.command.split('\n');
+            assert(lines.length === 3, `expected 2 pre-commands + combine, got ${lines.length}: ${job.command}`);
+            assert(lines.slice(0, 2).every((l) => l.includes(`--scratch-dir ${scratch}`)), `pre-commands missing --scratch-dir: ${job.command}`);
+            assert(!lines[2].includes('--scratch-dir'), `combine step must not carry --scratch-dir: ${lines[2]}`);
+        } finally {
+            await fsp.rm(scratch, { recursive: true, force: true });
+        }
     });
 
     await check('summary (--stats) prints a stats table, writes nothing', async () => {
@@ -498,6 +560,51 @@ try {
         // the CLI's -t negates world x; assert both moved by the SAME ~±5 delta, not a hardcoded sign
         assert(Math.abs(xa - xb) < 1e-3, `members diverged: x-min ${xa} vs ${xb}`);
         assert(Math.abs(Math.abs(xa - src) - 5) < 0.5, `expected a ±5 shift, got ${(xa - src).toFixed(3)}`);
+    });
+
+    // ----- job queue + concurrency -----
+    await check('jobs queue FIFO at the default concurrency of 1', async () => {
+        const { json: list } = await api('GET', '/api/jobs');
+        assert(Array.isArray(list.jobs) && list.concurrency === 1, `list: ${JSON.stringify({ concurrency: list.concurrency })}`);
+        assert(list.jobs.every((j) => j.log === undefined), 'list must omit logs');
+        const a = await submitJob('/api/summary', { input: 'demo-room.ply' });
+        const b = await submitJob('/api/summary', { input: 'demo-room.ply' });
+        const early = (await api('GET', `/api/jobs/${b}`)).json;
+        assert(early.status === 'queued', `b should wait behind a, got ${early.status}`);
+        const ja = await waitJob(a);
+        const jb = await waitJob(b);
+        assert(ja.status === 'done' && jb.status === 'done', `jobs: ${ja.status}/${jb.status}`);
+        assert(jb.startedAt >= ja.endedAt, `serial violated: b started ${jb.startedAt} before a ended ${ja.endedAt}`);
+    });
+
+    await check('cancel a queued job before it ever runs', async () => {
+        const a = await submitJob('/api/summary', { input: 'demo-room.ply' });
+        const b = await submitJob('/api/summary', { input: 'demo-room.ply' });
+        const cancel = await api('POST', `/api/jobs/${b}/cancel`);
+        assert(cancel.json.cancelled === true, `cancel: ${JSON.stringify(cancel.json)}`);
+        const jb = await waitJob(b);
+        assert(jb.status === 'error' && jb.startedAt === null, `queued cancel -> ${jb.status}, startedAt ${jb.startedAt}`);
+        assert(/Cancelled while queued/.test(jb.log), `log: ${jb.log}`);
+        assert((await waitJob(a)).status === 'done', 'the running job must be unaffected');
+    });
+
+    await check('concurrency route sets, clamps, and unlocks parallel runs', async () => {
+        const set = await api('POST', '/api/jobs/concurrency', { max: 2 });
+        assert(set.status === 200 && set.json.concurrency === 2, `set: ${JSON.stringify(set.json)}`);
+        const clamped = await api('POST', '/api/jobs/concurrency', { max: 99 });
+        assert(clamped.json.concurrency === 8, `clamp: ${JSON.stringify(clamped.json)}`);
+        const bad = await api('POST', '/api/jobs/concurrency', { max: 'nope' });
+        assert(bad.status === 400, `bad max should 400, got ${bad.status}`);
+        await api('POST', '/api/jobs/concurrency', { max: 2 });
+        const a = await submitJob('/api/summary', { input: 'demo-room.ply' });
+        const b = await submitJob('/api/summary', { input: 'demo-room.ply' });
+        const ja = await waitJob(a);
+        const jb = await waitJob(b);
+        assert(ja.status === 'done' && jb.status === 'done', `jobs: ${ja.status}/${jb.status}`);
+        // cap 2: both entered 'running' at submit, i.e. b started before a ended
+        assert(jb.startedAt !== null && jb.startedAt <= ja.endedAt, `parallel violated: b started ${jb.startedAt}, a ended ${ja.endedAt}`);
+        const reset = await api('POST', '/api/jobs/concurrency', { max: 1 });
+        assert(reset.json.concurrency === 1, 'reset to 1');
     });
 
     await check('rejects a bad WebP resolution', async () => {
