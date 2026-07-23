@@ -37,7 +37,7 @@ const pruneFinished = () => {
 };
 
 const cancelledIds = new Set();
-const settlers = new Map(); // id -> that job's finish(), for cancel paths
+const settlers = new Map(); // id -> { settle } wrapping that job's finish(), for cancel paths
 
 // FIFO of { id, start } waiting for a free slot; cancelled entries are spliced
 // out by cancelJob, so everything here is startable
@@ -136,7 +136,7 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             pump();
         }
     };
-    settlers.set(id, finish);
+    settlers.set(id, { settle: finish });
 
     // Run the pre-decimate steps in order, then the main command. A failed or
     // cancelled step rejects and stops the chain, so the main step never runs on
@@ -179,7 +179,7 @@ export const cancelJob = (id) => {
         const i = queue.findIndex((q) => q.id === id);
         if (i !== -1) queue.splice(i, 1);
         job.log += 'Cancelled while queued\n';
-        settlers.get(id)?.('error');
+        settlers.get(id)?.settle('error');
         return true;
     }
     if (job.status !== 'running') return false;
