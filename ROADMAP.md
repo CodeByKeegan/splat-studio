@@ -21,24 +21,23 @@ The foundation is in place and in daily use:
   procedural generators as first-class inputs.
 - **Render to WebP** — pinhole or 360° equirect, with depth-of-field and motion-blur.
 - **Dockable editor** — movable/floatable panels, layouts saved per workspace.
-- **Self-updating desktop app** — Windows build that updates itself from GitHub Releases.
+- **Self-updating desktop app** — Windows build that updates itself from GitHub Releases:
+  background download, install on restart/quit, with **beta** (from `dev`) and **stable**
+  (from `main`) channels switchable in Settings.
 - **MCP server** — drive the headless pipeline and (with consent) the live editor from an AI agent.
 - **Autonomous maintenance** — a scheduled routine tracks upstream releases, wires new CLI
   flags into the GUI, runs the regression suite, and opens a PR.
+- **Public documentation site** — the user guide and MCP docs published via
+  [GitHub Pages](https://codebykeegan.github.io/splat-studio/), kept in sync from the repo.
 
 ## 🔜 Near-term
 
 What's actively being built or next up:
 
-- **Release channels** — a **beta** channel (from `dev`) alongside **stable** (from `main`),
-  switchable in-app, so early adopters can opt in without affecting stable users.
-- **Smoother in-app updates** — download and stage updates quietly; apply on next quit
-  instead of prompting every launch. Check-for-updates and channel choice live on a
-  Settings page.
-- **Public documentation site** — the user guide and MCP docs published via GitHub Pages,
-  kept in sync from the repo.
 - **Continuous CLI coverage** — keep pace with new `splat-transform` flags as they ship
   (handled largely by the maintenance routine).
+- **Community readiness** — issue templates, CI checks on every PR, and contributor
+  docs polish as the project opens up.
 
 ## 🧭 Exploring
 

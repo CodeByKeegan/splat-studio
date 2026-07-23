@@ -792,6 +792,7 @@ body.dropping #viewport::after {
 .badge.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .badge.error { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
 .badge.queued { color: var(--text-dim); }
+.badge.cancelled { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
 
 #lod-file-rows .lod-row {
     display: flex;
@@ -1027,6 +1028,4 @@ body.dropping #viewport::after {
 #measure-readout { display: block; margin: 7px 0; }
 #measure-edit-row { margin-top: 8px; }
 
-/* ----- icon-rail navigation (SuperSplat-style: jump to a panel, or hide the
-   whole sidebar to maximize the 3D viewport) ----- */
 .hidden { display: none !important; }

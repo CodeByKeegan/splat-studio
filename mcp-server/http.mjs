@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { HttpError, ConnError } from './errors.mjs';
 
-// Port resolution order (design decision 20):
+// Port resolution order:
 //   SPLAT_API_PORT env -> userData/port.json hint (written by electron/main.mjs) -> 5174.
 const hintFiles = () => {
     const names = ['Splat Studio', 'splat-studio'];
@@ -27,11 +27,22 @@ const readHint = () => {
     return null;
 };
 
+// the app's API is loopback-only; a non-loopback override must at least be
+// https so credentials/commands don't cross the network in the clear
+const assertSafeBase = (base) => {
+    const url = new URL(base);
+    const loopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname);
+    if (!loopback && url.protocol !== 'https:') {
+        throw new Error(`SPLAT_API_BASE/HOST must be loopback or https, got: ${base}`);
+    }
+    return base;
+};
+
 const resolveBase = () => {
-    if (process.env.SPLAT_API_BASE) return process.env.SPLAT_API_BASE.replace(/\/+$/, '');
+    if (process.env.SPLAT_API_BASE) return assertSafeBase(process.env.SPLAT_API_BASE.replace(/\/+$/, ''));
     const host = process.env.SPLAT_API_HOST || '127.0.0.1';
     const port = Number(process.env.SPLAT_API_PORT) || readHint() || 5174;
-    return `http://${host}:${port}`;
+    return assertSafeBase(`http://${host}:${port}`);
 };
 
 // The base is re-resolved when the app is unreachable, so the packaged app's

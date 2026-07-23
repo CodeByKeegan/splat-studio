@@ -1,3 +1,6 @@
+// Electron main process: single-instance app that spawns the Express server
+// under a real Node binary, opens the UI window on it, owns the menu, the
+// persisted workspace choice, and the auto-update flow.
 import { app, BrowserWindow, Menu, dialog, shell, ipcMain } from 'electron';
 import { checkForUpdates, downloadUpdate, getAutoDownload, getChannel, getStatus, setAutoDownload, setChannel } from './updates.mjs';
 import { spawn } from 'node:child_process';
@@ -83,6 +86,7 @@ const waitForHealth = (port, timeoutMs = 30000) => new Promise((resolve, reject)
     attempt();
 });
 
+// spawn the Express server on a free port and wait until it answers /api/health
 const startServer = async () => {
     serverPort = await freePort();
     fs.mkdirSync(workspace, { recursive: true });
@@ -123,6 +127,7 @@ const stopServer = () => new Promise((resolve) => {
 // ---------- window ----------
 const appUrl = () => `http://127.0.0.1:${serverPort}/`;
 
+// open the app window on the embedded server's URL
 const createWindow = () => {
     win = new BrowserWindow({
         width: 1440,
@@ -136,6 +141,7 @@ const createWindow = () => {
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
+            sandbox: true,
             preload: path.join(__dirname, 'preload.cjs')
         }
     });
@@ -167,10 +173,11 @@ ipcMain.handle('workspace:pick', async (_e, defaultPath) => {
 });
 
 ipcMain.handle('workspace:persist', (_e, next) => {
-    if (typeof next === 'string' && next) {
-        workspace = next;
-        writeConfig({ ...readConfig(), workspace });
-    }
+    // renderer-supplied value: persist only a real absolute folder path
+    if (typeof next !== 'string' || !next || !path.isAbsolute(next)) return;
+    try { if (!fs.statSync(next).isDirectory()) return; } catch { return; }
+    workspace = next;
+    writeConfig({ ...readConfig(), workspace });
 });
 
 ipcMain.handle('workspace:open', () => shell.openPath(workspace));
@@ -188,6 +195,7 @@ ipcMain.handle('updates:set-auto', (_e, on) => setAutoDownload(on, win));
 const chooseWorkspace = () => win?.webContents.send('menu:choose-workspace');
 
 // ---------- menu ----------
+// application menu: workspace + reload, zoom/devtools, updates/about
 const buildMenu = () => {
     const template = [
         {

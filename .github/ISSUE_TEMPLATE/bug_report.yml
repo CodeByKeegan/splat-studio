@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in Splat Studio doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! The Job panel shows the exact CLI invocation for
+        every job — including it below usually makes the difference.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: Converting demo-room.ply to SOG (bundled) fails with…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Files panel and…
+        2. Click…
+    validations:
+      required: true
+  - type: textarea
+    id: job-log
+    attributes:
+      label: Job log / CLI invocation
+      description: Paste the Job panel output (it includes the splat-transform command line), if a job is involved.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Splat Studio version
+      description: Help → About, or "from source" plus the commit.
+      placeholder: 0.0.123 (stable) / from source @ abc1234
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS and GPU
+      placeholder: Windows 11, RTX 3070 (or "no GPU")
+    validations:
+      required: true

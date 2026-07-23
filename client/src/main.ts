@@ -1,3 +1,6 @@
+// App shell: wires every panel (files, export, LOD, render, analyze, edit,
+// collision, generate, jobs, settings) to the API and the 3D viewer, owns the
+// dockable layout, app state, undo/redo, and the MCP editor-command handlers.
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
@@ -36,6 +39,7 @@ const jobLog = $<HTMLPreElement>('job-log');
 
 let viewer: SplatViewer | undefined;
 
+// transient status toast (errors persist longer)
 const showToast = (message: string, isError = false) => {
     const el = document.createElement('div');
     el.className = isError ? 'toast error' : 'toast';
@@ -95,12 +99,14 @@ const promptText = (title: string, opts: { value?: string; okLabel?: string; pla
         ok.onclick = submit;
     });
 
+// bytes -> human size ('1.2 GB')
 const fmtSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 };
 
+// gaussian count -> compact form ('4.1M')
 const fmtCount = (n: number): string => {
     if (n < 1000) return String(n);
     if (n < 1e6) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
@@ -111,6 +117,9 @@ const fmtCount = (n: number): string => {
 const FORM_KEY = 'splat-studio.form';
 // selects whose options come from the workspace — restored after the file list loads
 const FILE_SELECT_IDS = new Set(['convert-input', 'lod-input', 'render-input', 'collision-input', 'analyze-input', 'edit-input']);
+// controls owned by the server/desktop (MCP consent, update prefs) — synced
+// from their owners, never persisted to localStorage or captured in undo
+const EXTERNAL_STATE_IDS = new Set(['mcp-control', 'update-channel', 'update-auto']);
 const formState: Record<string, string | boolean> = (() => {
     try { return JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'); } catch { return {}; }
 })();
@@ -121,14 +130,16 @@ document.addEventListener('change', (e) => {
     const t = e.target;
     if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || !t.id) return;
     if (t.id === 'files-select-all') return; // transient bulk-select state, not a form value
-    formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
-    localStorage.setItem(FORM_KEY, JSON.stringify(formState));
+    if (!EXTERNAL_STATE_IDS.has(t.id)) {
+        formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
+        localStorage.setItem(FORM_KEY, JSON.stringify(formState));
+    }
     scheduleUndoCapture(); // record an undo step for this committed change
 });
 
 const restoreFormState = () => {
     for (const [id, value] of Object.entries(formState)) {
-        if (FILE_SELECT_IDS.has(id)) continue;
+        if (FILE_SELECT_IDS.has(id) || EXTERNAL_STATE_IDS.has(id)) continue;
         const el = document.getElementById(id);
         if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) continue;
         if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = value === true;
@@ -153,6 +164,7 @@ const fileRows = new Map<string, { li: HTMLLIElement; chev: HTMLButtonElement }>
 // build-meta.json per LOD bundle, keyed name@mtime; null = none on disk (404)
 const lodMetaCache = new Map<string, api.LodBuildMeta | null>();
 
+// repopulate a file <select>, keeping the current choice when still present
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     const prev = select.value;
     select.innerHTML = '';
@@ -176,6 +188,8 @@ const fillSelect = (select: HTMLSelectElement, names: string[]) => {
     else if (names.length === 1) select.value = names[0];
 };
 
+// Re-fetch and re-render the whole Files panel (rows, eyes, selection, details,
+// input selects); `highlight` names flash as fresh job outputs.
 const refreshFiles = async (highlight?: Set<string>) => {
     const files = await api.listFiles();
     lastFiles = files;
@@ -190,8 +204,8 @@ const refreshFiles = async (highlight?: Set<string>) => {
     splatFileNames = splatFiles.map((f) => f.name);
     // .mjs generators are valid convert/analyze inputs, but not collision/LOD sources
     const generatorNames = files.filter((f) => f.kind === 'generator').map((f) => f.name);
-    // 3.1.0: lod-meta.json (our own streamed-SOG output) is now a valid convert/analyze
-    // INPUT too (--select-lod reads back a subset of levels), but not a collision/LOD/
+    // lod-meta.json (our own streamed-SOG output) is a valid convert/analyze INPUT
+    // (--select-lod reads back a subset of levels), but not a collision/LOD/
     // render/edit source — those keep taking only actual splat files
     const lodMetaNames = files.filter((f) => f.kind === 'lod').map((f) => f.name);
     const convertNames = [...splatFileNames, ...generatorNames, ...lodMetaNames];
@@ -401,6 +415,7 @@ const hideChip = (chip: HTMLSpanElement) => {
     if (label) label.textContent = '';
 };
 
+// load a file into its viewer layer (splat/collision/voxel); false on failure
 const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
     const v = viewer;
     if (!v) { showToast('Viewer is still starting up', true); return false; }
@@ -471,6 +486,7 @@ const updateFileEyes = (): void => {
     }
 };
 
+// eye button: show the file in the viewer, or hide/unload it if already shown
 const toggleFileEye = async (eye: HTMLButtonElement, name: string, as: api.ViewKind): Promise<void> => {
     const v = viewer;
     if (!v) return showToast('Viewer is still starting up', true);
@@ -636,7 +652,7 @@ bulkDeleteBtn.onclick = async () => {
         }
     } finally {
         bulkDeleteBtn.disabled = false;
-        await refreshFiles();
+        await refreshFiles().catch(() => showToast('Couldn\'t refresh the file list', true));
     }
 };
 
@@ -657,6 +673,7 @@ const fetchLodMeta = async (f: api.FileEntry): Promise<api.LodBuildMeta | null> 
     const key = `${f.name}@${f.mtime}`;
     const hit = lodMetaCache.get(key);
     if (hit !== undefined) return hit;
+    // raw fetch on purpose: this reads a workspace file over /files, not an API route
     const res = await fetch(api.fileUrl(f.name.replace(/lod-meta\.json$/, 'build-meta.json')));
     if (res.status === 404) { lodMetaCache.set(key, null); return null; }
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -702,6 +719,7 @@ const renderRecipe = (host: HTMLElement, recipe: api.LodBuildMeta): void => {
     if (baked || versions) host.appendChild(detailRow('Baked', [baked, versions].filter(Boolean).join(' — ')));
 };
 
+// expanded per-file detail card (size, counts, LOD recipe when present)
 const buildDetails = (f: api.FileEntry): HTMLDivElement => {
     const card = document.createElement('div');
     card.className = 'file-details';
@@ -731,6 +749,7 @@ const buildDetails = (f: api.FileEntry): HTMLDivElement => {
     return card;
 };
 
+// expand/collapse a file row's detail card
 const toggleDetails = (f: api.FileEntry): void => {
     const row = fileRows.get(f.name);
     if (!row) return;
@@ -873,7 +892,9 @@ const uploadFiles = async (files: Iterable<File>) => {
     } catch (err) {
         showToast(`Upload failed: ${err}`, true);
     } finally {
-        await refreshFiles(); // files before the failure did land
+        // files before the failure did land; a refresh failure must not escape the
+        // finally into the void-returning callers
+        await refreshFiles().catch(() => showToast('Couldn\'t refresh the file list', true));
         // fresh upload becomes the active input — that's almost always the intent
         if (lastSplat && splatFileNames.includes(lastSplat)) {
             convertInput.value = lastSplat;
@@ -1968,6 +1989,7 @@ const fmtNum = (s: string): string => {
 };
 
 let lastSummaryMarkdown = '';
+// render the persistent Analyze card from a summary job's --stats log
 const renderSummaryCard = (name: string, log: string): void => {
     const result = $('analyze-result');
     const summary = parseSummary(log);
@@ -2066,6 +2088,7 @@ const updateMeasureReadout = (d?: number): void => {
         : `A–B = ${dist.toFixed(3)} m`;
 };
 
+// switch the Edit panel's viewport tool; exclusive, toggling off the other
 const setEditTool = (mode: 'none' | 'measure' | 'origin'): void => {
     measureToggle.checked = mode === 'measure';
     originToggle.checked = mode === 'origin';
@@ -2327,6 +2350,7 @@ const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boolean; has
     { id: 'render-camera', label: 'Render camera', icon: '🎥', gizmo: true, has: () => !!viewer?.hasRenderCamera }
 ];
 
+// re-render the Scene hierarchy from what's currently loaded in the viewer
 function rebuildSceneList(): void {
     if (!viewer) return;
     // getting-started overlay lives while the viewport is empty
@@ -2389,7 +2413,7 @@ $<HTMLButtonElement>('skybox-clear').onclick = () => { viewer?.clearSkybox(); sh
 // dockview reparents the node (never recreates it), so the PlayCanvas canvas
 // survives every dock/redock and tab switch. Built BEFORE the viewer boots so the
 // canvas is already mounted in the visible dock.
-// every dockable window: the panels, the 3D viewport, and (PR4) the camera view.
+// every dockable window: the panels, the 3D viewport, and the camera view.
 // component is the createComponent key; closable=false omits the tab close button.
 type Win = { id: string; component: string; title: string; closable: boolean };
 const WINDOWS: Win[] = [
@@ -2481,6 +2505,7 @@ const dock: DockviewApi = createDockview($('dock'), {
 
 const titleOf = (id: string): string => winById(id)?.title ?? id;
 
+// reset the dock to the factory arrangement
 function applyDefaultLayout(): void {
     dock.clear();
     dock.addPanel({ id: 'viewer', component: 'viewer', title: 'Viewer 3D' });
@@ -2520,7 +2545,7 @@ applyDefaultLayout();
 // Collision tab being visible) or the Scene tab is shown; the render frustum +
 // camera-view preview are gated on the Render tab being the active one
 dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); });
-(window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
+(window as unknown as { __dock: DockviewApi }).__dock = dock; // capture harness handle (scripts/capture-docs.mjs)
 
 // ---------- top menu bar (Window / Layout) ----------
 const LAYOUT_VERSION = 2; // v1 layouts had a Settings dock panel (now a dialog)
@@ -2528,6 +2553,7 @@ let saveTimer: number | undefined;
 const persistNow = (): void => { void api.saveLayout({ __v: LAYOUT_VERSION, dockview: dock.toJSON() as unknown as Record<string, unknown> }); };
 
 type MenuItem = { label: string; checked?: boolean; disabled?: boolean; onClick: () => void };
+// top-bar dropdown menu; items re-computed on every open
 function makeMenu(label: string, itemsFn: () => MenuItem[]): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'menu';
@@ -2568,6 +2594,9 @@ const takeSnap = (): UndoSnap => {
     const fields: Record<string, string | boolean> = {};
     for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[id], select[id]')) {
         if (el.id === 'project-select') continue; // switching projects is navigation, not an edit
+        // server/desktop-owned settings (MCP consent, update prefs) are not edits —
+        // undoing must never flip consent or the update channel as a side effect
+        if (EXTERNAL_STATE_IDS.has(el.id)) continue;
         if (el instanceof HTMLInputElement && (el.type === 'file' || el.type === 'button' || el.type === 'submit')) continue;
         fields[el.id] = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked : el.value;
     }
@@ -2708,25 +2737,33 @@ settingsBackdrop.addEventListener('pointerdown', (e) => { if (e.target === setti
 // promptText's capture-phase Escape handler wins while a prompt is up
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settingsOpen()) closeSettings(); });
 initThemeSettings({ promptText, showToast });
-(window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // debug handle
+(window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // capture harness handle (scripts/capture-docs.mjs)
 
 // the viewport toolbar's ⚙ opens the settings dialog
 $<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 
 // ---------- Settings ▸ Updates + bottom-right status widget ----------
+// The Electron preload bridge (electron/preload.cjs); absent in the browser dev
+// build. Update members are optional so an older shell degrades gracefully.
+interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
+interface DesktopApi {
+    pickFolder(defaultPath?: string): Promise<string | null>;
+    persistWorkspace(path: string): Promise<void>;
+    openWorkspace(): Promise<void>;
+    onChooseWorkspace(cb: () => void): void;
+    checkForUpdates?: () => Promise<void>;
+    getUpdateChannel?: () => Promise<'stable' | 'beta'>;
+    setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
+    getUpdateStatus?: () => Promise<UpdateStatus>;
+    onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
+    downloadUpdate?: () => Promise<void>;
+    getUpdateAuto?: () => Promise<boolean>;
+    setUpdateAuto?: (on: boolean) => Promise<boolean>;
+}
+
 // Only meaningful in the packaged desktop app; drop both in the browser dev build.
 void (async () => {
-    interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
-    const bridge = (window as unknown as { desktop?: {
-        checkForUpdates?: () => Promise<void>;
-        getUpdateChannel?: () => Promise<'stable' | 'beta'>;
-        setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
-        getUpdateStatus?: () => Promise<UpdateStatus>;
-        onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
-        downloadUpdate?: () => Promise<void>;
-        getUpdateAuto?: () => Promise<boolean>;
-        setUpdateAuto?: (on: boolean) => Promise<boolean>;
-    } }).desktop;
+    const bridge = (window as unknown as { desktop?: DesktopApi }).desktop;
     const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
     const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
     const widget = $<HTMLDivElement>('update-widget');
@@ -2813,6 +2850,7 @@ const switchProject = async (name: string) => {
     api.setProject(name);
     projectSelect.value = name;
     localStorage.setItem(PROJECT_KEY, name);
+    lodMetaCache.clear(); // keyed name@mtime within a project
     // loaded layers belong to the project we're leaving
     clearViewport();
     await refreshFiles();
@@ -2820,6 +2858,7 @@ const switchProject = async (name: string) => {
     clearUndoHistory(); // undo history doesn't span a project switch
 };
 
+// refresh the project picker; selects `preferred` (or the first project)
 const loadProjects = async (preferred?: string) => {
     const projects = await api.listProjects();
     projectSelect.innerHTML = '';
@@ -2840,7 +2879,8 @@ const loadProjects = async (preferred?: string) => {
     await switchProject(projects.includes(preferred ?? '') ? preferred! : projects[0]);
 };
 
-projectSelect.onchange = () => void switchProject(projectSelect.value);
+projectSelect.onchange = () => void switchProject(projectSelect.value)
+    .catch((err) => showToast(`Couldn't switch project: ${err}`, true));
 
 $<HTMLButtonElement>('project-new').onclick = async () => {
     const name = await promptText('New project name', { okLabel: 'Create', placeholder: 'my-scene' });
@@ -2876,7 +2916,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             seedZ.value = String(cli.z);
         };
         v.onSeedMoveEnd = () => {
-            // bubbles:true so the delegated form-state listener on #sidebar persists it
+            // bubbles:true so the delegated form-state listener on document persists it
             for (const el of [seedX, seedY, seedZ]) el.dispatchEvent(new Event('change', { bubbles: true }));
             syncSeedViz(); // snap the node to the rounded field values
         };
@@ -2941,7 +2981,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         updateRegionEstimate(); // and its overflow risk
         updateRenderFrustum(); // show the render frustum if the Render tab is active
         rebuildSceneList();
-        (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
+        (window as unknown as { __viewer: SplatViewer }).__viewer = v; // capture harness handle (scripts/capture-docs.mjs, capture-readme.mjs)
     })
     .catch((err) => {
         showToast(`Failed to start viewer: ${err}`, true);
@@ -3134,12 +3174,6 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
 // ---------- workspace folder (Settings) ----------
 // The native folder picker lives in Electron (preload -> main); the actual switch
 // goes through POST /api/workspace so it works headlessly (MCP) and in the browser.
-interface DesktopApi {
-    pickFolder(defaultPath?: string): Promise<string | null>;
-    persistWorkspace(path: string): Promise<void>;
-    openWorkspace(): Promise<void>;
-    onChooseWorkspace(cb: () => void): void;
-}
 const desktop = (window as unknown as { desktop?: DesktopApi }).desktop;
 let currentWorkspace = '';
 let wsSwitching = false;
@@ -3218,14 +3252,14 @@ const updateMcpStatus = (connected: boolean): void => {
     mcpStatusEl.textContent = `Editor bridge: ${connected ? 'connected' : 'disconnected'} · control ${mcpControl.checked ? 'ON' : 'off'}`;
 };
 mcpControl.onchange = () => {
-    void fetch('/api/editor/control', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: mcpControl.checked }) })
+    void api.setEditorControl(mcpControl.checked)
         .then(() => updateMcpStatus(mcpConnected)) // re-render the label; keep the real connection state
         .catch(() => showToast('Failed to update MCP consent', true));
 };
 // reconcile the consent checkbox + label with the server's enforced state — also
 // re-run after a workspace switch (consent is per-workspace and resets on switch)
 const syncEditorStatus = (): Promise<void> =>
-    fetch('/api/editor/status').then((r) => r.json()).then((s) => { mcpControl.checked = !!s.controlEnabled; updateMcpStatus(!!s.connected); }).catch(() => { /* server not up yet */ });
+    api.getEditorStatus().then((s) => { mcpControl.checked = s.controlEnabled; updateMcpStatus(s.connected); }).catch(() => { /* server not up yet */ });
 void syncEditorStatus();
 
 startMcpBridge({

@@ -1,3 +1,4 @@
+// Types for voxel-parser.js (see its header for the .voxel.bin format spec).
 export interface VoxelMeta {
     version: string;
     gridBounds: { min: [number, number, number]; max: [number, number, number] };

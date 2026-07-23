@@ -39,10 +39,19 @@ jobs:
         run: |
           # Betas are release candidates for the NEXT stable: after stable X.Y.Z the
           # betas are X.Y.(Z+1)-beta.1, -beta.2, ...; promoting dev cuts X.Y.(Z+1).
-          # Semver order stays monotonic for electron-updater either way.
+          # package.json can pull the target ahead for a planned jump (e.g. 0.1.0):
+          # the next version is whichever is semver-higher — the auto-incremented
+          # patch or package.json. Semver order stays monotonic for electron-updater.
           LAST_STABLE=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName')
           BASE=${LAST_STABLE#v}; BASE=${BASE:-0.0.0}  # e.g. 0.0.37
-          NEXT="${BASE%.*}.$(( ${BASE##*.} + 1 ))"  # e.g. 0.0.38
+          AUTO="${BASE%.*}.$(( ${BASE##*.} + 1 ))"  # e.g. 0.0.38
+          PLANNED=$(node -p "require('./package.json').version")
+          NEXT=$(node -e "
+            const p = (v) => v.split('.').map(Number);
+            const [a, b] = [p('$AUTO'), p('$PLANNED')];
+            const cmp = a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+            console.log(cmp >= 0 ? '$AUTO' : '$PLANNED');
+          ")
           if [ "${{ github.ref_name }}" = "dev" ]; then
             CHANNEL=beta
             # next free -beta.N for this target; the prerelease tag makes
@@ -55,6 +64,10 @@ jobs:
             CHANNEL=stable
             VERSION="$NEXT"
             PRERELEASE_FLAG=""
+          fi
+          if gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists — check the version resolution above."
+            exit 1
           fi
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"

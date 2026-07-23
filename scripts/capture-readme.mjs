@@ -1,7 +1,8 @@
-// Captures README "in action" screenshots from the real workspace: the dockable
-// editor with the Acropolis and HOTP scans loaded. Run via `npm run docs:readme`
-// (needs SPLAT_WORKSPACE to point at a folder containing those projects).
-// Reuses the production boot in a real Electron window, like capture-docs.
+// Captures README "in action" screenshots from a real workspace in a real
+// Electron window (production boot, like capture-docs). Run via `npm run
+// docs:readme` with SPLAT_WORKSPACE pointing at the workspace and README_SHOTS
+// naming what to capture (JSON: [{project, match, out}] — project name, a
+// substring of the splat's file-row text, and the output PNG basename).
 import { app, BrowserWindow } from 'electron';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -15,16 +16,17 @@ const repoRoot = path.resolve(__dirname, '..');
 const shotsDir = path.join(repoRoot, 'docs', 'screenshots');
 const WORKSPACE = process.env.SPLAT_WORKSPACE;
 if (!WORKSPACE) {
-    console.error('Set SPLAT_WORKSPACE to a folder containing the Acropolis and HOTP projects.');
+    console.error('Set SPLAT_WORKSPACE to the workspace folder containing the projects to capture.');
+    process.exit(1);
+}
+if (!process.env.README_SHOTS) {
+    console.error('Set README_SHOTS to a JSON list of shots, e.g. ' +
+        '[{"project":"MyScan","match":"scene.ply","out":"readme-myscan"}]');
     process.exit(1);
 }
 const W = 1500, H = 950;
 
-// project, a substring of the splat's file-row text, and the output name
-const SHOTS = [
-    { project: 'Acropolis', match: 'Acropolis_4mil', out: 'readme-acropolis' },
-    { project: 'HOTP', match: 'HOTP_3mil', out: 'readme-hotp' }
-];
+const SHOTS = JSON.parse(process.env.README_SHOTS);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -45,6 +47,7 @@ const waitForHealth = (port, timeoutMs = 30000) => new Promise((resolve, reject)
     attempt();
 });
 
+// spawn the API server on the real workspace being captured
 const startServer = async (port) => {
     const env = { ...process.env, API_PORT: String(port), SPLAT_WORKSPACE: WORKSPACE };
     delete env.ELECTRON_RUN_AS_NODE;
@@ -55,6 +58,7 @@ const startServer = async (port) => {
     return proc;
 };
 
+// boot server + window, then capture each configured shot
 async function run() {
     const port = await freePort();
     const server = await startServer(port);

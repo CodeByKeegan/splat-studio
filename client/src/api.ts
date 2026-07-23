@@ -1,3 +1,5 @@
+// Typed client for the whole loopback HTTP API: request/response shapes plus
+// thin fetch wrappers, job submission, and the watch-until-terminal poller.
 export type ViewKind = 'splat' | 'collision' | 'voxel';
 
 export interface FileEntry {
@@ -59,7 +61,7 @@ export interface GenParam {
 export interface Job {
     id: string;
     title: string;
-    status: 'queued' | 'running' | 'done' | 'error';
+    status: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
     command: string;
     log: string;
     outputs: string[];
@@ -72,11 +74,13 @@ export interface Job {
 /** /api/jobs list entry — a Job without its log. */
 export type JobSummary = Omit<Job, 'log'>;
 
-/** Still waiting or working — the complement of the terminal done/error states. */
+/** Still waiting or working — the complement of the terminal done/error/cancelled states. */
 export const isJobActive = (job: { status: Job['status'] }): boolean =>
     job.status === 'queued' || job.status === 'running';
 
-/** WebP render camera/projection/DoF/motion-blur (CLI image-output options). */
+/** WebP render camera/projection/DoF/motion-blur (CLI image-output options).
+ *  Mirrors the full server surface — some fields (up, near, sensorSize,
+ *  lookAtEnd, upEnd) are exercised via MCP render_image rather than the GUI. */
 export interface ImageOptions {
     camera?: string;        // "x,y,z"
     lookAt?: string;        // "x,y,z"
@@ -165,10 +169,33 @@ export interface CollisionRequest {
     };
 }
 
+// parse a JSON response, throwing the server's {error} message on non-2xx.
+// Trusts the declared return type of each wrapper — no runtime validation.
 const jsonOrThrow = async (res: Response) => {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
+};
+
+/** MCP editor binding + per-workspace consent, from /api/editor/status. */
+export interface EditorStatus {
+    connected: boolean;
+    editorProject: string | null;
+    appVersion: string | null;
+    lastSeenMs: number | null;
+    port: number;
+    controlEnabled: boolean;
+}
+
+export const getEditorStatus = async (): Promise<EditorStatus> =>
+    jsonOrThrow(await fetch('/api/editor/status'));
+
+export const setEditorControl = async (enabled: boolean): Promise<void> => {
+    await jsonOrThrow(await fetch('/api/editor/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+    }));
 };
 
 // the active project scopes every file/job call; set by the UI on project switch
@@ -234,8 +261,12 @@ export const createProject = async (name: string): Promise<void> => {
     }));
 };
 
-export const listFiles = async (): Promise<FileEntry[]> =>
-    (await jsonOrThrow(await fetch(`/api/files?${pq()}`))).files;
+export const listFiles = async (): Promise<FileEntry[]> => {
+    const body = await jsonOrThrow(await fetch(`/api/files?${pq()}`));
+    // spot-check the shape: server drift should fail here, not as downstream undefineds
+    if (!Array.isArray(body.files)) throw new Error('Malformed /api/files response');
+    return body.files;
+};
 
 /** XHR instead of fetch so large uploads (30–270 MB splats) report progress. */
 export const uploadFile = (file: File, onProgress?: (pct: number) => void): Promise<void> =>
@@ -306,8 +337,11 @@ export const getStats = async (input: string): Promise<FileStats> =>
 export const getGeneratorParams = async (input: string): Promise<GenParam[] | null> =>
     (await jsonOrThrow(await fetch(`/api/generator-params?${pq()}&input=${encodeURIComponent(input)}`))).params;
 
-export const getJob = async (id: string): Promise<Job> =>
-    jsonOrThrow(await fetch(`/api/jobs/${id}`));
+export const getJob = async (id: string): Promise<Job> => {
+    const job = await jsonOrThrow(await fetch(`/api/jobs/${id}`));
+    if (typeof job?.id !== 'string' || typeof job?.status !== 'string') throw new Error('Malformed job response');
+    return job;
+};
 
 /** All jobs (queued/running/finished, no logs) + the current concurrency cap. */
 export const getJobs = async (): Promise<{ jobs: JobSummary[]; concurrency: number }> =>
