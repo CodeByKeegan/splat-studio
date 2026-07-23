@@ -2,15 +2,19 @@
 // collision, generate, jobs, settings) to the API and the 3D viewer, owns the
 // dockable layout, app state, undo/redo, and the MCP editor-command handlers.
 import './boot-theme'; // theme first — before any UI paints
-import { $, fileList, convertInput, genInput, lodInput, renderInput, collisionInput, analyzeInput, editInput, convertRun, lodRun, renderRun, collisionRun, analyzeRun, convertFormat, generateViewBtn, carveBox, projectSelect } from './dom';
+import { $, fileList, convertInput, genInput, lodInput, renderInput, collisionInput, analyzeInput, editInput, collisionRun, analyzeRun, convertFormat, carveBox, projectSelect } from './dom';
 import { viewer, setViewer, layerVisible, currentSplatName, splatFileNames, lodMetaCache, hooks } from './state';
 import type { LayerId } from './state';
-import { showToast, promptText, fmtSize, fmtCount, numOrNull, strOrUndef, numOrUndef } from './ui';
+import { showToast, promptText, fmtSize, fmtCount, numOrNull } from './ui';
 import { formState, FORM_KEY, EXTERNAL_STATE_IDS, restoreFormState } from './form-state';
-import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, refreshCameraViewHint, panelActive, getCameraViewCanvas, persistNow, makeMenu, bootLayout } from './dockview';
+import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, panelActive, getCameraViewCanvas, persistNow, makeMenu, bootLayout } from './dockview';
 import { viewportCallbacks, toggleLayer, removeSplat, clearViewport, SCENE_ITEMS, rebuildSceneList, selectScene } from './viewport';
 import { filesRefreshHooks, afterViewFileHooks, fileActionCallbacks, selectedFiles, fillSelect, refreshFiles, viewFile } from './files-panel';
 import { panelValid, runJob, ensureJobsPolling } from './jobs';
+import { updateGenRows } from './generate-panel';
+import { updateConvertRows, updateInputRows, syncActionRows } from './convert-panel';
+import { updateLodRows, baseLabel } from './lod-panel';
+import { vecFieldIds, writeVecField, updateRenderFrustum } from './render-panel';
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
@@ -155,356 +159,6 @@ $<HTMLButtonElement>('add-sample-generator').onclick = () => {
     void uploadFiles([file]);
 };
 
-// ---------- convert panel ----------
-const lodMode = $<HTMLSelectElement>('lod-mode');
-const lodFileRows = $<HTMLDivElement>('lod-file-rows');
-
-const lodRowSelects = (): HTMLSelectElement[] => [...lodFileRows.querySelectorAll('select')];
-// until lod-panel.ts exists: refill its row selects on every files refresh
-filesRefreshHooks.push(() => { for (const s of lodRowSelects()) fillSelect(s, splatFileNames); });
-
-const relabelLodRows = () => {
-    let n = 1;
-    [...lodFileRows.children].forEach((row) => {
-        const label = row.querySelector('.lod-label');
-        const isEnv = row.querySelector<HTMLInputElement>('.lod-env-box')?.checked;
-        if (label) label.textContent = isEnv ? 'ENV' : `LOD ${n++}`;
-    });
-};
-
-const addLodRow = () => {
-    const row = document.createElement('div');
-    row.className = 'lod-row';
-    const label = document.createElement('span');
-    label.className = 'lod-label';
-    const select = document.createElement('select');
-    select.title = 'File for this detail level — should hold fewer gaussians than the level above it';
-    fillSelect(select, splatFileNames);
-    // default to a file not already used by the input or another row
-    const used = new Set([lodInput.value, ...lodRowSelects().map((s) => s.value)]);
-    const free = splatFileNames.find((n) => !used.has(n));
-    if (free) select.value = free;
-    // optional environment tag: this file becomes an always-resident far/background
-    // shell (-l -1) rather than a distance-streamed level. Only one row may be the
-    // environment, so checking one clears the others.
-    const env = document.createElement('label');
-    env.className = 'lod-env';
-    env.title = 'Environment level (-l -1): keep this file resident at all distances as a far/background shell — skybox, distant cityscape, forest — instead of streaming it by camera distance';
-    const envBox = document.createElement('input');
-    envBox.type = 'checkbox';
-    envBox.className = 'lod-env-box';
-    envBox.onchange = () => {
-        if (envBox.checked) {
-            lodFileRows.querySelectorAll<HTMLInputElement>('.lod-env-box').forEach((b) => { if (b !== envBox) b.checked = false; });
-        }
-        relabelLodRows();
-    };
-    env.append(envBox, document.createTextNode(' Env'));
-    const remove = document.createElement('button');
-    remove.textContent = '✕';
-    remove.title = 'Remove this level';
-    remove.onclick = () => {
-        row.remove();
-        relabelLodRows();
-        updateLodRows(); // combine mode always keeps at least one row
-    };
-    row.append(label, select, env, remove);
-    lodFileRows.appendChild(row);
-    relabelLodRows();
-};
-$<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
-
-const RUN_LABELS: Record<string, string> = {
-    'sog': 'Export → SOG bundle',
-    'sog-unbundled': 'Export → SOG folder',
-    'ply': 'Export → PLY',
-    'compressed-ply': 'Export → Compressed PLY',
-    'spz': 'Export → SPZ',
-    'glb': 'Export → GLB',
-    'csv': 'Export → CSV',
-    'html': 'Export → HTML viewer'
-};
-
-const updateConvertRows = () => {
-    const f = convertFormat.value;
-    const isSog = f === 'sog' || f === 'sog-unbundled' || f === 'html';
-    $('row-sog-encode').classList.toggle('hidden', !isSog);
-    $('row-spz-version').classList.toggle('hidden', f !== 'spz');
-    $('html-rows').classList.toggle('hidden', f !== 'html');
-    if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Export';
-};
-convertFormat.onchange = updateConvertRows;
-
-// LOD panel: decimate vs combine swaps which level controls show
-const updateLodRows = () => {
-    const combine = lodMode.value === 'combine';
-    $('row-lod-levels').classList.toggle('hidden', combine);
-    $('row-lod-files').classList.toggle('hidden', !combine);
-    if (combine && lodFileRows.children.length === 0) addLodRow();
-};
-lodMode.onchange = updateLodRows;
-
-// ----- LOD auto-tune: fill the LOD settings from each source's gaussian count + extents -----
-const lodAutotuneBtn = $<HTMLButtonElement>('lod-autotune');
-const lodAutotunePlan = $('lod-autotune-plan');
-const baseLabel = (n: string): string => n.split('/').pop() ?? n;
-const showLodPlan = (text: string, cls = ''): void => {
-    lodAutotunePlan.textContent = text;
-    lodAutotunePlan.className = `hint ${cls}`.trim();
-};
-
-// rebuild the combine rows from an ordered [{file, env}] list. No persistence
-// needed: convertRun reads the rows live from the DOM at submit time.
-const setCombineRows = (rows: { file: string; env: boolean }[]): void => {
-    lodFileRows.innerHTML = '';
-    for (const r of rows) {
-        addLodRow();
-        const row = lodFileRows.lastElementChild as HTMLElement;
-        (row.querySelector('select') as HTMLSelectElement).value = r.file;
-        (row.querySelector('.lod-env-box') as HTMLInputElement).checked = r.env;
-    }
-    relabelLodRows();
-};
-
-// single input → a decimation ladder sized to the gaussian count (and chunk
-// extent to the scene size). All values clamped to the fields' min/max.
-const autotuneDecimate = async (input: string): Promise<void> => {
-    const s = await api.getStats(input);
-    const maxExtent = Math.max(...s.extents.filter(Number.isFinite));
-    const KEEP = 50, FLOOR = 150_000; // aim the coarsest level near ~150k gaussians
-    let levels = 1;
-    if (Number.isFinite(s.count) && s.count > FLOOR) {
-        levels = Math.min(8, Math.max(2, 1 + Math.ceil(Math.log(FLOOR / s.count) / Math.log(KEEP / 100))));
-    }
-    const chunkExtent = Number.isFinite(maxExtent) ? Math.min(1000, Math.max(1, Math.round(maxExtent / 6))) : 16;
-    const setNum = (id: string, v: number): void => { const el = $<HTMLInputElement>(id); el.value = String(v); el.dispatchEvent(new Event('change', { bubbles: true })); };
-    setNum('lod-levels', levels);
-    setNum('lod-keep', KEEP);
-    setNum('lod-chunk-extent', chunkExtent);
-    const ladder = Array.from({ length: levels }, (_, i) => fmtCount(Math.round(s.count * (KEEP / 100) ** i))).join(' → ');
-    const sceneM = Number.isFinite(maxExtent) ? maxExtent.toFixed(1) : '?';
-    showLodPlan(`Decimate ${fmtCount(s.count)} gaussians into ${levels} level${levels > 1 ? 's' : ''} at ${KEEP}% each: ${ladder}. Chunk extent ${chunkExtent} m (scene ≈ ${sceneM} m).`);
-};
-
-// combine mode → order the level rows by gaussian count (most detail first) and
-// tag a backdrop (much larger extents, or an env/sky-ish name) as the environment.
-const autotuneCombine = async (input: string): Promise<void> => {
-    const candidates = [...new Set(lodRowSelects().map((s) => s.value).filter(Boolean))]
-        .filter((f) => f !== input && !f.toLowerCase().endsWith('.mjs'))
-        .slice(0, 8); // cap the fan-out — each candidate is one CPU summary
-    if (!candidates.length) {
-        showLodPlan('Add the LOD level files first (the Input is LOD 0), then Auto-tune to order them by gaussian count and tag a backdrop as the environment.', 'warn');
-        return;
-    }
-    const [inputStats, ...rowStats] = await Promise.all([api.getStats(input), ...candidates.map((f) => api.getStats(f))]);
-    const entries = candidates.map((file, i) => ({ file, count: rowStats[i].count, ext: Math.max(...rowStats[i].extents.filter(Number.isFinite)) }));
-    const sortedExts = entries.map((e) => e.ext).sort((a, b) => a - b);
-    const medianExt = sortedExts[Math.floor(sortedExts.length / 2)] || 1;
-    const isEnv = (e: { file: string; ext: number }): boolean => /env|background|backdrop|sky/i.test(e.file) || e.ext > medianExt * 2.5;
-    const env = entries.find(isEnv);
-    const detail = entries.filter((e) => e !== env).sort((a, b) => b.count - a.count);
-    setCombineRows([...detail.map((e) => ({ file: e.file, env: false })), ...(env ? [{ file: env.file, env: true }] : [])]);
-    const plan = [`L0 = ${baseLabel(input)} (${fmtCount(inputStats.count)})`,
-        ...detail.map((e, i) => `L${i + 1} = ${baseLabel(e.file)} (${fmtCount(e.count)})`),
-        ...(env ? [`env = ${baseLabel(env.file)}`] : [])].join('  ·  ');
-    const tooBig = entries.find((e) => Number.isFinite(inputStats.count) && e.count > inputStats.count);
-    showLodPlan(plan, tooBig ? 'warn' : '');
-    if (tooBig) showToast(`${baseLabel(tooBig.file)} has more gaussians than the Input — consider making it the Input (LOD 0).`, true);
-};
-
-lodAutotuneBtn.onclick = () => {
-    const input = lodInput.value;
-    if (!input) return showToast('Pick a LOD input first', true);
-    if (input.toLowerCase().endsWith('.mjs')) return showToast('Auto-tune reads existing splats, not generators — convert the generator to a splat first', true);
-    lodAutotuneBtn.disabled = true;
-    const prevLabel = lodAutotuneBtn.textContent;
-    lodAutotuneBtn.textContent = 'Reading stats…';
-    const run = lodMode.value === 'combine' ? autotuneCombine(input) : autotuneDecimate(input);
-    void run.catch((err) => showToast(`Auto-tune failed: ${err}`, true))
-        .finally(() => {
-            lodAutotuneBtn.disabled = false;
-            lodAutotuneBtn.textContent = prevLabel;
-        });
-};
-
-// ----- generator + input-driven rows -----
-// Keys off the selected INPUT (not the output format): a .mjs source → generator
-// params (live sliders if the generator advertises a `params` schema, else a
-// freeform field) + Generate & view; an .lcc / .lcc2 / lod-meta.json source → LOD-select.
-let genSchema: api.GenParam[] | null = null;
-let genSchemaFor = '';
-
-const renderGenSliders = (schema: api.GenParam[]) => {
-    const container = $('gen-sliders');
-    container.innerHTML = '';
-    for (const p of schema) {
-        const row = document.createElement('label');
-        row.className = 'gen-slider';
-        const label = document.createElement('span');
-        label.className = 'gen-slider-label';
-        label.textContent = p.label ?? p.name;
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.dataset.name = p.name;
-        input.min = String(p.min ?? 0);
-        input.max = String(p.max ?? 100);
-        input.step = String(p.step ?? 1);
-        input.value = String(p.default ?? p.min ?? 0);
-        const val = document.createElement('span');
-        val.className = 'gen-slider-val';
-        val.textContent = input.value;
-        input.oninput = () => { val.textContent = input.value; };
-        input.onchange = scheduleGenPreview; // regenerate on release
-        row.append(label, input, val);
-        container.appendChild(row);
-    }
-};
-
-const currentGenParams = (): string => {
-    if (genSchema && genSchemaFor === genInput.value) {
-        return [...$('gen-sliders').querySelectorAll<HTMLInputElement>('input[type=range]')]
-            .map((i) => `${i.dataset.name}=${i.value}`).join(',');
-    }
-    return $<HTMLInputElement>('convert-params').value.trim();
-};
-
-const updateInputRows = (): void => {
-    const lower = convertInput.value.toLowerCase();
-    $('row-lod-select').classList.toggle('hidden', !(lower.endsWith('.lcc') || lower.endsWith('.lcc2') || lower.endsWith('lod-meta.json')));
-};
-convertInput.onchange = updateInputRows;
-filesRefreshHooks.push(updateInputRows); // until convert-panel.ts exists
-
-// Generate panel: schema-driven sliders (or a freeform params field) for the
-// selected .mjs generator
-const updateGenRows = async (): Promise<void> => {
-    const input = genInput.value;
-    if (!input.toLowerCase().endsWith('.mjs')) {
-        $('row-gen-params').classList.add('hidden');
-        $('row-gen-sliders').classList.add('hidden');
-        genSchema = null; genSchemaFor = '';
-        return;
-    }
-    if (genSchemaFor !== input) {
-        genSchemaFor = input;
-        genSchema = await api.getGeneratorParams(input).catch(() => null);
-        if (genSchema) renderGenSliders(genSchema);
-    }
-    const hasSchema = Array.isArray(genSchema) && genSchema.length > 0;
-    $('row-gen-sliders').classList.toggle('hidden', !hasSchema);
-    $('row-gen-params').classList.toggle('hidden', hasSchema);
-};
-genInput.onchange = () => void updateGenRows();
-
-// populate the device dropdowns with GPU adapters (-L), then reapply any saved choice
-void api.listGpus().then((gpus) => {
-    for (const id of ['convert-device', 'lod-device', 'render-device']) {
-        const sel = $<HTMLSelectElement>(id);
-        for (const g of gpus) {
-            const opt = document.createElement('option');
-            opt.value = String(g.index);
-            opt.textContent = `GPU ${g.index}: ${g.name}`;
-            sel.appendChild(opt);
-        }
-        const want = formState[id];
-        if (typeof want === 'string' && [...sel.options].some((o) => o.value === want)) sel.value = want;
-    }
-}).catch(() => { /* device list is best-effort */ });
-
-// per-axis triplet fields <-> the "x,y,z" strings the CLI/API contract uses
-const vecFieldIds = (base: string): string[] => [`${base}-x`, `${base}-y`, `${base}-z`];
-const readVecField = (base: string): string => vecFieldIds(base).map((id) => String(Number($<HTMLInputElement>(id).value) || 0)).join(',');
-const writeVecField = (base: string, csv: string): void => {
-    const parts = csv.split(',');
-    vecFieldIds(base).forEach((id, i) => { $<HTMLInputElement>(id).value = String(Number(parts[i]) || 0); });
-};
-
-// WebP: grab the viewer camera, converted to CLI render space
-$<HTMLButtonElement>('webp-from-viewer').onclick = () => {
-    if (!viewer) return showToast('Viewer is still starting up', true);
-    const pose = viewer.cameraRenderPose();
-    writeVecField('webp-camera', pose.camera);
-    writeVecField('webp-lookat', pose.lookAt);
-    updateRenderFrustum();
-    showToast('Camera set from viewer — adjust if needed');
-};
-
-const webpImageOptions = (): api.ImageOptions => ({
-    camera: readVecField('webp-camera'),
-    lookAt: readVecField('webp-lookat'),
-    fov: numOrUndef('webp-fov'),
-    resolution: strOrUndef('webp-resolution'),
-    background: strOrUndef('webp-background'),
-    projection: $<HTMLSelectElement>('webp-projection').value as 'pinhole' | 'equirect',
-    fStop: numOrUndef('webp-fstop'),
-    focusDistance: numOrUndef('webp-focus'),
-    cameraEnd: strOrUndef('webp-cameraend'),
-    shutter: numOrUndef('webp-shutter'),
-    motionSamples: numOrUndef('webp-motionsamples')
-});
-
-// the Render panel is the shown tab in its group (gates the render frustum + camera view)
-const renderActive = (): boolean => panelActive('panel-render');
-
-// show the WebP render camera as a frustum in the viewport while the Render tab is active
-const updateRenderFrustum = (): void => {
-    if (!viewer) return;
-    const m = /^(\d+)x(\d+)$/i.exec($<HTMLInputElement>('webp-resolution').value.trim());
-    const aspect = m ? Number(m[1]) / Number(m[2]) : 16 / 9;
-    const equirect = $<HTMLSelectElement>('webp-projection').value === 'equirect';
-    viewer.setRenderFrustum(
-        readVecField('webp-camera'),
-        readVecField('webp-lookat'),
-        Number($<HTMLInputElement>('webp-fov').value),
-        aspect,
-        renderActive() && !equirect
-    );
-    refreshCameraViewHint(); // show/hide the Camera-view placeholder with the Render tab
-};
-for (const id of [...vecFieldIds('webp-camera'), ...vecFieldIds('webp-lookat'), 'webp-fov', 'webp-resolution', 'webp-projection']) {
-    $(id).addEventListener('input', updateRenderFrustum);
-    $(id).addEventListener('change', updateRenderFrustum);
-}
-// the render-camera scene item appears/disappears with the projection
-$('webp-projection').addEventListener('change', () => rebuildSceneList());
-
-let genPreviewBusy = false;
-const doGenerateView = (): void => {
-    const input = genInput.value;
-    if (!input.toLowerCase().endsWith('.mjs')) { showToast('Pick a .mjs generator in the Generate tab', true); return; }
-    if (genPreviewBusy) { scheduleGenPreview(); return; } // coalesce slider spam into one queued job
-    genPreviewBusy = true;
-    void runJob(() => api.startConvert({ input, format: 'ply', options: { params: currentGenParams() } }), generateViewBtn)
-        .finally(() => { genPreviewBusy = false; });
-};
-let genPreviewTimer: ReturnType<typeof setTimeout> | undefined;
-function scheduleGenPreview(): void {
-    clearTimeout(genPreviewTimer);
-    genPreviewTimer = setTimeout(doGenerateView, 250);
-}
-generateViewBtn.onclick = doGenerateView;
-// until generate-panel.ts exists: the files context menu's Generate & view action
-fileActionCallbacks.generateView = () => void updateGenRows().then(() => generateViewBtn.click());
-
-restoreFormState();
-updateConvertRows();
-updateLodRows();
-updateInputRows();
-void updateGenRows();
-
-// reveal each optional filter's inputs only when its checkbox is on
-const ACTION_TOGGLES: [string, string][] = [
-    ['filter-value-on', 'filter-value-rows'],
-    ['filter-floaters-on', 'filter-floaters-rows'],
-    ['region-box-on', 'region-box-rows'],
-    ['region-sphere-on', 'region-sphere-rows']
-];
-const syncActionRows = () => {
-    for (const [cb, rows] of ACTION_TOGGLES) $(rows).classList.toggle('hidden', !$<HTMLInputElement>(cb).checked);
-};
-for (const [cb] of ACTION_TOGGLES) $(cb).addEventListener('change', syncActionRows);
-syncActionRows();
-
 // ---------- live viewport preview (Edit transforms + region gizmos) ----------
 const tfX = $<HTMLInputElement>('tf-translate-x'), tfY = $<HTMLInputElement>('tf-translate-y'), tfZ = $<HTMLInputElement>('tf-translate-z');
 const rfX = $<HTMLInputElement>('tf-rotate-x'), rfY = $<HTMLInputElement>('tf-rotate-y'), rfZ = $<HTMLInputElement>('tf-rotate-z');
@@ -607,6 +261,9 @@ carveRemoveBtn.onclick = () => {
 };
 
 // ---------- collision region box + sphere (viewport <-> Collision-panel fields) ----------
+// region-pair row toggles, before the seeding listeners (today's order); this
+// registration moves into region-panel.ts with the rest of the section
+for (const cb of ['region-box-on', 'region-sphere-on']) $(cb).addEventListener('change', syncActionRows);
 const regMinX = $<HTMLInputElement>('region-min-x'), regMinY = $<HTMLInputElement>('region-min-y'), regMinZ = $<HTMLInputElement>('region-min-z');
 const regMaxX = $<HTMLInputElement>('region-max-x'), regMaxY = $<HTMLInputElement>('region-max-y'), regMaxZ = $<HTMLInputElement>('region-max-z');
 const regSphX = $<HTMLInputElement>('region-sphere-x'), regSphY = $<HTMLInputElement>('region-sphere-y'), regSphZ = $<HTMLInputElement>('region-sphere-z'), regSphR = $<HTMLInputElement>('region-sphere-r');
@@ -729,104 +386,6 @@ const editTransformOptions = () => ({
     rotate: [Number(rfX.value), Number(rfY.value), Number(rfZ.value)] as [number, number, number],
     scale: Number(tfScaleEl.value)
 });
-
-// the Convert-panel encode-time filter fields, applied on the Convert run
-const convertFilterOptions = () => ({
-    filterHarmonics: $<HTMLSelectElement>('convert-harmonics').value,
-    filterValue: $<HTMLInputElement>('filter-value-on').checked
-        ? { column: $<HTMLSelectElement>('fv-column').value, comparator: $<HTMLSelectElement>('fv-cmp').value, value: Number($<HTMLInputElement>('fv-value').value) }
-        : undefined,
-    filterFloaters: $<HTMLInputElement>('filter-floaters-on').checked
-        ? { size: $<HTMLInputElement>('ff-size').value, opacity: $<HTMLInputElement>('ff-op').value, min: $<HTMLInputElement>('ff-min').value }
-        : undefined,
-    mortonOrder: $<HTMLInputElement>('convert-morton').checked
-});
-
-convertRun.onclick = () => {
-    const input = convertInput.value;
-    if (!input) return showToast('Pick an input file first', true);
-    if (!panelValid('panel-convert')) return;
-    void runJob(() => api.startConvert({
-        input,
-        format: convertFormat.value,
-        options: {
-            iterations: Number($<HTMLInputElement>('convert-iterations').value),
-            maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
-            spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
-            decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
-            scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
-            filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
-            device: $<HTMLSelectElement>('convert-device').value,
-            verbose: $<HTMLInputElement>('convert-verbose').checked,
-            unbundled: $<HTMLInputElement>('convert-unbundled').checked,
-            viewerSettings: $<HTMLInputElement>('convert-viewer-settings').value.trim(),
-            lodSelect: $<HTMLInputElement>('convert-lod-select').value.trim(),
-            ...convertFilterOptions(),
-            params: currentGenParams()
-        }
-    }), convertRun, $<HTMLInputElement>('convert-autoload').checked);
-};
-
-// ---------- LOD panel: bake a streamed multi-LOD SOG ----------
-lodRun.onclick = () => {
-    const input = lodInput.value;
-    if (!input) return showToast('Pick a LOD input first', true);
-    if (!panelValid('panel-lod')) return;
-    let lodFiles: string[] | undefined;
-    let lodEnvFlags: boolean[] | undefined;
-    if (lodMode.value === 'combine') {
-        // build files + env flags from the same row order so they stay aligned 1:1
-        const picked = [...lodFileRows.children]
-            .map((r) => ({
-                file: r.querySelector<HTMLSelectElement>('select')!.value,
-                env: !!r.querySelector<HTMLInputElement>('.lod-env-box')?.checked
-            }))
-            .filter((p) => p.file);
-        lodFiles = picked.map((p) => p.file);
-        lodEnvFlags = picked.map((p) => p.env);
-        if (lodFiles.length === 0) {
-            return showToast('Add at least one LOD level file, or switch LOD source to decimate', true);
-        }
-        if (lodEnvFlags.every((e) => e)) {
-            return showToast('Mark at least one row as a normal (non-environment) LOD level', true);
-        }
-        const chain = [input, ...lodFiles];
-        if (new Set(chain).size !== chain.length) {
-            return showToast('Input and each LOD level must be different files', true);
-        }
-    }
-    void runJob(() => api.startConvert({
-        input,
-        format: 'lod',
-        options: {
-            iterations: Number($<HTMLInputElement>('lod-iterations').value),
-            maxWorkers: Number($<HTMLInputElement>('lod-max-workers').value),
-            device: $<HTMLSelectElement>('lod-device').value,
-            lodLevels: Number($<HTMLInputElement>('lod-levels').value),
-            lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
-            lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
-            lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
-            scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
-            lodFiles,
-            lodEnvFlags
-        }
-    }), lodRun, $<HTMLInputElement>('lod-autoload').checked);
-};
-
-// ---------- Render panel: render a WebP image ----------
-renderRun.onclick = () => {
-    const input = renderInput.value;
-    if (!input) return showToast('Pick a file to render first', true);
-    if (!panelValid('panel-render')) return;
-    void runJob(() => api.startConvert({
-        input,
-        format: 'webp',
-        options: {
-            device: $<HTMLSelectElement>('render-device').value,
-            image: webpImageOptions()
-        }
-    }), renderRun);
-};
 
 // ---------- linked group: apply the Convert transforms/filters to every member ----------
 // Edit on a proxy (the loaded splat / Convert input), then fan the same transform +
@@ -1552,6 +1111,33 @@ $<HTMLButtonElement>('project-new').onclick = async () => {
 // Collision tab being visible) or the Scene tab is shown; the render frustum +
 // camera-view preview are gated on the Render tab being the active one
 dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); });
+
+// re-apply persisted form values, then re-run the row/label syncs that already
+// fired at panel-module eval (i.e. before restore) so they reflect restored values
+restoreFormState();
+updateConvertRows();
+updateLodRows();
+updateInputRows();
+void updateGenRows();
+syncActionRows();
+syncCollisionRows();
+syncCarveBtn();
+
+// populate the device dropdowns with GPU adapters (-L), then reapply any saved choice
+void api.listGpus().then((gpus) => {
+    for (const id of ['convert-device', 'lod-device', 'render-device']) {
+        const sel = $<HTMLSelectElement>(id);
+        for (const g of gpus) {
+            const opt = document.createElement('option');
+            opt.value = String(g.index);
+            opt.textContent = `GPU ${g.index}: ${g.name}`;
+            sel.appendChild(opt);
+        }
+        const want = formState[id];
+        if (typeof want === 'string' && [...sel.options].some((o) => o.value === want)) sel.value = want;
+    }
+}).catch(() => { /* device list is best-effort */ });
+
 void bootLayout();
 // projects (and the active project's files) load first; renderer comes up in parallel
 void loadProjects(localStorage.getItem(PROJECT_KEY) ?? undefined)
