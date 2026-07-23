@@ -7,7 +7,7 @@ import { viewer, setViewer, layerVisible, currentSplatName, lodMetaCache, hooks 
 import type { LayerId } from './state';
 import { showToast, promptText } from './ui';
 import { formState, restoreFormState } from './form-state';
-import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, getCameraViewCanvas, persistNow, makeMenu, bootLayout } from './dockview';
+import { dock, WINDOWS, winById, openWindow, closeWindow, applyDefaultLayout, reconcilePanelTitles, getCameraViewCanvas, persistNow, bootLayout } from './dockview';
 import { toggleLayer, clearViewport, SCENE_ITEMS, rebuildSceneList, selectScene } from './viewport';
 import { refreshFiles, viewFile } from './files-panel';
 import { ensureJobsPolling } from './jobs';
@@ -22,160 +22,14 @@ import './upload';
 import { loadGroup } from './groups';
 import './analyze-panel';
 import { canUndo, canRedo, doUndo, doRedo, clearUndoHistory, enableUndo, isUndoApplying } from './undo';
+import type { DesktopApi } from './desktop-types';
+import { isSettingsOpen, openSettings, closeSettings } from './settings';
+import './menubar';
 import * as api from './api';
 import { SplatViewer } from './viewer';
 import type { SelId } from './viewer';
 import { startMcpBridge, editorError } from './mcp-bridge';
-import { initThemeSettings } from './theme';
 import type { DockviewApi } from 'dockview-core';
-
-// Settings ▸ About: component versions (PlayCanvas from the bundled engine, app + splat-transform from the server)
-void (async () => {
-    const set = (id: string, v: string | null | undefined) => { const el = $(id); el.textContent = v ? `v${v}` : 'unknown'; };
-    set('ver-playcanvas', SplatViewer.engineVersion);
-    try { const v = await api.getVersions(); set('ver-app', v.app); set('ver-splat-transform', v.splatTransform); }
-    catch { set('ver-app', null); set('ver-splat-transform', null); }
-})();
-
-function buildMenuBar(): void {
-    const bar = $('menubar');
-    bar.innerHTML = '';
-    bar.append(
-        makeMenu('Edit', () => [
-            { label: 'Undo  (Ctrl+Z)', disabled: !canUndo(), onClick: doUndo },
-            { label: 'Redo  (Ctrl+Y)', disabled: !canRedo(), onClick: doRedo }
-        ]),
-        makeMenu('Window', () => [
-            ...WINDOWS.map((w) => ({
-                label: w.title,
-                checked: !!dock.getPanel(w.id),
-                onClick: () => { if (dock.getPanel(w.id)) { if (w.closable) closeWindow(w); else openWindow(w); } else openWindow(w); }
-            })),
-            { label: 'Settings…', checked: settingsOpen(), onClick: () => { if (settingsOpen()) closeSettings(); else openSettings(); } }
-        ]),
-        makeMenu('Layout', () => [
-            { label: 'Reset to default', onClick: () => { applyDefaultLayout(); persistNow(); } },
-            { label: 'Save layout', onClick: persistNow }
-        ])
-    );
-}
-buildMenuBar();
-
-// ---------- settings dialog ----------
-const settingsBackdrop = $<HTMLDivElement>('settings-backdrop');
-function settingsOpen(): boolean { return !settingsBackdrop.classList.contains('hidden'); }
-function showSettingsPage(page: string): void {
-    for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-nav .settings-nav-item')) {
-        b.classList.toggle('active', b.dataset.page === page);
-    }
-    for (const p of document.querySelectorAll<HTMLElement>('.settings-page')) {
-        p.classList.toggle('hidden', p.dataset.page !== page);
-    }
-}
-function openSettings(page?: string): void {
-    settingsBackdrop.classList.remove('hidden');
-    if (page) showSettingsPage(page);
-}
-function closeSettings(): void { settingsBackdrop.classList.add('hidden'); }
-for (const b of document.querySelectorAll<HTMLButtonElement>('#settings-nav .settings-nav-item')) {
-    b.onclick = () => showSettingsPage(b.dataset.page ?? 'appearance');
-}
-$<HTMLButtonElement>('settings-close').onclick = closeSettings;
-settingsBackdrop.addEventListener('pointerdown', (e) => { if (e.target === settingsBackdrop) closeSettings(); });
-// promptText's capture-phase Escape handler wins while a prompt is up
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settingsOpen()) closeSettings(); });
-initThemeSettings({ promptText, showToast });
-(window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // capture harness handle (scripts/capture-docs.mjs)
-
-// the viewport toolbar's ⚙ opens the settings dialog
-$<HTMLButtonElement>('open-settings').onclick = () => openSettings();
-
-// ---------- Settings ▸ Updates + bottom-right status widget ----------
-// The Electron preload bridge (electron/preload.cjs); absent in the browser dev
-// build. Update members are optional so an older shell degrades gracefully.
-interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
-interface DesktopApi {
-    pickFolder(defaultPath?: string): Promise<string | null>;
-    persistWorkspace(path: string): Promise<void>;
-    openWorkspace(): Promise<void>;
-    onChooseWorkspace(cb: () => void): void;
-    checkForUpdates?: () => Promise<void>;
-    getUpdateChannel?: () => Promise<'stable' | 'beta'>;
-    setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
-    getUpdateStatus?: () => Promise<UpdateStatus>;
-    onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
-    downloadUpdate?: () => Promise<void>;
-    getUpdateAuto?: () => Promise<boolean>;
-    setUpdateAuto?: (on: boolean) => Promise<boolean>;
-}
-
-// Only meaningful in the packaged desktop app; drop both in the browser dev build.
-void (async () => {
-    const bridge = (window as unknown as { desktop?: DesktopApi }).desktop;
-    const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
-    const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
-    const widget = $<HTMLDivElement>('update-widget');
-    if (!bridge?.getUpdateChannel) { navItem?.remove(); page?.remove(); widget.remove(); return; }
-
-    const channelSel = $<HTMLSelectElement>('update-channel');
-    const checkBtn = $<HTMLButtonElement>('check-updates');
-    const downloadBtn = $<HTMLButtonElement>('download-update');
-    const autoChk = $<HTMLInputElement>('update-auto');
-    const statusEl = $<HTMLSpanElement>('update-status');
-    const statusText = $<HTMLSpanElement>('update-status-text');
-    const widgetText = $<HTMLSpanElement>('update-widget-text');
-    const widgetBar = $<HTMLSpanElement>('update-widget-bar');
-    const widgetFill = $<HTMLSpanElement>('update-widget-fill');
-    const widgetDownload = $<HTMLButtonElement>('update-widget-download');
-    try { channelSel.value = await bridge.getUpdateChannel(); } catch { /* keep default */ }
-    try { autoChk.checked = await bridge.getUpdateAuto?.() ?? true; } catch { /* keep default */ }
-
-    // settings status line + bottom-right widget both mirror main-process updater
-    // state; checks/downloads keep running with the settings dialog closed
-    const showStatus = (s: UpdateStatus): void => {
-        const busy = s.phase === 'checking' || s.phase === 'downloading';
-        const pct = Math.round(s.percent ?? 0);
-        const text =
-            s.phase === 'checking' ? 'Checking for updates…' :
-            s.phase === 'available' ? `${s.version} available` :
-            s.phase === 'downloading' ? `Downloading ${s.version ?? 'update'}… ${pct}%` :
-            s.phase === 'ready' ? `${s.version} downloaded — restart to install` :
-            s.phase === 'up-to-date' ? `Up to date (${s.version}, ${s.channel})` :
-            s.phase === 'error' ? 'Check failed — see error dialog' : '';
-        statusEl.classList.toggle('hidden', !text);
-        statusEl.classList.toggle('busy', busy);
-        statusEl.classList.toggle('error', s.phase === 'error');
-        statusText.textContent = text;
-        checkBtn.disabled = busy;
-        channelSel.disabled = busy;
-        downloadBtn.classList.toggle('hidden', s.phase !== 'available');
-
-        const widgetLabel =
-            s.phase === 'checking' ? 'Checking for updates…' :
-            s.phase === 'available' ? `⬇ ${s.version} available` :
-            s.phase === 'downloading' ? `${pct}%` :
-            s.phase === 'ready' ? `↻ Restart to update` :
-            s.phase === 'up-to-date' ? '✓ Up to date' :
-            s.phase === 'error' ? '⚠ Update failed' : '';
-        widget.classList.toggle('hidden', !widgetLabel);
-        widget.classList.toggle('busy', s.phase === 'checking');
-        widget.classList.toggle('error', s.phase === 'error');
-        widgetText.textContent = widgetLabel;
-        widgetBar.classList.toggle('hidden', s.phase !== 'downloading');
-        widgetFill.style.width = `${pct}%`;
-        widgetDownload.classList.toggle('hidden', s.phase !== 'available');
-    };
-    bridge.onUpdateStatus?.(showStatus);
-    try { showStatus(await bridge.getUpdateStatus?.() ?? { phase: 'idle' }); } catch { /* keep hidden */ }
-
-    channelSel.addEventListener('change', () => { void bridge.setUpdateChannel?.(channelSel.value as 'stable' | 'beta'); });
-    checkBtn.addEventListener('click', () => { void bridge.checkForUpdates?.(); });
-    autoChk.addEventListener('change', () => { void bridge.setUpdateAuto?.(autoChk.checked); });
-    downloadBtn.addEventListener('click', () => { void bridge.downloadUpdate?.(); });
-    widgetDownload.addEventListener('click', () => { void bridge.downloadUpdate?.(); });
-    // the widget body always leads to the settings page, whatever the state
-    $<HTMLButtonElement>('update-widget-main').addEventListener('click', () => openSettings('updates'));
-})();
 
 // ---------- projects ----------
 const PROJECT_KEY = 'splat-studio.project';
@@ -435,7 +289,7 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
     select_item: ({ id }) => { selectScene((id == null ? 'none' : String(id)) as SelId); return { selection: viewer?.selection ?? 'none' }; },
     get_editor_state: () => {
         const activePanels = WINDOWS.map((w) => w.id).filter((id) => { const p = dock.getPanel(id); return !!p && p.group.activePanel?.id === id; });
-        if (settingsOpen()) activePanels.push('panel-settings');
+        if (isSettingsOpen()) activePanels.push('panel-settings');
         return {
             project: projectSelect.value || null,
             loadedSplat: currentSplatName,
@@ -594,21 +448,6 @@ const wsOpenBtn = $<HTMLButtonElement>('ws-open');
 if (desktop?.openWorkspace) { wsOpenBtn.hidden = false; wsOpenBtn.onclick = () => void desktop.openWorkspace(); }
 desktop?.onChooseWorkspace(() => void chooseWorkspaceFolder());
 void api.getWorkspace().then((ws) => showWorkspace(ws.path)).catch(() => { /* server not up yet */ });
-
-// ---------- Settings ▸ Advanced: decimation scratch dir (--scratch-dir) ----------
-const scratchDirEl = $<HTMLInputElement>('scratch-dir');
-const setScratchDir = (v: string): void => {
-    scratchDirEl.value = v;
-    scratchDirEl.dispatchEvent(new Event('change', { bubbles: true })); // persist via formState
-};
-const chooseScratchDirFolder = async (): Promise<void> => {
-    const target = desktop?.pickFolder
-        ? await desktop.pickFolder(scratchDirEl.value || undefined)
-        : await promptText('Scratch directory (absolute path)', { value: scratchDirEl.value, okLabel: 'Set' });
-    if (target) setScratchDir(target);
-};
-$<HTMLButtonElement>('scratch-dir-change').onclick = () => void chooseScratchDirFolder();
-$<HTMLButtonElement>('scratch-dir-clear').onclick = () => setScratchDir('');
 
 // ---------- MCP consent toggle (Settings) + bridge startup ----------
 const mcpControl = $<HTMLInputElement>('mcp-control');
