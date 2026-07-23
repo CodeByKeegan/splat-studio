@@ -673,6 +673,7 @@ const fetchLodMeta = async (f: api.FileEntry): Promise<api.LodBuildMeta | null> 
     const key = `${f.name}@${f.mtime}`;
     const hit = lodMetaCache.get(key);
     if (hit !== undefined) return hit;
+    // raw fetch on purpose: this reads a workspace file over /files, not an API route
     const res = await fetch(api.fileUrl(f.name.replace(/lod-meta\.json$/, 'build-meta.json')));
     if (res.status === 404) { lodMetaCache.set(key, null); return null; }
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -2742,19 +2743,27 @@ initThemeSettings({ promptText, showToast });
 $<HTMLButtonElement>('open-settings').onclick = () => openSettings();
 
 // ---------- Settings ▸ Updates + bottom-right status widget ----------
+// The Electron preload bridge (electron/preload.cjs); absent in the browser dev
+// build. Update members are optional so an older shell degrades gracefully.
+interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
+interface DesktopApi {
+    pickFolder(defaultPath?: string): Promise<string | null>;
+    persistWorkspace(path: string): Promise<void>;
+    openWorkspace(): Promise<void>;
+    onChooseWorkspace(cb: () => void): void;
+    checkForUpdates?: () => Promise<void>;
+    getUpdateChannel?: () => Promise<'stable' | 'beta'>;
+    setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
+    getUpdateStatus?: () => Promise<UpdateStatus>;
+    onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
+    downloadUpdate?: () => Promise<void>;
+    getUpdateAuto?: () => Promise<boolean>;
+    setUpdateAuto?: (on: boolean) => Promise<boolean>;
+}
+
 // Only meaningful in the packaged desktop app; drop both in the browser dev build.
 void (async () => {
-    interface UpdateStatus { phase: string; version?: string; percent?: number; channel?: string; message?: string }
-    const bridge = (window as unknown as { desktop?: {
-        checkForUpdates?: () => Promise<void>;
-        getUpdateChannel?: () => Promise<'stable' | 'beta'>;
-        setUpdateChannel?: (c: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
-        getUpdateStatus?: () => Promise<UpdateStatus>;
-        onUpdateStatus?: (cb: (s: UpdateStatus) => void) => void;
-        downloadUpdate?: () => Promise<void>;
-        getUpdateAuto?: () => Promise<boolean>;
-        setUpdateAuto?: (on: boolean) => Promise<boolean>;
-    } }).desktop;
+    const bridge = (window as unknown as { desktop?: DesktopApi }).desktop;
     const navItem = document.querySelector<HTMLButtonElement>('#settings-nav .settings-nav-item[data-page="updates"]');
     const page = document.querySelector<HTMLElement>('.settings-page[data-page="updates"]');
     const widget = $<HTMLDivElement>('update-widget');
@@ -3165,12 +3174,6 @@ const mcpHandlers: Record<string, (p: Record<string, unknown>) => unknown> = {
 // ---------- workspace folder (Settings) ----------
 // The native folder picker lives in Electron (preload -> main); the actual switch
 // goes through POST /api/workspace so it works headlessly (MCP) and in the browser.
-interface DesktopApi {
-    pickFolder(defaultPath?: string): Promise<string | null>;
-    persistWorkspace(path: string): Promise<void>;
-    openWorkspace(): Promise<void>;
-    onChooseWorkspace(cb: () => void): void;
-}
 const desktop = (window as unknown as { desktop?: DesktopApi }).desktop;
 let currentWorkspace = '';
 let wsSwitching = false;
@@ -3249,14 +3252,14 @@ const updateMcpStatus = (connected: boolean): void => {
     mcpStatusEl.textContent = `Editor bridge: ${connected ? 'connected' : 'disconnected'} · control ${mcpControl.checked ? 'ON' : 'off'}`;
 };
 mcpControl.onchange = () => {
-    void fetch('/api/editor/control', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: mcpControl.checked }) })
+    void api.setEditorControl(mcpControl.checked)
         .then(() => updateMcpStatus(mcpConnected)) // re-render the label; keep the real connection state
         .catch(() => showToast('Failed to update MCP consent', true));
 };
 // reconcile the consent checkbox + label with the server's enforced state — also
 // re-run after a workspace switch (consent is per-workspace and resets on switch)
 const syncEditorStatus = (): Promise<void> =>
-    fetch('/api/editor/status').then((r) => r.json()).then((s) => { mcpControl.checked = !!s.controlEnabled; updateMcpStatus(!!s.connected); }).catch(() => { /* server not up yet */ });
+    api.getEditorStatus().then((s) => { mcpControl.checked = s.controlEnabled; updateMcpStatus(s.connected); }).catch(() => { /* server not up yet */ });
 void syncEditorStatus();
 
 startMcpBridge({

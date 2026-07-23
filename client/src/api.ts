@@ -169,10 +169,33 @@ export interface CollisionRequest {
     };
 }
 
+// parse a JSON response, throwing the server's {error} message on non-2xx.
+// Trusts the declared return type of each wrapper — no runtime validation.
 const jsonOrThrow = async (res: Response) => {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
+};
+
+/** MCP editor binding + per-workspace consent, from /api/editor/status. */
+export interface EditorStatus {
+    connected: boolean;
+    editorProject: string | null;
+    appVersion: string | null;
+    lastSeenMs: number | null;
+    port: number;
+    controlEnabled: boolean;
+}
+
+export const getEditorStatus = async (): Promise<EditorStatus> =>
+    jsonOrThrow(await fetch('/api/editor/status'));
+
+export const setEditorControl = async (enabled: boolean): Promise<void> => {
+    await jsonOrThrow(await fetch('/api/editor/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+    }));
 };
 
 // the active project scopes every file/job call; set by the UI on project switch

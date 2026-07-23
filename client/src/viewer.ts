@@ -74,7 +74,10 @@ const lineSphereMesh = (device: pc.GraphicsDevice): pc.Mesh => {
 export class SplatViewer {
     private app!: pc.AppBase;
     private camera!: pc.Entity;
-    private controls: any;
+    // Engine-internal casts (undocumented PlayCanvas surfaces) are tagged
+    // "engine-internal:" at each site — grep for that tag when bumping playcanvas;
+    // every site guards so a renamed private fails soft, not with a crash.
+    private controls!: CameraControls;
     private sceneRoot!: pc.Entity;
     private collisionHolder!: pc.Entity;
     private wireMaterial!: pc.StandardMaterial;
@@ -206,6 +209,7 @@ export class SplatViewer {
     private regionDrag: RegionDrag = null;
 
     /** Bundled PlayCanvas engine version (e.g. "2.20.0"), for the Settings/About section. */
+    // engine-internal: pc.version is not in the public typings
     static get engineVersion(): string { return (pc as unknown as { version?: string }).version ?? ''; }
 
     static async create(canvas: HTMLCanvasElement): Promise<SplatViewer> {
@@ -281,7 +285,7 @@ export class SplatViewer {
                 focusPoint: new pc.Vec3(0, 0.8, 0),
                 zoomRange: new pc.Vec2(0.1, 100)
             }
-        });
+        }) as unknown as CameraControls; // create() types as ScriptType | null
         app.root.addChild(this.camera);
 
         // CameraControls only wheel-zooms in orbit mode; in fly mode feed the
@@ -291,8 +295,10 @@ export class SplatViewer {
         canvas.addEventListener('wheel', (e: WheelEvent) => {
             e.preventDefault();
             if (!this.controls.enabled || this.controls.enableOrbit) return;
-            const fly = (this.controls as any)._flyController; // fails safe if renamed
-            if ((this.controls as any)._mode !== 'fly' || typeof fly?.update !== 'function') return;
+            // engine-internal: _flyController/_mode are private; fails safe if renamed
+            const c = this.controls as unknown as { _mode?: string; _flyController?: { update?: (f: unknown, dt: number) => void } };
+            const fly = c._flyController;
+            if (c._mode !== 'fly' || typeof fly?.update !== 'function') return;
             const radius = this.sceneBounds()?.radius ?? 5;
             const notches = (e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY) / 100;
             const speed = e.shiftKey ? 0.2 : e.ctrlKey ? 0.01 : 0.05;
@@ -1024,6 +1030,7 @@ export class SplatViewer {
 
     /** Cache the splat's gaussian centres (entity-local) for click-picking + occlusion. */
     private buildCenterCaches(asset: pc.Asset): void {
+        // engine-internal: gsplat resource _centers; null-guarded below
         const res = asset.resource as unknown as { _centers?: Float32Array };
         const centers = res?._centers ?? null;
         this.pickCenters = centers;
@@ -1232,6 +1239,7 @@ export class SplatViewer {
     }
 
     private drawLine3(a: pc.Vec3, b: pc.Vec3, color: pc.Color): void {
+        // engine-internal: AppBase.drawLine exists at runtime but not in the typings
         (this.app as unknown as { drawLine: (a: pc.Vec3, b: pc.Vec3, c: pc.Color, d?: boolean) => void })
             .drawLine(a, b, color, false);
     }
@@ -1755,6 +1763,7 @@ export class SplatViewer {
             return best;
         };
         const gizmoHover = (): boolean => {
+            // engine-internal: gizmo _hoverAxis; falsy if renamed (drag handles win)
             const hover = (g: pc.TranslateGizmo) => !!(g as unknown as { _hoverAxis?: string })._hoverAxis;
             return hover(this.regionGizmo) || hover(this.cropGizmo);
         };
