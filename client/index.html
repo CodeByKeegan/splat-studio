@@ -280,6 +280,7 @@
                         <select id="lod-input"></select>
                         <span class="lod-count" title="Gaussian count"></span>
                     </div>
+                    <input type="text" id="lod-percents" class="hidden" aria-hidden="true" title="Per-level keep percentages (state carrier for the editable ladder pills)" />
                     <div class="field hidden" id="row-lod-files" title="Each row is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick Env to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
                         <div id="lod-file-rows"></div>
                         <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
@@ -291,9 +292,9 @@
 
                 <button type="button" class="adv-toggle" data-adv-panel="panel-lod">▸ Advanced options</button>
                 <div class="adv-body hidden" id="panel-lod-adv">
+                <button type="button" id="lod-autotune" title="Read LOD 0's gaussian count + extents (a quick CPU summary) and size the whole bake to match: in decimated mode the level ladder + chunk extent, in existing-files mode the row order (by detail) + an Env backdrop tag">⚡ Auto-tune from splat stats</button>
                 <div class="sec" title="Tune the decimation ladder the presets set — how many levels, and how much each keeps">
                     <div class="sec-head">Decimate ladder</div>
-                    <button type="button" id="lod-autotune" title="Read LOD 0's gaussian count + extents (a quick CPU summary) and fill the levels + chunk settings to match — in existing-files mode it instead orders the level rows by detail and tags a backdrop as Env">⚡ Auto-tune from splat stats</button>
                     <div class="field-row" id="row-lod-levels">
                     <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
                         <span>LOD levels</span>

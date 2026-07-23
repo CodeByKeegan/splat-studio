@@ -274,7 +274,12 @@ const buildLodCombine = ({ input, options, args, output, lodDir, settings, build
 // each level to a temp .ply in a sibling <lod>-src dir, then combine the raw
 // input (level 0) with those pre-authored levels in one invocation.
 const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buildMetaName }) => {
-    const levels = Math.round(num(options.lodLevels, 3, 1, 8));
+    // per-level keep percentages (absolute, % of the input), one per level below 0;
+    // falls back to the single compounding lodKeepPercent ratio when absent
+    const percents = Array.isArray(options.lodKeepPercents) && options.lodKeepPercents.length
+        ? options.lodKeepPercents.slice(0, 7).map((p) => Math.round(num(p, 50, 1, 99)))
+        : null;
+    const levels = percents ? percents.length + 1 : Math.round(num(options.lodLevels, 3, 1, 8));
     const keep = num(options.lodKeepPercent, 50, 5, 95);
     const tmpDir = `${lodDir}-src`;
     const tmp = (level) => `${tmpDir}/l${level}.ply`;
@@ -285,7 +290,7 @@ const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buil
     const metaLevels = [{ level: 0, source: input, keepPercent: 100 }];
     const preCommands = [];
     for (let level = 1; level < levels; level++) {
-        const pct = Math.max(1, Math.round(((keep / 100) ** level) * 100));
+        const pct = percents ? percents[level - 1] : Math.max(1, Math.round(((keep / 100) ** level) * 100));
         metaLevels.push({ level, source: input, keepPercent: pct });
         const a = [cliPath, '--no-tty', '-w', '-q'];
         pushDeviceFlag(a, options);
@@ -316,7 +321,7 @@ const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buil
             mode: 'decimate',
             input,
             levels: metaLevels,
-            settings: { ...settings, lodLevels: levels, keepPercent: keep }
+            settings: { ...settings, lodLevels: levels, ...(percents ? { keepPercents: percents } : { keepPercent: keep }) }
         },
         buildMetaName
     };

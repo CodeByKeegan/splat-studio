@@ -133,6 +133,8 @@ export interface ConvertRequest {
         mortonOrder?: boolean;
         lodLevels?: number;
         lodKeepPercent?: number;
+        /** decimate mode: absolute keep % of the input per level below 0 (overrides lodLevels/lodKeepPercent) */
+        lodKeepPercents?: number[];
         lodChunkCount?: number;
         lodChunkExtent?: number;
         /** combine mode: files for LOD 1..n (the main input is LOD 0) */

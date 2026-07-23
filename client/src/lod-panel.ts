@@ -3,7 +3,7 @@
 import * as api from './api';
 import { $, lodInput } from './dom';
 import { splatFileNames } from './state';
-import { showToast, fmtCount, baseLabel, panelValid, syncPresetRows, setAdvOpen } from './ui';
+import { showToast, fmtCount, baseLabel, panelValid, syncPresetRows } from './ui';
 import { runJob } from './jobs';
 import { fillSelect, filesRefreshHooks, gaussiansOf } from './files-panel';
 
@@ -74,6 +74,30 @@ const addLodRow = () => {
 };
 $<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
 
+// ----- per-level keep percentages -----
+// The editable ladder pills are the editor; a hidden text input (CSV, absolute
+// % of LOD 0 per level below 0) carries the state so it persists + undoes like
+// any form value. The Advanced levels × keep fields REGENERATE the list.
+const lodPercents = $<HTMLInputElement>('lod-percents');
+export const readPercents = (): number[] =>
+    lodPercents.value.split(',').map((s) => Math.round(Number(s))).filter((n) => Number.isFinite(n) && n >= 1 && n <= 99);
+const writePercents = (arr: number[]): void => {
+    lodPercents.value = arr.join(',');
+    lodPercents.dispatchEvent(new Event('change', { bubbles: true })); // persist + undo step
+    // keep the Advanced levels field describing the ladder (silently — a change
+    // event here would regenerate the list we just wrote)
+    $<HTMLInputElement>('lod-levels').value = String(arr.length + 1);
+};
+const derivedPercents = (): number[] => {
+    const levels = Math.max(1, Math.min(8, Number($<HTMLInputElement>('lod-levels').value) || 1));
+    const keep = Number($<HTMLInputElement>('lod-keep').value) || 50;
+    return Array.from({ length: levels - 1 }, (_, i) => Math.max(1, Math.round(100 * (keep / 100) ** (i + 1))));
+};
+// changing the generator fields (or a preset applying them) rebuilds the list
+for (const id of ['lod-levels', 'lod-keep']) {
+    $(id).addEventListener('change', () => { writePercents(derivedPercents()); updateLodLadder(); });
+}
+
 // read-only level ladder on the simple page, recomputed from the current settings
 const lodLadder = $('lod-ladder');
 const updateLodLadder = (): void => {
@@ -87,26 +111,56 @@ const updateLodLadder = (): void => {
         badge.title = g != null ? `${g.toLocaleString()} gaussians` : 'Gaussian count';
     }
     lodLadder.innerHTML = '';
-    const pill = (text: string, cls = ''): void => {
+    const pill = (text: string, cls = ''): HTMLElement => {
         const el = document.createElement('span');
         el.className = `lod-pill ${cls}`.trim();
         el.textContent = text;
         lodLadder.appendChild(el);
+        return el;
     };
     // LOD 0 and the combine rows are the editable rows above — the pills carry
-    // only what's derived: the decimated levels, and the chunk extent. Clicking
-    // a level pill jumps to the Keep-per-level control that shapes it.
+    // the derived levels (each an editable absolute % of LOD 0) and chunk extent
     if (lodMode.value !== 'combine') {
-        const levels = Math.max(1, Math.min(8, Number($<HTMLInputElement>('lod-levels').value) || 1));
-        const keep = Number($<HTMLInputElement>('lod-keep').value) || 50;
-        for (let i = 1; i < levels; i++) {
-            pill(`LOD ${i} · ${Math.round(100 * (keep / 100) ** i)}%`);
-            const el = lodLadder.lastElementChild as HTMLElement;
-            el.title = `Level ${i} keeps ${keep}% of the level before it — click to adjust the ladder`;
-            el.style.cursor = 'pointer';
-            el.onclick = () => {
-                setAdvOpen('panel-lod', true);
-                $<HTMLInputElement>('lod-keep').focus();
+        const markCustom = (): void => { lodPreset.value = 'custom'; syncPresetRows(); };
+        const percents = readPercents().length ? readPercents() : derivedPercents();
+        percents.forEach((pct, i) => {
+            const el = pill('', 'edit');
+            el.title = `LOD ${i + 1} keeps this % of LOD 0's gaussians — edit it, or ✕ to drop the level`;
+            const label = document.createElement('span');
+            label.textContent = `LOD ${i + 1} ·`;
+            const box = document.createElement('input');
+            box.type = 'number';
+            box.min = '1';
+            box.max = '99';
+            box.value = String(pct);
+            box.onchange = () => {
+                const next = [...percents];
+                next[i] = Math.max(1, Math.min(99, Math.round(Number(box.value)) || pct));
+                writePercents(next);
+                markCustom();
+                updateLodLadder();
+            };
+            const unit = document.createElement('span');
+            unit.textContent = '%';
+            el.append(label, box, unit);
+            if (i === percents.length - 1 && percents.length > 1) {
+                const x = document.createElement('button');
+                x.type = 'button';
+                x.className = 'lod-pill-x';
+                x.textContent = '✕';
+                x.title = 'Drop this level';
+                x.onclick = () => { writePercents(percents.slice(0, -1)); markCustom(); updateLodLadder(); };
+                el.append(x);
+            }
+        });
+        if (percents.length < 7) {
+            const add = pill('+ level', 'meta add');
+            add.title = 'Add a lighter level below the current coarsest one';
+            add.onclick = () => {
+                const last = percents.at(-1) ?? 100;
+                writePercents([...percents, Math.max(1, Math.round(last / 2))]);
+                markCustom();
+                updateLodLadder();
             };
         }
     }
@@ -278,6 +332,7 @@ lodRun.onclick = () => {
             device: $<HTMLSelectElement>('lod-device').value,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
+            lodKeepPercents: lodMode.value === 'combine' || !readPercents().length ? undefined : readPercents(),
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
             scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),

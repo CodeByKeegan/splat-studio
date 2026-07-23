@@ -1077,6 +1077,26 @@ body.dropping #viewport::after {
 }
 .lod-pill.env { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 45%, transparent); }
 .lod-pill.meta { color: var(--text-dim); background: none; }
+/* editable level pill: LOD n · [42]% (+ ✕ on the last one) */
+.lod-pill.edit { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px 1px 8px; }
+.lod-pill.edit input {
+    width: 30px;
+    background: none;
+    border: none;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-xs);
+    text-align: right;
+    padding: 0;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.lod-pill.edit input::-webkit-outer-spin-button, .lod-pill.edit input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.lod-pill.edit:focus-within { border-color: var(--accent); }
+.lod-pill-x { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 0 0 0 3px; font-size: 10px; line-height: 1; }
+.lod-pill-x:hover { color: var(--error); }
+.lod-pill.add { cursor: pointer; }
+.lod-pill.add:hover { color: var(--text); border-color: var(--accent); }
 
 /* ----- carve out / trim (removes data → amber accent) ----- */
 #carve-remove { width: 100%; margin-top: 4px; border-color: var(--warn); color: var(--warn); font-weight: 600; }

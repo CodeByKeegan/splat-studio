@@ -343,6 +343,18 @@ try {
         }
     });
 
+    await check('LOD decimate mode: per-level keep percentages drive each pre-command', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodKeepPercents: [40, 15] }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        const lines = job.command.split('\n');
+        assert(lines.length === 3, `expected 2 pre-commands + combine, got ${lines.length}: ${job.command}`);
+        assert(lines[0].includes('--decimate 40%') && lines[1].includes('--decimate 15%'),
+            `per-level percentages missing from pre-commands: ${job.command}`);
+    });
+
     await check('summary (--stats) prints a stats table, writes nothing', async () => {
         const job = await runJob('/api/summary', { input: 'demo-room.ply' });
         assert(job.status === 'done', `job ${job.status}`);

@@ -259,15 +259,19 @@ folders that the engine streams by camera distance, for scenes too big to load a
    shell (a coarse backdrop — skybox, distant cityscape — emitted as LOD `-1`)
    the runtime keeps resident instead of culling it by distance (one environment
    layer per bake). *Decimated automatically* instead derives the levels from
-   LOD 0, shown as read-only pills with each level's keep % plus the chunk
-   extent — click a pill to jump to the control that shapes it.
+   LOD 0 as a row of **editable pills** — each level's number box is the absolute
+   % of LOD 0's gaussians it keeps (`--decimate` runs once per level), **✕** on
+   the last pill drops it, and **+ level** appends a lighter one at half the
+   previous keep. The scene-type chips and the Advanced levels × keep fields
+   regenerate the whole ladder; editing a pill makes it Custom.
 3. **Generate streamed LOD**. The tuning knobs the presets set live under
    **▸ Advanced options**:
    - **Decimate ladder** — **⚡ Auto-tune from splat stats** (fills the levels +
      chunk settings from LOD 0's gaussian count and extents; in existing-files
      mode it orders the level rows by detail and tags a backdrop as Env), plus
-     **LOD levels** and **Keep per level (%)** — the single ratio each level
-     keeps of the one before it (50% → 100/50/25/…).
+     **LOD levels** and **Keep per level (%)** — a generator for the pill ladder:
+     setting them rebuilds every pill at that compounding ratio (50% →
+     100/50/25/…), which you can then tweak per level in the pills.
    - **Streaming chunks** — **Chunk size (K splats)** and **Chunk extent (m)**.
    - **Encoding** — the paired **SH iterations** / **Encoder workers** row (as in
      Export) and the **Device**.
