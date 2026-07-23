@@ -857,6 +857,12 @@ app.post('/api/editor/control', json, async (req, res) => {
 // dotfiles:'deny' keeps the layout dotfile from being served over /files.
 let filesStatic = express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' });
 app.use('/files', (req, res, next) => filesStatic(req, res, next));
+// static errors (denied dotfiles, missing files) as the JSON shape, without the
+// default handler's stack-trace noise
+app.use('/files', (err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    res.status(err.status || 500).json({ error: err.message || 'error' });
+});
 
 if (existsSync(distDir)) {
     app.use(express.static(distDir));

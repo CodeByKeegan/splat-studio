@@ -129,6 +129,35 @@ try {
         assert(w.status === 'done' && w.outputs?.some((o) => /\.ply$/i.test(o)), `trim job: ${JSON.stringify(w).slice(0, 160)}`);
     });
 
+    await check('get_summary -> job -> stats table in the log', async () => {
+        const j = data(await call('get_summary', { project: 'Demo', input: 'demo-room.ply' }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 60000 }));
+        assert(w.status === 'done', `summary job: ${JSON.stringify(w).slice(0, 160)}`);
+        const full = data(await call('jobs', { action: 'get', id: j.jobId }));
+        assert(/gaussians:\s*\d+/.test(full.log || ''), 'no stats in job log');
+    });
+
+    await check('build_lod (decimate, CPU) -> lod-meta.json output', async () => {
+        const j = data(await call('build_lod', { project: 'Demo', input: 'demo-room.ply', mode: 'decimate', device: 'cpu', lodLevels: 2, lodKeepPercent: 50 }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 120000 }));
+        assert(w.status === 'done' && w.outputs?.some((o) => /lod-meta\.json$/.test(o)), `lod job: ${JSON.stringify(w).slice(0, 160)}`);
+    });
+
+    await check('render_image equirect rejects a non-2:1 resolution as bad-input', async () => {
+        const r = await call('render_image', { project: 'Demo', input: 'demo-room.ply', image: { projection: 'equirect', resolution: '1000x1000' } });
+        assert(r.isError && data(r).error === 'bad-input', `expected bad-input: ${text(r)}`);
+        const dof = await call('render_image', { project: 'Demo', input: 'demo-room.ply', image: { projection: 'equirect', fStop: 2.8 } });
+        assert(dof.isError && data(dof).error === 'bad-input', `equirect+fStop should be bad-input: ${text(dof)}`);
+    });
+
+    await check('files resource template lists a project\'s assets', async () => {
+        const res = await client.readResource({ uri: 'splat-studio://files/Demo' });
+        const body = JSON.parse(res.contents[0].text);
+        assert(body.files?.some((f) => f.name === 'demo-room.ply'), `resource: ${JSON.stringify(body).slice(0, 160)}`);
+    });
+
     await check('import_file with a missing source returns not-found', async () => {
         const r = await call('import_file', { project: 'Demo', source_path: path.join(os.tmpdir(), 'nope-does-not-exist.ply') });
         assert(r.isError && data(r).error === 'not-found', `expected not-found: ${text(r)}`);

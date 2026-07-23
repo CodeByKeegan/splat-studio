@@ -166,6 +166,33 @@ try {
         assert(kinds['gen-grid.mjs'] === 'generator', `gen-grid.mjs kind: ${kinds['gen-grid.mjs']}`);
     });
 
+    await check('project create, duplicate 409, invalid name 400', async () => {
+        let r = await api('POST', '/api/projects', { name: 'created-e2e' });
+        assert(r.status === 200 && r.json.name === 'created-e2e', `create: ${r.status} ${JSON.stringify(r.json)}`);
+        assert((await api('GET', '/api/projects')).json.projects.includes('created-e2e'), 'created project not listed');
+        r = await api('POST', '/api/projects', { name: 'created-e2e' });
+        assert(r.status === 409, `duplicate should 409, got ${r.status}`);
+        r = await api('POST', '/api/projects', { name: '../nope' });
+        assert(r.status === 400, `invalid name should 400, got ${r.status}`);
+    });
+
+    await check('upload lands a file, lists it, cleans its temp', async () => {
+        const body = fs.readFileSync(path.join(projectDir, 'demo-room.ply'));
+        const res = await fetch(`${BASE}/api/upload?project=${PROJECT}&name=uploaded.ply`, { method: 'POST', body });
+        assert(res.status === 200, `status ${res.status}`);
+        const { json } = await api('GET', `/api/files?project=${PROJECT}`);
+        const f = json.files.find((x) => x.name === 'uploaded.ply');
+        assert(f && f.size === body.length, `listing: ${JSON.stringify(f)}`);
+        assert(!fs.readdirSync(projectDir).some((n) => n.endsWith('.uploading')), 'upload temp not cleaned');
+    });
+
+    await check('upload rejects unsafe names (traversal, leading dash, nesting, device name)', async () => {
+        for (const name of ['../evil.ply', '--verbose.ply', 'a/b.ply', 'CON.ply', 'trail. ']) {
+            const res = await fetch(`${BASE}/api/upload?project=${PROJECT}&name=${encodeURIComponent(name)}`, { method: 'POST', body: 'x' });
+            assert(res.status === 400, `${name} -> ${res.status}`);
+        }
+    });
+
     // convert: format -> expected output filename
     const CONVERTS = [
         ['ply', 'demo-room.ply', { format: 'ply' }, 'demo-room-converted.ply'],
@@ -350,6 +377,53 @@ try {
     await check('--verbose/--memory diagnostics flag', async () => {
         const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'ply', options: { verbose: true } });
         assert(job.status === 'done' && /--verbose/.test(job.command) && /--memory\b/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('convert transforms: scale (-s) + rotate (-r)', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'ply', options: { scale: 2, rotate: [0, 90, 0] } });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/-s 2\b/.test(job.command) && /-r 0,90,0\b/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('convert filters: -N, -H, -V, -S, --morton-order', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'ply',
+            options: { filterNaN: true, filterHarmonics: 0, filterValue: { column: 'opacity', comparator: 'gt', value: 0.05 }, filterSphere: [0, 0, 0, 100], mortonOrder: true }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        for (const flag of [/-N\b/, /-H 0\b/, /-V opacity,gt,0\.05\b/, /-S 0,0,0,100\b/, /--morton-order\b/]) {
+            assert(flag.test(job.command), `missing ${flag} in: ${job.command}`);
+        }
+    });
+
+    await check('filter-value rejects a bad comparator and out-of-range opacity', async () => {
+        let r = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'ply', options: { filterValue: { column: 'opacity', comparator: 'meh', value: 0.5 } } });
+        assert(r.status === 400, `comparator should 400, got ${r.status}`);
+        r = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'ply', options: { filterValue: { column: 'opacity', comparator: 'gt', value: 2 } } });
+        assert(r.status === 400, `opacity range should 400, got ${r.status}`);
+    });
+
+    await check('filter-floaters on CPU is rejected up front (GPU-only pass)', async () => {
+        const { status, json } = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'ply', options: { device: 'cpu', filterFloaters: {} } });
+        assert(status === 400 && /GPU/i.test(json.error || ''), `${status} ${JSON.stringify(json)}`);
+    });
+    if (!SKIP_GPU) {
+        await check('filter-floaters (GPU) emits --filter-floaters with params', async () => {
+            const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'ply', options: { filterFloaters: { size: 0.1, opacity: 0.1, min: 0.004 } } });
+            assert(job.status === 'done' && /--filter-floaters 0\.1,0\.1,0\.004/.test(job.command), `cmd: ${job.command}`);
+        });
+    }
+
+    await check('SOG SH iterations (-i)', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'sog', options: { device: SKIP_GPU ? 'cpu' : 'auto', iterations: 7 } });
+        assert(job.status === 'done' && /-i 7\b/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('SPZ version flag (--spz-version 3; bad version 400)', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'spz', options: { spzVersion: 3 } });
+        assert(job.status === 'done' && /--spz-version 3\b/.test(job.command), `cmd: ${job.command}`);
+        const bad = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'spz', options: { spzVersion: 5 } });
+        assert(bad.status === 400, `bad version should 400, got ${bad.status}`);
     });
 
     await check('HTML unbundled (--unbundled) + viewer-settings (--viewer-settings)', async () => {
@@ -605,6 +679,41 @@ try {
         assert(jb.startedAt !== null && jb.startedAt <= ja.endedAt, `parallel violated: b started ${jb.startedAt}, a ended ${ja.endedAt}`);
         const reset = await api('POST', '/api/jobs/concurrency', { max: 1 });
         assert(reset.json.concurrency === 1, 'reset to 1');
+    });
+
+    await check('cancel a running job settles status=cancelled', async () => {
+        const id = await submitJob('/api/convert', { input: 'demo-room.ply', format: 'lod', options: { device: 'cpu', lodLevels: 8, lodKeepPercent: 95 } });
+        for (let i = 0; i < 100; i++) { // wait until it actually starts
+            const { json } = await api('GET', `/api/jobs/${id}`);
+            if (json.status !== 'queued') break;
+            await new Promise((r) => setTimeout(r, 100));
+        }
+        const cancel = await api('POST', `/api/jobs/${id}/cancel`);
+        assert(cancel.json.cancelled === true, `cancel: ${JSON.stringify(cancel.json)}`);
+        const job = await waitJob(id);
+        assert(job.status === 'cancelled', `status ${job.status}: ${(job.log || '').slice(-150)}`);
+        assert(/Cancelled by user/.test(job.log), `log: ${(job.log || '').slice(-150)}`);
+    });
+
+    await check('loopback guard: foreign Host/Origin 403, loopback Origin passes', async () => {
+        const u = new URL(BASE);
+        const raw = (headers) => new Promise((resolve, reject) => {
+            const req = http.request({ host: u.hostname, port: u.port, path: '/api/health', headers }, (res) => { res.resume(); resolve(res.statusCode); });
+            req.on('error', reject);
+            req.end();
+        });
+        assert(await raw({ Host: 'evil.example' }) === 403, 'foreign Host must 403');
+        assert(await raw({ Origin: 'https://evil.example' }) === 403, 'foreign Origin must 403');
+        assert(await raw({ Origin: `http://localhost:${u.port}` }) === 200, 'loopback Origin must pass');
+    });
+
+    await check('deleting a bundle entry point removes its folder; /files denies dotfiles', async () => {
+        assert(fs.existsSync(path.join(projectDir, 'demo-room-sog', 'meta.json')), 'precondition: unbundled SOG output exists');
+        const del = await fetch(`${BASE}/api/files/demo-room-sog/meta.json?project=${PROJECT}`, { method: 'DELETE' });
+        assert(del.status === 200, `delete status ${del.status}`);
+        assert(!fs.existsSync(path.join(projectDir, 'demo-room-sog')), 'bundle folder must be gone');
+        const dot = await fetch(`${BASE}/files/${PROJECT}/.location-group.json`);
+        assert(dot.status === 403, `dotfile should be denied, got ${dot.status}`);
     });
 
     await check('rejects a bad WebP resolution', async () => {
