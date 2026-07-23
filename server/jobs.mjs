@@ -1,3 +1,6 @@
+// Subprocess job runner: each GUI action becomes one polled job — optional
+// pre-steps, a main CLI run, a finalize hook — with a capped log, an idle
+// watchdog, cancellation, and a bounded finished-job history.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,6 +16,7 @@ const MAX_FINISHED_JOBS = 50;
 // chunk every few seconds. Override with SPLAT_JOB_IDLE_TIMEOUT_MS.
 const IDLE_TIMEOUT_MS = Number(process.env.SPLAT_JOB_IDLE_TIMEOUT_MS) || 10 * 60 * 1000;
 
+// drop the oldest finished jobs beyond the history cap
 const pruneFinished = () => {
     const finished = [...jobs.values()].filter((j) => j.status !== 'running');
     for (let i = 0; i < finished.length - MAX_FINISHED_JOBS; i++) {
@@ -22,6 +26,8 @@ const pruneFinished = () => {
 
 const cancelledIds = new Set();
 
+// Start a job (status 'running') and return it immediately; the step chain runs
+// in the background and lands on 'done' | 'error' | 'cancelled'.
 export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], preCommands = [], tempDirs = [], finalize, onOutputs, onStatus }) => {
     pruneFinished();
     const id = String(nextId++);
@@ -72,15 +78,20 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         const onData = (chunk) => { append(chunk); arm(); };
         child.stdout.on('data', onData);
         child.stderr.on('data', onData);
-        child.on('error', (err) => { clearTimeout(idleTimer); children.delete(id); reject({ launch: err }); });
+        child.on('error', (err) => {
+            clearTimeout(idleTimer);
+            children.delete(id);
+            reject(Object.assign(new Error(`Failed to launch: ${err.message}`), { launch: err }));
+        });
         child.on('close', (code) => {
             clearTimeout(idleTimer);
             children.delete(id);
             if (code === 0) resolve();
-            else reject({ code });
+            else reject(Object.assign(new Error(`Process exited with code ${code}`), { code }));
         });
     });
 
+    // move the job to its terminal status; collects outputs only on 'done'
     const finish = (status) => {
         if (job.status !== 'running') return;
         if (status === 'done') {
@@ -101,19 +112,22 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
 
     // Run the pre-decimate steps in order, then the main command. A failed or
     // cancelled step rejects and stops the chain, so the main step never runs on
-    // a partial temp.
+    // a partial temp. Resolves to the job's terminal status.
     (async () => {
         for (const pre of preCommands) {
-            if (cancelledIds.has(id)) return;
+            if (cancelledIds.has(id)) return 'cancelled';
             await runStep(pre.args);
         }
-        if (cancelledIds.has(id)) return;
+        if (cancelledIds.has(id)) return 'cancelled';
         await runStep(args);
         // post-success hook before 'done'; a failure warns but doesn't fail the job
         if (finalize && !cancelledIds.has(id)) {
             try { await finalize(job); } catch (err) { append(`\nWarning: finalize failed: ${err?.message ?? err}\n`); }
         }
-    })().then(() => finish('done')).catch((e) => {
+        return cancelledIds.has(id) ? 'cancelled' : 'done';
+    })().then(finish).catch((e) => {
+        // a step killed by cancelJob rejects too — that's a cancel, not an error
+        if (cancelledIds.has(id)) return finish('cancelled');
         if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
         else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;
         finish('error');
@@ -124,14 +138,16 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
 
 export const getJob = (id) => jobs.get(id);
 
+// kill a running job's current step and mark it for cancellation; false if not running
 export const cancelJob = (id) => {
     const child = children.get(id);
     const job = jobs.get(id);
     if (!job || job.status !== 'running') return false;
     cancelledIds.add(id); // stop the step chain from advancing past the kill
     job.log += '\nCancelled by user\n';
-    child?.kill();
+    child?.kill(); // between steps there's no child — the chain checks cancelledIds
     return true;
 };
 
+// all jobs without their logs (the listing payload)
 export const listJobs = () => [...jobs.values()].map(({ log, ...rest }) => rest);

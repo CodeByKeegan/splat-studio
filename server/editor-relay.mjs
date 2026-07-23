@@ -38,6 +38,7 @@ export function createRelay(httpServer, { port }) {
     let cid = 0;
     const pending = new Map(); // correlation id -> { resolve, timer }
 
+    // resolve every in-flight command with the given failure shape
     const failPending = (shape) => {
         for (const { resolve, timer } of pending.values()) {
             clearTimeout(timer);
@@ -112,6 +113,7 @@ export function createRelay(httpServer, { port }) {
         try { editor.send(JSON.stringify({ type: 'event', name, payload })); } catch { /* */ }
     };
 
+    // the editor binding as reported by /api/editor/status
     const status = () => ({
         connected: isConnected(),
         editorProject: meta.project,

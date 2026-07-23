@@ -59,7 +59,7 @@ export interface GenParam {
 export interface Job {
     id: string;
     title: string;
-    status: 'running' | 'done' | 'error';
+    status: 'running' | 'done' | 'error' | 'cancelled';
     command: string;
     log: string;
     outputs: string[];

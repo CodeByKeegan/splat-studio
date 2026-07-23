@@ -1,3 +1,7 @@
+// Command builders: translate each API job payload (convert / LOD / collision /
+// summary / trim) into a validated splat-transform CLI argv (or trim-worker
+// invocation). Builders assume the route layer (startJob) has already validated
+// and resolved the input paths.
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +10,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 // outputs produced by jobs this session — overwriting these again is intended
 const priorOutputs = new Set();
+// mark job outputs as app-generated (fed back by the job runner's onOutputs)
 export const recordOutputs = (names) => names.forEach((n) => priorOutputs.add(n));
 
 // The CLI handles WebGPU device creation (native Dawn bindings) itself, so we
@@ -16,6 +21,7 @@ export const cliPath = path.join(rootDir, 'node_modules', '@playcanvas', 'splat-
 // into the same job system as the CLI commands. See server/ply-trim.mjs.
 export const trimWorkerPath = path.join(rootDir, 'server', 'ply-trim-worker.mjs');
 
+// number with default, clamped to [min, max]; throws on non-numeric input
 const num = (value, fallback, min, max) => {
     const n = Number(value ?? fallback);
     if (!Number.isFinite(n)) throw new Error(`Invalid number: ${value}`);
@@ -36,7 +42,7 @@ const csv = (value, label, count) => {
 // stripped so generated artifacts sit at the top of the project, not buried
 // beside their source). 'RAW SOG/room.compressed.ply' -> 'room';
 // 'room-sog/meta.json' -> 'room'; 'scene-lod/lod-meta.json' -> 'scene'.
-export const baseName = (input) => {
+const baseName = (input) => {
     const file = input.split('/').pop();
     if (file === 'meta.json' || file === 'lod-meta.json') {
         const dir = input.split('/').slice(-2, -1)[0] ?? 'splat';
@@ -45,6 +51,7 @@ export const baseName = (input) => {
     return file.replace(/\.compressed\.ply$/i, '').replace(/\.[^./]+$/, '');
 };
 
+// output filename per convert format, from the input's base name
 const OUTPUT_NAMES = {
     'ply': (base) => `${base}.ply`,
     'compressed-ply': (base) => `${base}.compressed.ply`,
@@ -58,8 +65,24 @@ const OUTPUT_NAMES = {
     'webp': (base) => `${base}.webp`
 };
 
-export const convertFormats = Object.keys(OUTPUT_NAMES);
+// never clobber the input, and don't silently overwrite a pre-existing file this
+// app didn't produce (e.g. compressed.ply -> ply landing on the original source);
+// re-running the same conversion stays idempotent
+const outputCollides = (name, input, workspaceDir) => name === input ||
+    (workspaceDir && !priorOutputs.has(name) && existsSync(path.join(workspaceDir, ...name.split('/'))));
 
+// .mjs generator parameters (-p key=val,...): a per-input action, pushed right
+// after the input token
+const pushGeneratorParams = (args, input, options) => {
+    if (!/\.mjs$/i.test(input) || options.params == null || options.params === '') return;
+    const p = String(options.params).trim();
+    if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
+        throw new Error(`Invalid generator params: ${p} (use key=val,key=val)`);
+    }
+    args.push('-p', p);
+};
+
+// [x, y, z] of finite numbers; throws otherwise
 const vec3Arg = (v, name) => {
     if (!Array.isArray(v) || v.length !== 3) throw new Error(`${name} needs 3 numbers`);
     return v.map((x) => {
@@ -194,38 +217,34 @@ const pushConvertActions = (args, options) => {
         }
     }
 
-    // morton before decimate: 3.0.0 requires --decimate to be the final action
+    // morton before decimate: the CLI requires --decimate to be the final action
     if (options.mortonOrder) args.push('--morton-order');
 
     if (options.decimate != null && options.decimate !== '') {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
-        // must be the final action; 3.0.0 also requires .ply output (guarded in buildConvertCommand)
+        // must be the final action, and requires .ply output (guarded in buildConvertCommand)
         args.push('--decimate', d);
         const sd = scratchDirArg(options);
         if (sd) args.push('--scratch-dir', sd); // spill location (global option)
     }
 };
 
+// Build the convert/LOD/render argv for one job.
 // CLI grammar: splat-transform [GLOBAL] input [ACTIONS] output [ACTIONS]
 export const buildConvertCommand = ({ input, format, options = {}, workspaceDir }) => {
     const makeName = Object.hasOwn(OUTPUT_NAMES, format) ? OUTPUT_NAMES[format] : null;
     if (!makeName) throw new Error(`Unknown output format: ${format}`);
 
-    // 3.0.0: --decimate writes a decimated PLY only (final action, .ply output),
-    // so block it up front for any other convert format with a clear message.
+    // --decimate writes a decimated PLY only (final action, .ply output), so
+    // block it up front for any other convert format with a clear message.
     if (options.decimate != null && options.decimate !== '' && format !== 'ply') {
         throw new Error('Decimate writes a PLY only — choose PLY output, or decimate to PLY first then convert');
     }
 
     const base = baseName(input);
     let output = makeName(base);
-    // never clobber the input, and don't silently overwrite pre-existing files
-    // that this app didn't produce (e.g. compressed.ply -> ply landing on the
-    // original source); re-running the same conversion stays idempotent.
-    const collides = (name) => name === input ||
-        (workspaceDir && !priorOutputs.has(name) && existsSync(path.join(workspaceDir, ...name.split('/'))));
-    if (collides(output)) output = makeName(`${base}-converted`);
+    if (outputCollides(output, input, workspaceDir)) output = makeName(`${base}-converted`);
 
     const args = [cliPath, '--no-tty', '-w'];
     if (options.verbose) args.push('--verbose', '--memory'); // diagnostics
@@ -320,8 +339,8 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             };
         }
 
-        // decimate mode: 3.0.0 requires --decimate to be the final action writing a
-        // .ply, so it can't run inline while tagging LOD levels. Pre-decimate each
+        // decimate mode: the CLI requires --decimate to be the final action writing
+        // a .ply, so it can't run inline while tagging LOD levels. Pre-decimate each
         // level to a temp .ply in a sibling <lod>-src dir, then combine the raw input
         // (level 0) with those pre-authored levels in one invocation.
         const levels = Math.round(num(options.lodLevels, 3, 1, 8));
@@ -373,15 +392,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     }
 
     args.push(input);
-    // .mjs generator parameters (-p key=val,...); a per-input action, so it must
-    // sit right after the input token, before the transform/filter actions.
-    if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
-        const p = String(options.params).trim();
-        if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
-            throw new Error(`Invalid generator params: ${p} (use key=val,key=val)`);
-        }
-        args.push('-p', p);
-    }
+    pushGeneratorParams(args, input, options);
     // LCC / LCC2 / streamed-SOG (lod-meta.json) input: which LOD levels to read (--select-lod n,n,...), a per-input action
     if (/\.lcc2?$|lod-meta\.json$/i.test(input) && options.lodSelect != null && options.lodSelect !== '') {
         const sel = String(options.lodSelect).trim();
@@ -443,6 +454,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     };
 };
 
+// Build the voxelize + collision-mesh argv for one job.
 export const buildCollisionCommand = ({ input, options = {} }) => {
     // Fixed canonical name (not derived from the source LOD) so a project always
     // has one collision set at a known path for the tour runtime to pick up:
@@ -464,7 +476,7 @@ export const buildCollisionCommand = ({ input, options = {} }) => {
     pushCropFilters(args, options);
 
     args.push(voxelOut);
-    // 3.0.0 split --voxel-params [size,opacity] into two scalar flags
+    // voxel size and opacity are separate scalar flags
     args.push('--voxel-size', String(num(options.voxelSize, 0.05, 0.001, 10)));
     args.push('--voxel-opacity', String(num(options.opacity, 0.1, 0, 1)));
     if (options.fillMode === 'external') {
@@ -490,13 +502,7 @@ export const buildCollisionCommand = ({ input, options = {} }) => {
 // table in the job log. For a .mjs generator input, params shape the scene first.
 export const buildSummaryCommand = ({ input, options = {} }) => {
     const args = [cliPath, '--no-tty', '-q', input];
-    if (/\.mjs$/i.test(input) && options.params != null && options.params !== '') {
-        const p = String(options.params).trim();
-        if (!/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/.test(p)) {
-            throw new Error(`Invalid generator params: ${p} (use key=val,key=val)`);
-        }
-        args.push('-p', p);
-    }
+    pushGeneratorParams(args, input, options);
     args.push('--stats', 'text', 'null'); // --stats prints file info + per-column table; null output writes nothing
     return {
         title: `Summary of ${input}`,
@@ -506,12 +512,18 @@ export const buildSummaryCommand = ({ input, options = {} }) => {
     };
 };
 
-export const viewableOutputs = (names) => names
-    .map((name) => {
-        if (name.endsWith('.collision.glb')) return { name, as: 'collision' };
-        if (name.endsWith('.ply') || name.endsWith('.sog') || name.endsWith('meta.json')) return { name, as: 'splat' };
-        return null;
-    })
+// which viewer layer (if any) can display this file — the single name → layer
+// mapping (the file listing and job viewables both use it)
+export const viewableAs = (name) => {
+    if (name.endsWith('.collision.glb')) return 'collision';
+    if (name.endsWith('.voxel.json')) return 'voxel';
+    if (/\.ply$/i.test(name) || name.endsWith('.sog') || name.endsWith('meta.json')) return 'splat';
+    return null;
+};
+
+// job outputs → viewable descriptors for the ones the viewer can load
+const viewableOutputs = (names) => names
+    .map((name) => { const as = viewableAs(name); return as ? { name, as } : null; })
     .filter(Boolean);
 
 // Remove (or keep) the gaussians inside a box/sphere region, writing a trimmed
@@ -540,9 +552,7 @@ export const buildTrimCommand = ({ input, options = {}, workspaceDir }) => {
 
     const base = baseName(input);
     let output = `${base}-trimmed.ply`;
-    const collides = (name) => name === input ||
-        (workspaceDir && !priorOutputs.has(name) && existsSync(path.join(workspaceDir, ...name.split('/'))));
-    if (collides(output)) output = `${base}-trimmed-2.ply`;
+    if (outputCollides(output, input, workspaceDir)) output = `${base}-trimmed-2.ply`;
 
     const shapes = `${box ? 'box' : ''}${box && sphere ? '+' : ''}${sphere ? 'sphere' : ''}`;
     return {

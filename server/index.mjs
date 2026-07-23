@@ -1,3 +1,7 @@
+// Splat Studio API server: Express on loopback. Routes for workspace / projects /
+// files / uploads, job launch + polling (spawning the splat-transform CLI via
+// jobs.mjs), cheap per-file counts and cached --stats, UI layout + location
+// groups, and the consent-gated MCP editor relay.
 import express from 'express';
 import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -9,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import zlib from 'node:zlib';
 import { createJob, getJob, cancelJob, listJobs } from './jobs.mjs';
-import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, buildTrimCommand, recordOutputs, cliPath } from './commands.mjs';
+import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, buildTrimCommand, recordOutputs, viewableAs, cliPath } from './commands.mjs';
 import { createRelay } from './editor-relay.mjs';
 import { isControlEnabled, setControlEnabled } from './mcp-config.mjs';
 
@@ -40,9 +44,15 @@ const app = express();
 const json = express.json();
 
 // ---------- path safety ----------
-const SAFE_SEGMENT = /^[A-Za-z0-9()._ -]+$/;
+// First char may not be '-' (a name like "--verbose.ply" would be parsed as an
+// option by the CLI) or ' '; Windows device names and trailing dots/spaces are
+// rejected too (undeletable/aliased files on the primary packaging target).
+const SAFE_SEGMENT = /^[A-Za-z0-9()._][A-Za-z0-9()._ -]*$/;
+const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 
-const isSafeSegment = (s) => SAFE_SEGMENT.test(s) && s !== '.' && s !== '..';
+// one path segment: safe charset, no traversal, CLI- and Windows-safe
+const isSafeSegment = (s) =>
+    SAFE_SEGMENT.test(s) && !/[. ]$/.test(s) && !WIN_RESERVED.test(s) && s !== '.' && s !== '..';
 
 // project-relative path (e.g. "RAW SOG/HOTP_10mil.sog"); a few levels deep for
 // nested sources and unbundled-SOG / LOD entry points
@@ -51,7 +61,36 @@ const isSafeRelPath = (rel, maxDepth = 4) => {
     return segments.length >= 1 && segments.length <= maxDepth && segments.every(isSafeSegment);
 };
 
+// Containment barrier: rel resolved against base must stay inside base. When the
+// target exists it's realpath-checked too, so a symlink can't escape the project.
+const containedPath = async (base, rel) => {
+    const resolvedBase = path.resolve(base);
+    const abs = path.resolve(resolvedBase, ...String(rel).split('/'));
+    if (!abs.startsWith(resolvedBase + path.sep)) throw new Error(`Unsafe path: ${rel}`);
+    try {
+        const real = await fs.realpath(abs);
+        const realBase = await fs.realpath(resolvedBase);
+        if (real !== realBase && !real.startsWith(realBase + path.sep)) throw new Error(`Unsafe path: ${rel}`);
+    } catch (err) {
+        if (err.code !== 'ENOENT') throw err; // a not-yet-created target passes
+    }
+    return abs;
+};
+
+// atomic JSON write: tmp + rename, cleaning the tmp on failure
+const writeJsonAtomic = async (target, data) => {
+    const tmp = `${target}.${Date.now().toString(36)}.tmp`;
+    try {
+        await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+        await fs.rename(tmp, target);
+    } catch (err) {
+        await fs.rm(tmp, { force: true }).catch(() => {});
+        throw err;
+    }
+};
+
 // ---------- projects ----------
+// absolute path of a project folder; throws on an unsafe name
 const projectAbs = (project) => {
     if (!isSafeSegment(String(project))) throw new Error(`Invalid project name: ${project}`);
     return path.join(workspaceDir, project);
@@ -66,6 +105,7 @@ const isOutputBundle = async (dir) => {
     return names.includes('meta.json') && names.some((n) => n.endsWith('.webp'));
 };
 
+// workspace subfolders that are projects (skips output bundles), sorted
 const listProjects = async () => {
     const entries = await fs.readdir(workspaceDir, { withFileTypes: true });
     const dirs = entries.filter((e) => e.isDirectory() && isSafeSegment(e.name));
@@ -83,9 +123,11 @@ const resolveProject = (project) => {
     return abs;
 };
 
+// project-relative "a/b/c" path → absolute (validate rel with isSafeRelPath first)
 const toAbs = (projectDir, rel) => path.join(projectDir, ...rel.split('/'));
 
 // ---------- file listing ----------
+// classify a file for the listing/UI by its name
 const fileKind = (name) => {
     if (name.endsWith('.voxel.json') || name.endsWith('.voxel.bin')) return 'voxel';
     if (name.endsWith('.collision.glb')) return 'collision';
@@ -98,14 +140,6 @@ const fileKind = (name) => {
     return 'other';
 };
 
-const viewableAs = (name) => {
-    if (name.endsWith('.collision.glb')) return 'collision';
-    if (name.endsWith('.voxel.json')) return 'voxel';
-    if (name.endsWith('lod-meta.json')) return 'splat';
-    if (/\.ply$/i.test(name) || name.endsWith('.sog') || name.endsWith('meta.json')) return 'splat';
-    return null;
-};
-
 // Walk a project, surfacing primary assets. Output bundles collapse to their
 // entry point: a folder with lod-meta.json (streamed LOD) or meta.json+webp
 // (unbundled SOG) yields just that file and isn't descended into. Everything
@@ -113,10 +147,7 @@ const viewableAs = (name) => {
 const listFiles = async (projectDir) => {
     const out = [];
     const statEntry = async (rel) => {
-        // containment barrier: resolved path must stay inside the project
-        const base = path.resolve(projectDir);
-        const abs = path.resolve(base, ...rel.split('/'));
-        if (!abs.startsWith(base + path.sep)) throw new Error(`Unsafe path: ${rel}`);
+        const abs = await containedPath(projectDir, rel);
         const st = await fs.stat(abs);
         const entry = { name: rel, size: st.size, mtime: st.mtimeMs, kind: fileKind(rel), viewable: viewableAs(rel) };
         if (entry.kind === 'splat' || entry.kind === 'lod') {
@@ -269,6 +300,7 @@ const readCounts = async (abs, name) => {
     }
 };
 
+// cached (path, mtime) wrapper over readCounts
 const countsFor = async (abs, mtime, name) => {
     const hit = countsCache.get(abs);
     if (hit && hit.mtime === mtime) return hit.value;
@@ -281,8 +313,9 @@ const countsFor = async (abs, mtime, name) => {
 // Gaussian count + x/y/z extents from the CLI --stats table, for LOD auto-tune.
 // Cached per (absolute path, mtime) so repeated auto-tunes don't re-run the scan.
 const statsCache = new Map();
+// parse the CLI's --stats text output into { count, extents }
 const parseStats = (log) => {
-    // 3.0.0 --stats text: a "gaussians: N" header then a | Column | min | max | ... | table
+    // a "gaussians: N" header then a | Column | min | max | ... | table
     const rc = log.match(/^gaussians:\s*(\d+)/m);
     if (!rc) return null;
     const minMax = {};
@@ -297,6 +330,7 @@ const parseStats = (log) => {
     // a partial/garbled parse → treat as failure (don't 200 + cache a NaN)
     return Number.isFinite(result.count) ? result : null;
 };
+// run the CLI --stats scan on one file; null on any failure
 const runStats = (absInput) => new Promise((resolve) => {
     const child = spawn(process.execPath, [cliPath, '--no-tty', '-q', absInput, '--stats', 'text', 'null'], { windowsHide: true, timeout: 120000 });
     let out = '';
@@ -305,6 +339,29 @@ const runStats = (absInput) => new Promise((resolve) => {
     child.on('error', () => resolve(null));
     child.on('close', () => resolve(parseStats(out)));
 });
+// concurrent stats requests for the same uncached file share one scan
+const statsInFlight = new Map();
+
+// drop cached counts/stats at or under a deleted path
+const evictFileCaches = (absPrefix) => {
+    for (const cache of [countsCache, statsCache]) {
+        for (const key of cache.keys()) {
+            if (key === absPrefix || key.startsWith(absPrefix + path.sep)) cache.delete(key);
+        }
+    }
+};
+
+// best-effort removal of orphaned upload temps (server died mid-upload)
+const sweepUploadTemps = async () => {
+    try {
+        for (const p of await listProjects()) {
+            const dir = path.join(workspaceDir, p);
+            for (const name of await fs.readdir(dir)) {
+                if (name.endsWith('.uploading')) await fs.rm(path.join(dir, name), { force: true }).catch(() => {});
+            }
+        }
+    } catch { /* best-effort */ }
+};
 
 // ---------- loopback guard (CSRF + DNS-rebinding) ----------
 // The API can read/write files and spawn processes. It binds to 127.0.0.1, but a web
@@ -362,6 +419,7 @@ async function persistWorkspaceToConfig(dir) {
     } catch { /* best-effort */ }
 }
 
+// switch the live workspace root and recompute everything derived from it
 async function setWorkspaceDir(next, { create = false } = {}) {
     if (!path.isAbsolute(String(next))) throw new Error(`Not an absolute path: ${next}`);
     const resolved = path.resolve(String(next));
@@ -376,6 +434,9 @@ async function setWorkspaceDir(next, { create = false } = {}) {
     workspaceDir = resolved;
     layoutFile = path.join(workspaceDir, '.splat-studio-layout.json');
     filesStatic = express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' });
+    countsCache.clear();
+    statsCache.clear();
+    await sweepUploadTemps();
     await persistWorkspaceToConfig(workspaceDir);
     return workspaceDir;
 }
@@ -484,7 +545,13 @@ app.delete(/^\/api\/files\/(.+)$/, async (req, res) => {
     if (!existsSync(abs)) return res.status(404).json({ error: 'Not found' });
     // deleting an unbundled SOG's / LOD's entry point removes its folder
     const isDirEntry = rel.includes('/') && (rel.endsWith('meta.json') || rel.endsWith('lod-meta.json'));
-    await fs.rm(isDirEntry ? path.dirname(abs) : abs, { recursive: true, force: true });
+    const removed = isDirEntry ? path.dirname(abs) : abs;
+    try {
+        await fs.rm(removed, { recursive: true, force: true });
+    } catch (err) {
+        return res.status(500).json({ error: `Delete failed: ${err.message}` }); // e.g. EBUSY on a Windows lock
+    }
+    evictFileCaches(removed);
     res.json({ ok: true });
 });
 
@@ -496,10 +563,7 @@ app.delete(/^\/api\/files\/(.+)$/, async (req, res) => {
 // An unreadable lod-meta.json just drops the counts — the recipe still writes.
 const writeBuildMeta = async (projectDir, { buildMeta, buildMetaName }) => {
     if (!isSafeRelPath(buildMetaName)) throw new Error(`Invalid build-meta path: ${buildMetaName}`);
-    // containment barrier: resolved target must stay inside the project
-    const base = path.resolve(projectDir);
-    const target = path.resolve(base, ...buildMetaName.split('/'));
-    if (!target.startsWith(base + path.sep)) throw new Error(`Unsafe build-meta path: ${buildMetaName}`);
+    const target = await containedPath(projectDir, buildMetaName);
     const lodDir = path.dirname(target);
     const levels = buildMeta.levels.map((l) => ({ ...l }));
     try {
@@ -512,8 +576,7 @@ const writeBuildMeta = async (projectDir, { buildMeta, buildMetaName }) => {
         if (envRows.length === 1 && typeof lodMeta.environment === 'string' && isSafeRelPath(lodMeta.environment)) {
             try {
                 // environment path comes from a workspace file — contain it too
-                const envPath = path.resolve(lodDir, ...lodMeta.environment.split('/'));
-                if (!envPath.startsWith(base + path.sep)) throw new Error('outside project');
+                const envPath = await containedPath(lodDir, lodMeta.environment);
                 const envMeta = JSON.parse(await fs.readFile(envPath, 'utf8'));
                 if (Number.isFinite(envMeta.count)) envRows[0].gaussians = envMeta.count;
             } catch { /* env meta unreadable — omit its count */ }
@@ -528,19 +591,14 @@ const writeBuildMeta = async (projectDir, { buildMeta, buildMetaName }) => {
         levels,
         settings: buildMeta.settings
     };
-    const tmp = `${target}.${Date.now().toString(36)}.tmp`;
-    try {
-        await fs.writeFile(tmp, JSON.stringify(recipe, null, 2)); // tmp + rename = atomic
-        await fs.rename(tmp, target);
-    } catch (err) {
-        await fs.rm(tmp, { force: true }).catch(() => {});
-        throw err;
-    }
+    await writeJsonAtomic(target, recipe);
 };
 
+// validate a job request, build its command, and launch it → { jobId }
 const startJob = async (res, build, payload) => {
+    let projectDir, cmd;
     try {
-        const projectDir = resolveProject(payload.project);
+        projectDir = resolveProject(payload.project);
         // every referenced file must be safe and present within the project
         // (combine-mode LOD jobs reference extra inputs via options.lodFiles)
         const inputs = [String(payload.input ?? ''), ...(payload.options?.lodFiles ?? []).map(String)];
@@ -550,7 +608,11 @@ const startJob = async (res, build, payload) => {
             }
         }
         // the CLI creates output subdirs itself (-w runs mkdir -p on the target dir)
-        const cmd = build({ ...payload, workspaceDir: projectDir });
+        cmd = build({ ...payload, workspaceDir: projectDir });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
+    try {
         // folder-shaped outputs (streamed LOD) can leave stale chunk dirs when
         // regenerated with different settings — clear them first
         for (const dir of cmd.cleanDirs ?? []) {
@@ -573,7 +635,7 @@ const startJob = async (res, build, payload) => {
         });
         res.json({ jobId: job.id });
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 };
 
@@ -602,22 +664,32 @@ app.get('/api/gpus', async (req, res) => res.json({ gpus: await listGpus() }));
 
 // gaussian count + x/y/z extents for one splat (drives LOD auto-tune); cached by path+mtime
 app.get('/api/stats', async (req, res) => {
+    let abs, input;
     try {
         const projectDir = resolveProject(req.query.project);
-        const input = String(req.query.input ?? '');
+        input = String(req.query.input ?? '');
         if (!isSafeRelPath(input) || !existsSync(toAbs(projectDir, input))) {
             return res.status(400).json({ error: `No such file: ${input}` });
         }
-        const abs = toAbs(projectDir, input);
+        abs = toAbs(projectDir, input);
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
+    try {
         const mtime = (await fs.stat(abs)).mtimeMs;
         const hit = statsCache.get(abs);
         if (hit && hit.mtime === mtime) return res.json(hit.stats);
-        const stats = await runStats(abs);
+        let pending = statsInFlight.get(abs);
+        if (!pending) {
+            pending = runStats(abs).finally(() => statsInFlight.delete(abs));
+            statsInFlight.set(abs, pending);
+        }
+        const stats = await pending;
         if (!stats) return res.status(500).json({ error: `Could not analyze ${input}` });
         statsCache.set(abs, { mtime, stats });
         res.json(stats);
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -787,9 +859,17 @@ const httpServer = app.listen(PORT, '127.0.0.1', () => {
     console.log(`splat-studio server listening on http://localhost:${PORT}`);
     console.log(`workspace: ${workspaceDir}`);
     listProjects().then((p) => console.log(`projects: ${p.join(', ') || '(none — create one in the UI)'}`));
+    sweepUploadTemps();
     if (!existsSync(cliPath)) {
         console.warn('WARNING: splat-transform CLI not found — run npm install');
     }
+});
+httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use — is another Splat Studio running? Set API_PORT to pick a different port.`);
+        process.exit(1);
+    }
+    throw err;
 });
 
 // MCP editor-control relay shares the loopback http.Server (path /editor-ws), so

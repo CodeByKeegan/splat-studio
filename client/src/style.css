@@ -789,6 +789,7 @@ body.dropping #viewport::after {
 }
 .badge.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .badge.error { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+.badge.cancelled { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
 #job-cancel { margin-left: auto; padding: 0 8px; font-size: var(--fs-xs); color: var(--error); flex-shrink: 0; }
 
 #lod-file-rows .lod-row {
