@@ -325,6 +325,8 @@ async function run() {
             var names=['scene-mid.ply','scene-low.ply','sky.ply'];
             [...document.querySelectorAll('#lod-file-rows .lod-row')].forEach(function(r,i){var s=r.querySelector('select'); if(names[i]){s.value=names[i]; s.dispatchEvent(new Event('change',{bubbles:true}));}});`);
         await sleep(200);
+        // the auto-tune button lives under Advanced options — reveal it first
+        await js(`(function(){var b=document.getElementById('panel-lod-adv'); if(b.classList.contains('hidden')) document.querySelector('.adv-toggle[data-adv-panel="panel-lod"]').click(); return true;})()`);
         await js(`document.getElementById('lod-autotune').click();`);
         await js(`new Promise(function(res){var t=Date.now();(function p(){var el=document.getElementById('lod-autotune-plan'); if(el && !el.classList.contains('hidden') && el.textContent.trim()) return res(true); if(Date.now()-t>9000) return res(false); setTimeout(p,200);})();})`);
         await sleep(300);

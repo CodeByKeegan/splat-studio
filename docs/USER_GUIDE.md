@@ -246,23 +246,28 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-LOD chunk
 folders that the engine streams by camera distance, for scenes too big to load at once.
 
-1. **Scene type** — pick a preset chip: **⚡ Auto** (recommended — reads LOD 0's
-   stats and sizes everything, see below), or **Indoor** (3 levels, 16 m chunks),
-   **Outdoor** (5 levels, 32 m chunks), **Object** (2 levels, 8 m chunks) — all at
-   50% keep per level.
+1. **Scene type** — pick a preset chip: **Indoor** (3 levels, 16 m chunks),
+   **Outdoor** (5 levels, 32 m chunks), or **Object** (2 levels, 8 m chunks) — all
+   at 50% keep per level. Picking one switches the ladder to decimate mode.
 2. **Levels** — one card holds the whole ladder. The **LOD 0** row is the source
-   splat (full detail up close); the picker in the card's header chooses where the
-   lighter levels come from: *decimated automatically* (default) derives them from
-   LOD 0 — shown as read-only pills with each level's keep % plus the chunk extent,
-   updating live — while *from existing files* adds a row per level below LOD 0.
-   In that mode order matters (each level should have fewer gaussians than the one
-   before), and ticking a row's **Env** box makes that file an always-visible
-   far/background shell (a coarse backdrop — skybox, distant cityscape — emitted as
-   LOD `-1`) the runtime keeps resident instead of culling it by distance. One
-   environment layer per bake; existing-files mode only.
+   splat (full detail up close); every level row shows its **gaussian count**
+   (from the listing's cheap header reads). The picker in the card's header
+   chooses where the lighter levels come from: *from existing files* (default)
+   adds a row per level below LOD 0 — order matters (each level should have fewer
+   gaussians than the one before, which the counts make easy to check), and
+   ticking a row's **Env** box makes that file an always-visible far/background
+   shell (a coarse backdrop — skybox, distant cityscape — emitted as LOD `-1`)
+   the runtime keeps resident instead of culling it by distance (one environment
+   layer per bake). *Decimated automatically* instead derives the levels from
+   LOD 0, shown as read-only pills with each level's keep % plus the chunk
+   extent — click a pill to jump to the control that shapes it.
 3. **Generate streamed LOD**. The tuning knobs the presets set live under
    **▸ Advanced options**:
-   - **Decimate ladder** — **LOD levels** and **Keep per level (%)**.
+   - **Decimate ladder** — **⚡ Auto-tune from splat stats** (fills the levels +
+     chunk settings from LOD 0's gaussian count and extents; in existing-files
+     mode it orders the level rows by detail and tags a backdrop as Env), plus
+     **LOD levels** and **Keep per level (%)** — the single ratio each level
+     keeps of the one before it (50% → 100/50/25/…).
    - **Streaming chunks** — **Chunk size (K splats)** and **Chunk extent (m)**.
    - **Encoding** — the paired **SH iterations** / **Encoder workers** row (as in
      Export) and the **Device**.

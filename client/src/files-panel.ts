@@ -19,6 +19,8 @@ export const fileActionCallbacks: { generateView: () => void } = { generateView:
 
 // ---------- file list ----------
 let lastFiles: api.FileEntry[] = [];
+/** Gaussian count from the last listing's cheap header read (undefined = unknown). */
+export const gaussiansOf = (name: string): number | undefined => lastFiles.find((f) => f.name === name)?.gaussians;
 // rows with an open details card / a ticked checkbox — survive list re-renders
 const expandedFiles = new Set<string>();
 export const selectedFiles = new Set<string>(); // groups' bulk-add reads this

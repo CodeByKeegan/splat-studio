@@ -866,6 +866,15 @@ body.dropping #viewport::after {
     min-width: 38px;
 }
 #panel-lod .lod-row select { flex: 1; min-width: 0; }
+#panel-lod .lod-row .lod-count {
+    font-size: var(--fs-xs);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 42px;
+    text-align: right;
+    flex-shrink: 0;
+}
 #panel-lod .lod-row button { padding: 2px 8px; font-size: var(--fs-sm); }
 #panel-lod .lod-row .lod-env {
     display: flex;
@@ -1043,7 +1052,9 @@ body.dropping #viewport::after {
 #generate-view { background: var(--bg-input); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; }
 #generate-view:hover { background: var(--accent); color: var(--on-accent); }
 
-/* ----- LOD auto-tune plan line (under the preset chips) ----- */
+/* ----- LOD auto-tune (Advanced ▸ Decimate ladder) + plan line ----- */
+#lod-autotune { width: 100%; font-size: var(--fs-sm); margin-bottom: 8px; }
+#lod-autotune:disabled { opacity: 0.6; cursor: wait; }
 #lod-autotune-plan { margin: 2px 0 8px; }
 
 /* ----- LOD level ladder — read-only pills reflecting the current settings ----- */

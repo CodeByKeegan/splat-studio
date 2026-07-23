@@ -251,35 +251,34 @@
 
             <section class="panel" id="panel-lod">
                 <h2 title="Bake a streamed multi-LOD SOG (lod-meta.json + per-LOD chunk folders). The engine streams chunks by camera distance — the format for big scenes">LOD</h2>
-                <div class="field" title="Scene-type presets fill the LOD settings; ⚡ Auto reads LOD 0's gaussian count + extents and sizes them to match. Editing a setting in Advanced switches to Custom">
+                <div class="field" title="Scene-type presets fill the LOD settings with a decimation ladder sized for that kind of scene. Editing a setting switches to Custom">
                     <span>Scene type <em>— fills the LOD settings</em></span>
                     <div class="preset-row" data-preset-for="lod-preset">
-                        <button type="button" class="preset-btn" id="lod-autotune" data-value="auto" title="Read LOD 0's gaussian count + extents (a quick CPU summary) and fill the LOD settings to match — recommended">⚡ Auto</button>
                         <button type="button" class="preset-btn" data-value="indoor" title="Room-scale scan: 3 levels at 50% keep each, 16 m chunks">🏠 Indoor</button>
                         <button type="button" class="preset-btn" data-value="outdoor" title="Large exterior scene: 5 levels at 50% keep each, 32 m chunks">🌍 Outdoor</button>
                         <button type="button" class="preset-btn" data-value="object" title="Single object: 2 levels at 50% keep each, 8 m chunks">📦 Object</button>
                         <button type="button" class="preset-btn" data-value="custom" data-open-adv="panel-lod" title="Your own combination — opens Advanced options">Custom</button>
                     </div>
                     <select id="lod-preset" class="hidden" aria-hidden="true">
-                        <option value="auto">Auto</option>
-                        <option value="indoor" selected>Indoor</option>
+                        <option value="indoor">Indoor</option>
                         <option value="outdoor">Outdoor</option>
                         <option value="object">Object</option>
-                        <option value="custom">Custom</option>
+                        <option value="custom" selected>Custom</option>
                     </select>
                 </div>
                 <div class="hint hidden" id="lod-autotune-plan"></div>
                 <div class="sec" id="lod-levels-sec" title="The detail ladder the bake will write. LOD 0 is the source splat at full detail; each next level is lighter">
                     <div class="sec-head with-inline">
                         <span>Levels</span>
-                        <select id="lod-mode" title="Where the lighter levels come from: derived from LOD 0 automatically (--decimate), or files you already have (e.g. exports at different gaussian counts)">
-                            <option value="decimate" selected>decimated automatically</option>
-                            <option value="combine">from existing files</option>
+                        <select id="lod-mode" title="Where the lighter levels come from: files you already have (e.g. exports at different gaussian counts), or derived from LOD 0 automatically (--decimate)">
+                            <option value="combine" selected>from existing files</option>
+                            <option value="decimate">decimated automatically</option>
                         </select>
                     </div>
                     <div class="lod-row" title="LOD 0 — the source splat, streamed at full detail up close">
                         <span class="lod-label">LOD 0</span>
                         <select id="lod-input"></select>
+                        <span class="lod-count" title="Gaussian count"></span>
                     </div>
                     <div class="field hidden" id="row-lod-files" title="Each row is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick Env to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
                         <div id="lod-file-rows"></div>
@@ -294,6 +293,7 @@
                 <div class="adv-body hidden" id="panel-lod-adv">
                 <div class="sec" title="Tune the decimation ladder the presets set — how many levels, and how much each keeps">
                     <div class="sec-head">Decimate ladder</div>
+                    <button type="button" id="lod-autotune" title="Read LOD 0's gaussian count + extents (a quick CPU summary) and fill the levels + chunk settings to match — in existing-files mode it instead orders the level rows by detail and tags a backdrop as Env">⚡ Auto-tune from splat stats</button>
                     <div class="field-row" id="row-lod-levels">
                     <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
                         <span>LOD levels</span>

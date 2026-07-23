@@ -3,9 +3,9 @@
 import * as api from './api';
 import { $, lodInput } from './dom';
 import { splatFileNames } from './state';
-import { showToast, fmtCount, baseLabel, panelValid, syncPresetRows } from './ui';
+import { showToast, fmtCount, baseLabel, panelValid, syncPresetRows, setAdvOpen } from './ui';
 import { runJob } from './jobs';
-import { fillSelect, filesRefreshHooks } from './files-panel';
+import { fillSelect, filesRefreshHooks, gaussiansOf } from './files-panel';
 
 const lodMode = $<HTMLSelectElement>('lod-mode');
 const lodFileRows = $<HTMLDivElement>('lod-file-rows');
@@ -13,8 +13,11 @@ const lodRun = $<HTMLButtonElement>('lod-run');
 const lodPreset = $<HTMLSelectElement>('lod-preset');
 
 const lodRowSelects = (): HTMLSelectElement[] => [...lodFileRows.querySelectorAll('select')];
-// refill the level-row selects whenever the file list refreshes
-filesRefreshHooks.push(() => { for (const s of lodRowSelects()) fillSelect(s, splatFileNames); });
+// refill the level-row selects + count badges whenever the file list refreshes
+filesRefreshHooks.push(() => {
+    for (const s of lodRowSelects()) fillSelect(s, splatFileNames);
+    updateLodLadder();
+});
 
 const relabelLodRows = () => {
     let n = 1;
@@ -54,6 +57,9 @@ const addLodRow = () => {
         relabelLodRows();
     };
     env.append(envBox, document.createTextNode(' Env'));
+    const count = document.createElement('span');
+    count.className = 'lod-count';
+    count.title = 'Gaussian count';
     const remove = document.createElement('button');
     remove.textContent = '✕';
     remove.title = 'Remove this level';
@@ -62,7 +68,7 @@ const addLodRow = () => {
         relabelLodRows();
         updateLodRows(); // combine mode always keeps at least one row
     };
-    row.append(label, select, env, remove);
+    row.append(label, select, count, env, remove);
     lodFileRows.appendChild(row);
     relabelLodRows();
 };
@@ -71,6 +77,15 @@ $<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
 // read-only level ladder on the simple page, recomputed from the current settings
 const lodLadder = $('lod-ladder');
 const updateLodLadder = (): void => {
+    // per-row gaussian-count badges (from the listing's cheap header reads)
+    for (const row of document.querySelectorAll<HTMLElement>('#panel-lod .lod-row')) {
+        const sel = row.querySelector('select');
+        const badge = row.querySelector<HTMLElement>('.lod-count');
+        if (!sel || !badge) continue;
+        const g = gaussiansOf(sel.value);
+        badge.textContent = g != null ? fmtCount(g) : '';
+        badge.title = g != null ? `${g.toLocaleString()} gaussians` : 'Gaussian count';
+    }
     lodLadder.innerHTML = '';
     const pill = (text: string, cls = ''): void => {
         const el = document.createElement('span');
@@ -79,11 +94,21 @@ const updateLodLadder = (): void => {
         lodLadder.appendChild(el);
     };
     // LOD 0 and the combine rows are the editable rows above — the pills carry
-    // only what's derived: the decimated levels, and the chunk extent
+    // only what's derived: the decimated levels, and the chunk extent. Clicking
+    // a level pill jumps to the Keep-per-level control that shapes it.
     if (lodMode.value !== 'combine') {
         const levels = Math.max(1, Math.min(8, Number($<HTMLInputElement>('lod-levels').value) || 1));
         const keep = Number($<HTMLInputElement>('lod-keep').value) || 50;
-        for (let i = 1; i < levels; i++) pill(`LOD ${i} · ${Math.round(100 * (keep / 100) ** i)}%`);
+        for (let i = 1; i < levels; i++) {
+            pill(`LOD ${i} · ${Math.round(100 * (keep / 100) ** i)}%`);
+            const el = lodLadder.lastElementChild as HTMLElement;
+            el.title = `Level ${i} keeps ${keep}% of the level before it — click to adjust the ladder`;
+            el.style.cursor = 'pointer';
+            el.onclick = () => {
+                setAdvOpen('panel-lod', true);
+                $<HTMLInputElement>('lod-keep').focus();
+            };
+        }
     }
     const ext = Number($<HTMLInputElement>('lod-chunk-extent').value);
     if (Number.isFinite(ext) && ext > 0) pill(`${ext} m chunks`, 'meta');
@@ -174,8 +199,10 @@ const autotuneCombine = async (input: string): Promise<void> => {
 
 const runAutotune = (): void => {
     const input = lodInput.value;
-    if (!input) return showToast('Pick a LOD input first', true);
+    if (!input) return showToast('Pick a LOD 0 splat first', true);
     if (input.toLowerCase().endsWith('.mjs')) return showToast('Auto-tune reads existing splats, not generators — convert the generator to a splat first', true);
+    lodPreset.value = 'custom'; // tuned values are scene-specific, not a named preset
+    syncPresetRows();
     lodAutotuneBtn.disabled = true;
     showLodPlan('Reading splat stats…');
     const run = lodMode.value === 'combine' ? autotuneCombine(input) : autotuneDecimate(input);
@@ -184,6 +211,7 @@ const runAutotune = (): void => {
         showToast(`Auto-tune failed: ${err}`, true);
     }).finally(() => { lodAutotuneBtn.disabled = false; });
 };
+lodAutotuneBtn.onclick = runAutotune;
 
 // ----- scene-type presets: static ladders, or ⚡ Auto = the stats auto-tune -----
 // values land in the fields via change events, so they persist like typed input;
@@ -199,7 +227,6 @@ const setNumField = (id: string, v: number): void => {
     el.dispatchEvent(new Event('change', { bubbles: true }));
 };
 lodPreset.onchange = () => {
-    if (lodPreset.value === 'auto') return runAutotune();
     const p = LOD_PRESETS[lodPreset.value];
     if (!p) return; // custom — nothing to apply
     lodMode.value = 'decimate';
