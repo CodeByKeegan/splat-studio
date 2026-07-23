@@ -139,7 +139,12 @@ async function run() {
     const win = new BrowserWindow({
         width: W, height: H, show: true, frame: false,
         backgroundColor: '#14161a', alwaysOnTop: true,
-        webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+        // real preload so the desktop-only UI (Settings > Updates, status pill) exists;
+        // its IPC invokes reject here (no handlers) and the page falls back to defaults
+        webPreferences: {
+            contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
+            preload: path.join(repoRoot, 'electron', 'preload.cjs')
+        }
     });
     win.setPosition(40, 40);
     win.setAlwaysOnTop(true, 'screen-saver');
@@ -223,6 +228,25 @@ async function run() {
         await js(`window.__doc.clear(); window.__settings.open('appearance');`);
         await sleep(250);
         await js(`window.__doc.hl('#settings-modal',{pad:5});`);
+    });
+    // Settings > Updates with an update pending (status pushed over the real IPC channel)
+    add('settings-updates', async () => {
+        win.webContents.send('updates:status', { phase: 'available', version: '0.1.0' });
+        await js(`window.__doc.clear(); window.__settings.open('updates');`);
+        await sleep(250);
+        // no hl() — the modal backdrop (z 100001) sits above the highlight layer (z 99998)
+    });
+    // bottom-right status pill mid-download
+    add('update-pill', async () => {
+        await js(`window.__doc.clear();`);
+        win.webContents.send('updates:status', { phase: 'downloading', version: '0.1.0', percent: 43 });
+        await sleep(250);
+        await js(`window.__doc.hl('#update-widget',{pad:4});`);
+    });
+    // back to idle so the pill stays out of every later scene
+    add('__pill-reset', async () => {
+        win.webContents.send('updates:status', { phase: 'idle' });
+        await js(`window.__doc.clear();`);
     });
 
     // scene hierarchy: keep the Collision tab active + carve on (so the capsule
@@ -349,8 +373,9 @@ async function run() {
     // SCENES=a,b limits a run to specific scenes (faster doc iteration; others keep their last shot)
     const only = (process.env.SCENES || '').split(',').map((s) => s.trim()).filter(Boolean);
     for (const s of scenes) {
-        if (only.length && !only.includes(s.name)) continue;
-        try { await s.fn(); await shot(s.name); }
+        if (only.length && !only.includes(s.name) && !s.name.startsWith('__')) continue;
+        // '__'-prefixed scenes are state-reset steps, not screenshots
+        try { await s.fn(); if (!s.name.startsWith('__')) await shot(s.name); }
         catch (e) { console.error(`  ✗ ${s.name}: ${e.message}`); }
     }
     await js(`window.__doc.clear()`);

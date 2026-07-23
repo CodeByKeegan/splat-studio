@@ -543,12 +543,19 @@ to `dev` publish **beta** pre-releases, promotions to `main` publish **stable**
 releases. The update channel is switchable in **Settings ▸ Updates** (stable is the
 default). See [AUTOMATION.md](AUTOMATION.md) for the release pipeline.
 
+![Settings ▸ Updates](screenshots/settings-updates.png)
+
 The installed app **updates itself**: on launch (and every few hours) it checks for a
-newer release. With **Download updates automatically** on (Settings ▸ Updates, the
-default), a found update starts downloading right away; turned off, the status pill in
-the bottom-right corner (and the settings page) show a **Download** button instead.
-The pill tracks the whole flow — checking, download progress, "restart to update" —
-and clicking it opens Settings ▸ Updates. Downloads run in the background (progress
+newer release. Pick the **release channel**, toggle **Download updates automatically**,
+or **check now**; when a check finds an update with auto-download off, a **Download**
+button appears. Turned on (the default), a found update starts downloading right away.
+
+![Update status pill](screenshots/update-pill.png)
+
+The **status pill** in the bottom-right corner tracks the whole flow — checking,
+download progress, "restart to update", up to date — and clicking it opens
+Settings ▸ Updates.
+Downloads run in the background (progress
 also shows on the taskbar icon); when ready the app offers to **restart and install**,
 or installs automatically the next time you quit. You can trigger a check any time via
 **Help → Check for Updates…** or the settings page. (The NSIS installer build
