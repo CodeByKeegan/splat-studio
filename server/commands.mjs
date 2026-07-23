@@ -12,6 +12,8 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const priorOutputs = new Set();
 // mark job outputs as app-generated (fed back by the job runner's onOutputs)
 export const recordOutputs = (names) => names.forEach((n) => priorOutputs.add(n));
+// names are project-relative — a workspace switch invalidates them
+export const clearPriorOutputs = () => priorOutputs.clear();
 
 // The CLI handles WebGPU device creation (native Dawn bindings) itself, so we
 // spawn it rather than driving the programmatic API.

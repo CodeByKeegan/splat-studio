@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import zlib from 'node:zlib';
 import { createJob, getJob, cancelJob, listJobs, getConcurrency, setConcurrency } from './jobs.mjs';
-import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, buildTrimCommand, recordOutputs, viewableAs, cliPath } from './commands.mjs';
+import { buildConvertCommand, buildCollisionCommand, buildSummaryCommand, buildTrimCommand, recordOutputs, clearPriorOutputs, viewableAs, cliPath } from './commands.mjs';
 import { createRelay } from './editor-relay.mjs';
 import { isControlEnabled, setControlEnabled } from './mcp-config.mjs';
 
@@ -436,6 +436,7 @@ async function setWorkspaceDir(next, { create = false } = {}) {
     filesStatic = express.static(workspaceDir, { fallthrough: false, dotfiles: 'deny' });
     countsCache.clear();
     statsCache.clear();
+    clearPriorOutputs();
     await sweepUploadTemps();
     await persistWorkspaceToConfig(workspaceDir);
     return workspaceDir;

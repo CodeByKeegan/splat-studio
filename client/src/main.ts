@@ -2527,7 +2527,7 @@ applyDefaultLayout();
 // Collision tab being visible) or the Scene tab is shown; the render frustum +
 // camera-view preview are gated on the Render tab being the active one
 dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); });
-(window as unknown as { __dock: DockviewApi }).__dock = dock; // debug handle
+(window as unknown as { __dock: DockviewApi }).__dock = dock; // capture harness handle (scripts/capture-docs.mjs)
 
 // ---------- top menu bar (Window / Layout) ----------
 const LAYOUT_VERSION = 2; // v1 layouts had a Settings dock panel (now a dialog)
@@ -2718,7 +2718,7 @@ settingsBackdrop.addEventListener('pointerdown', (e) => { if (e.target === setti
 // promptText's capture-phase Escape handler wins while a prompt is up
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && settingsOpen()) closeSettings(); });
 initThemeSettings({ promptText, showToast });
-(window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // debug handle
+(window as unknown as { __settings: { open: (page?: string) => void; close: () => void } }).__settings = { open: openSettings, close: closeSettings }; // capture harness handle (scripts/capture-docs.mjs)
 
 // the viewport toolbar's ⚙ opens the settings dialog
 $<HTMLButtonElement>('open-settings').onclick = () => openSettings();
@@ -2953,7 +2953,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
         updateRegionEstimate(); // and its overflow risk
         updateRenderFrustum(); // show the render frustum if the Render tab is active
         rebuildSceneList();
-        (window as unknown as { __viewer: SplatViewer }).__viewer = v; // debug handle
+        (window as unknown as { __viewer: SplatViewer }).__viewer = v; // capture harness handle (scripts/capture-docs.mjs, capture-readme.mjs)
     })
     .catch((err) => {
         showToast(`Failed to start viewer: ${err}`, true);
