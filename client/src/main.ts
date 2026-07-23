@@ -11,158 +11,19 @@ import type { DockviewApi, IContentRenderer, ITabRenderer, TabPartInitParameters
 import 'dockview-core/dist/styles/dockview.css';
 markDockviewPackageLoaded(); // silence the "internal package" dev notice — we use the core directly on purpose
 applyActiveTheme(); // before any UI paints
-
-const $ = <T extends HTMLElement>(id: string): T => {
-    const el = document.getElementById(id);
-    if (!el) throw new Error(`missing element #${id}`);
-    return el as T;
-};
-
-const fileList = $<HTMLUListElement>('file-list');
-const convertInput = $<HTMLSelectElement>('convert-input');
-const genInput = $<HTMLSelectElement>('gen-input');
-const lodInput = $<HTMLSelectElement>('lod-input');
-const renderInput = $<HTMLSelectElement>('render-input');
-const collisionInput = $<HTMLSelectElement>('collision-input');
-const analyzeInput = $<HTMLSelectElement>('analyze-input');
-const editInput = $<HTMLSelectElement>('edit-input');
-const skyboxSelect = $<HTMLSelectElement>('skybox-select');
-// per-layer visibility, toggled by the Scene panel's eye buttons (replaces the old checkboxes)
-const layerVisible = { splat: true, collision: true, voxels: true };
-type LayerId = keyof typeof layerVisible;
-const toastStack = $<HTMLDivElement>('toast-stack');
-const hudSplat = $<HTMLSpanElement>('hud-splat');
-const hudCollision = $<HTMLSpanElement>('hud-collision');
-const hudVoxel = $<HTMLSpanElement>('hud-voxel');
-const jobCommand = $<HTMLElement>('job-command');
-const jobLog = $<HTMLPreElement>('job-log');
-
-let viewer: SplatViewer | undefined;
-
-// transient status toast (errors persist longer)
-const showToast = (message: string, isError = false) => {
-    const el = document.createElement('div');
-    el.className = isError ? 'toast error' : 'toast';
-    el.textContent = message;
-    toastStack.appendChild(el);
-    while (toastStack.children.length > 4) toastStack.firstChild?.remove();
-    setTimeout(() => el.remove(), isError ? 8000 : 4000);
-};
-
-// In-app text prompt — Electron's renderer has no window.prompt(). Resolves the
-// trimmed value, or null if cancelled.
-const promptText = (title: string, opts: { value?: string; okLabel?: string; placeholder?: string } = {}): Promise<string | null> =>
-    new Promise((resolve) => {
-        const backdrop = document.createElement('div');
-        backdrop.className = 'modal-backdrop';
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        const h = document.createElement('div');
-        h.className = 'modal-title';
-        h.textContent = title;
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = opts.value ?? '';
-        if (opts.placeholder) input.placeholder = opts.placeholder;
-        const row = document.createElement('div');
-        row.className = 'modal-row';
-        const cancel = document.createElement('button');
-        cancel.textContent = 'Cancel';
-        const ok = document.createElement('button');
-        ok.className = 'primary';
-        ok.textContent = opts.okLabel ?? 'OK';
-        row.append(cancel, ok);
-        modal.append(h, input, row);
-        backdrop.appendChild(modal);
-        document.body.appendChild(backdrop);
-        input.focus();
-        input.select();
-
-        let done = false;
-        const close = (value: string | null): void => {
-            if (done) return;
-            done = true;
-            document.removeEventListener('keydown', onKey, true);
-            backdrop.remove();
-            resolve(value);
-        };
-        const submit = (): void => close(input.value.trim() || null);
-        const onKey = (e: KeyboardEvent): void => {
-            if (e.key !== 'Enter' && e.key !== 'Escape') return;
-            e.preventDefault();
-            e.stopPropagation();
-            close(e.key === 'Enter' ? (input.value.trim() || null) : null);
-        };
-        document.addEventListener('keydown', onKey, true);
-        backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) close(null); });
-        cancel.onclick = () => close(null);
-        ok.onclick = submit;
-    });
-
-// bytes -> human size ('1.2 GB')
-const fmtSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-};
-
-// gaussian count -> compact form ('4.1M')
-const fmtCount = (n: number): string => {
-    if (n < 1000) return String(n);
-    if (n < 1e6) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
-    return `${(n / 1e6).toFixed(2).replace(/\.?0+$/, '')}M`;
-};
-
-// ---------- persisted form state ----------
-const FORM_KEY = 'splat-studio.form';
-// selects whose options come from the workspace — restored after the file list loads
-const FILE_SELECT_IDS = new Set(['convert-input', 'lod-input', 'render-input', 'collision-input', 'analyze-input', 'edit-input']);
-// controls owned by the server/desktop (MCP consent, update prefs) — synced
-// from their owners, never persisted to localStorage or captured in undo
-const EXTERNAL_STATE_IDS = new Set(['mcp-control', 'update-channel', 'update-auto']);
-const formState: Record<string, string | boolean> = (() => {
-    try { return JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'); } catch { return {}; }
-})();
-
-// bound to document: panels live in separate dock groups now, so a single
-// delegated listener survives any re-docking (change bubbles to document)
-document.addEventListener('change', (e) => {
-    const t = e.target;
-    if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement) || !t.id) return;
-    if (t.id === 'files-select-all') return; // transient bulk-select state, not a form value
-    if (!EXTERNAL_STATE_IDS.has(t.id)) {
-        formState[t.id] = t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value;
-        localStorage.setItem(FORM_KEY, JSON.stringify(formState));
-    }
-    scheduleUndoCapture(); // record an undo step for this committed change
-});
-
-const restoreFormState = () => {
-    for (const [id, value] of Object.entries(formState)) {
-        if (FILE_SELECT_IDS.has(id) || EXTERNAL_STATE_IDS.has(id)) continue;
-        const el = document.getElementById(id);
-        if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) continue;
-        if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = value === true;
-        else el.value = String(value);
-    }
-};
+import { $, fileList, convertInput, genInput, lodInput, renderInput, collisionInput, analyzeInput, editInput, skyboxSelect, hudSplat, hudCollision, hudVoxel, jobCommand, jobLog, convertRun, lodRun, renderRun, collisionRun, analyzeRun, convertFormat, generateViewBtn, carveBox, projectSelect } from './dom';
+import { showToast, promptText, fmtSize, fmtCount, numOrNull, strOrUndef, numOrUndef } from './ui';
+import { viewer, setViewer, layerVisible, currentSplatName, currentCollisionName, currentVoxelName, setCurrentSplatName, setCurrentCollisionName, setCurrentVoxelName, splatFileNames, setSplatFileNames, lodMetaCache, hooks } from './state';
+import type { LayerId } from './state';
+import { formState, FORM_KEY, FILE_SELECT_IDS, EXTERNAL_STATE_IDS, restoreFormState } from './form-state';
 
 // ---------- file list ----------
-let splatFileNames: string[] = [];
 let lastFiles: api.FileEntry[] = [];
-// the ACTIVE splat (most recently shown) — the live Convert preview only
-// applies while this is the Convert input, so baked outputs aren't double-transformed
-let currentSplatName: string | null = null;
-// which files the single collision / voxel overlays were loaded from
-let currentCollisionName: string | null = null;
-let currentVoxelName: string | null = null;
 // rows with an open details card / a ticked checkbox — survive list re-renders
 const expandedFiles = new Set<string>();
 const selectedFiles = new Set<string>();
 // live row elements for the expandable (splat/lod) rows, rebuilt per render
 const fileRows = new Map<string, { li: HTMLLIElement; chev: HTMLButtonElement }>();
-// build-meta.json per LOD bundle, keyed name@mtime; null = none on disk (404)
-const lodMetaCache = new Map<string, api.LodBuildMeta | null>();
 
 // repopulate a file <select>, keeping the current choice when still present
 const fillSelect = (select: HTMLSelectElement, names: string[]) => {
@@ -201,7 +62,7 @@ const refreshFiles = async (highlight?: Set<string>) => {
     // anything the CLI can read (incl. .spz/.splat/.ksplat/.lcc/.lcc2), not just
     // what the engine can render
     const splatFiles = files.filter((f) => f.kind === 'splat');
-    splatFileNames = splatFiles.map((f) => f.name);
+    setSplatFileNames(splatFiles.map((f) => f.name));
     // .mjs generators are valid convert/analyze inputs, but not collision/LOD sources
     const generatorNames = files.filter((f) => f.kind === 'generator').map((f) => f.name);
     // lod-meta.json (our own streamed-SOG output) is a valid convert/analyze INPUT
@@ -429,12 +290,12 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
             setChip(hudSplat, `splat: ${name}`);
             layerVisible.splat = true;
             v.setSplatVisible(true);
-            currentSplatName = name;
+            setCurrentSplatName(name);
             syncPreview(); // apply the live Convert preview if this is the input
             syncRegionViz(); updateRegionEstimate(); // re-fit/recompute the region box for the new splat
         } else if (as === 'collision') {
             if (!(await v.loadCollision(url, filename))) return false;
-            currentCollisionName = name;
+            setCurrentCollisionName(name);
             setChip(hudCollision, `collision: ${name} (${v.collisionTriangles.toLocaleString()} tris)`);
             layerVisible.collision = true;
             v.setCollisionVisible(true);
@@ -448,7 +309,7 @@ const viewFile = async (name: string, as: api.ViewKind): Promise<boolean> => {
         } else {
             const { count, truncated, applied } = await v.loadVoxels(url);
             if (!applied) return false;
-            currentVoxelName = name;
+            setCurrentVoxelName(name);
             setChip(hudVoxel, `voxels: ${name} (${count.toLocaleString()} boxes)`);
             layerVisible.voxels = true;
             v.setVoxelsVisible(true);
@@ -515,7 +376,7 @@ const toggleFileEye = async (eye: HTMLButtonElement, name: string, as: api.ViewK
 
 /** Reflect the viewer's active splat into the HUD chip + preview plumbing. */
 const syncActiveSplatChip = (): void => {
-    currentSplatName = viewer?.activeSplatName ?? null;
+    setCurrentSplatName(viewer?.activeSplatName ?? null);
     if (currentSplatName) setChip(hudSplat, `splat: ${currentSplatName}`);
     else hideChip(hudSplat);
 };
@@ -1006,11 +867,6 @@ $<HTMLButtonElement>('add-sample-generator').onclick = () => {
 // ---------- jobs ----------
 const jobList = $<HTMLUListElement>('job-list');
 const jobParallel = $<HTMLInputElement>('job-parallel');
-const convertRun = $<HTMLButtonElement>('convert-run');
-const lodRun = $<HTMLButtonElement>('lod-run');
-const renderRun = $<HTMLButtonElement>('render-run');
-const collisionRun = $<HTMLButtonElement>('collision-run');
-const analyzeRun = $<HTMLButtonElement>('analyze-run');
 
 /** every visible number input in the panel must hold a valid value */
 const panelValid = (panelId: string): boolean => {
@@ -1169,7 +1025,6 @@ const runJob = async (start: () => Promise<string>, button?: HTMLButtonElement, 
 ensureJobsPolling(); // pick up jobs already queued/running (e.g. MCP-submitted)
 
 // ---------- convert panel ----------
-const convertFormat = $<HTMLSelectElement>('convert-format');
 const lodMode = $<HTMLSelectElement>('lod-mode');
 const lodFileRows = $<HTMLDivElement>('lod-file-rows');
 
@@ -1345,7 +1200,6 @@ lodAutotuneBtn.onclick = () => {
 // freeform field) + Generate & view; an .lcc / .lcc2 / lod-meta.json source → LOD-select.
 let genSchema: api.GenParam[] | null = null;
 let genSchemaFor = '';
-const generateViewBtn = $<HTMLButtonElement>('generate-view');
 
 const renderGenSliders = (schema: api.GenParam[]) => {
     const container = $('gen-sliders');
@@ -1441,14 +1295,6 @@ $<HTMLButtonElement>('webp-from-viewer').onclick = () => {
     showToast('Camera set from viewer — adjust if needed');
 };
 
-const strOrUndef = (id: string): string | undefined => {
-    const v = $<HTMLInputElement>(id).value.trim();
-    return v === '' ? undefined : v;
-};
-const numOrUndef = (id: string): number | undefined => {
-    const v = $<HTMLInputElement>(id).value.trim();
-    return v === '' ? undefined : Number(v);
-};
 const webpImageOptions = (): api.ImageOptions => ({
     camera: readVecField('webp-camera'),
     lookAt: readVecField('webp-lookat'),
@@ -1531,7 +1377,6 @@ const tfX = $<HTMLInputElement>('tf-translate-x'), tfY = $<HTMLInputElement>('tf
 const rfX = $<HTMLInputElement>('tf-rotate-x'), rfY = $<HTMLInputElement>('tf-rotate-y'), rfZ = $<HTMLInputElement>('tf-rotate-z');
 const tfScaleEl = $<HTMLInputElement>('tf-scale');
 
-const numOrNull = (el: HTMLInputElement) => el.value.trim() === '' ? null : Number(el.value);
 
 // ----- Edit-panel region fields (box/sphere) + transform preview live here -----
 const ecBoxMinX = $<HTMLInputElement>('carve-box-min-x'), ecBoxMinY = $<HTMLInputElement>('carve-box-min-y'), ecBoxMinZ = $<HTMLInputElement>('carve-box-min-z');
@@ -2142,7 +1987,6 @@ $<HTMLButtonElement>('apply-origin').onclick = () => {
 
 // ---------- collision panel ----------
 const preset = $<HTMLSelectElement>('collision-preset');
-const carveBox = $<HTMLInputElement>('carve');
 const fillMode = $<HTMLSelectElement>('fill-mode');
 const seedX = $<HTMLInputElement>('seed-x');
 const seedY = $<HTMLInputElement>('seed-y');
@@ -2294,16 +2138,16 @@ const removeSplat = () => {
     rebuildSceneList();
     scheduleUndoCapture();
 };
-const removeCollision = () => { viewer?.clearCollision(); currentCollisionName = null; hideChip(hudCollision); rebuildSceneList(); };
-const removeVoxels = () => { viewer?.clearVoxels(); currentVoxelName = null; hideChip(hudVoxel); rebuildSceneList(); };
+const removeCollision = () => { viewer?.clearCollision(); setCurrentCollisionName(null); hideChip(hudCollision); rebuildSceneList(); };
+const removeVoxels = () => { viewer?.clearVoxels(); setCurrentVoxelName(null); hideChip(hudVoxel); rebuildSceneList(); };
 const clearViewport = () => {
     viewer?.clearAll();
     hideChip(hudSplat);
     hideChip(hudCollision);
     hideChip(hudVoxel);
-    currentSplatName = null;
-    currentCollisionName = null;
-    currentVoxelName = null;
+    setCurrentSplatName(null);
+    setCurrentCollisionName(null);
+    setCurrentVoxelName(null);
     syncPreview();
     rebuildSceneList();
 };
@@ -2630,6 +2474,7 @@ const scheduleUndoCapture = (): void => {
     clearTimeout(undoTimer);
     undoTimer = window.setTimeout(captureUndo, 250);
 };
+hooks.scheduleUndoCapture = scheduleUndoCapture; // form-state's change listener calls through the hook
 // enable undo capture once after boot settles, discarding any boot-time steps
 const enableUndo = (): void => { undoEnabled = true; clearUndoHistory(); };
 
@@ -2843,7 +2688,6 @@ async function bootLayout(): Promise<void> {
 void bootLayout();
 
 // ---------- projects ----------
-const projectSelect = $<HTMLSelectElement>('project-select');
 const PROJECT_KEY = 'splat-studio.project';
 
 const switchProject = async (name: string) => {
@@ -2901,7 +2745,7 @@ void loadProjects(localStorage.getItem(PROJECT_KEY) ?? undefined)
     .finally(enableUndo); // begin undo history once the initial project + files have loaded
 void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
     .then((v) => {
-        viewer = v;
+        setViewer(v);
         // sync restored control values into the freshly created viewer
         v.setWireColor($<HTMLInputElement>('wire-color').value);
         v.setWireOpacity(Number($<HTMLInputElement>('wire-opacity').value));
