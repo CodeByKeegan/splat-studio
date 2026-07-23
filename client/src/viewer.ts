@@ -106,6 +106,7 @@ export class SplatViewer {
     // scene-hierarchy selection: drives which gizmo (if any) is shown. Nothing
     // selected → no gizmo; the carve capsule only shows while 'capsule' is selected.
     private selected: SelId = 'none';
+    private seedPreview = false; // passive seed+capsule preview while the Collision tab is up
     private camGizmoMode: 'move' | 'rotate' = 'move';
     private renderCamDist = 1; // camera→lookAt distance, preserved while gizmo-dragging
     private gizmoDragging = false; // suppress external node repositioning mid-drag
@@ -820,7 +821,7 @@ export class SplatViewer {
     }
 
     // seed marker + carve capsule visibility is driven by hierarchy selection
-    // ('capsule') via applySelection — not a standalone toggle.
+    // ('capsule') or the seedPreview flag, both via applySelection.
 
     // ----- edit tools: measure → scale, and set-origin -----
     private attachGizmo(target: 'seed' | 'a' | 'b'): void {
@@ -1162,6 +1163,12 @@ export class SplatViewer {
         }
     }
 
+    /** Show the seed marker + carve capsule as a passive preview (no gizmo), independent of selection. */
+    setSeedPreviewVisible(visible: boolean): void {
+        this.seedPreview = visible;
+        this.applySelection();
+    }
+
     /** Select a scene object — shows its gizmo (capsule/render-camera) or nothing. */
     selectObject(id: SelId): void {
         this.selected = id;
@@ -1182,10 +1189,10 @@ export class SplatViewer {
 
     private applySelection(): void {
         const sel = this.selected;
-        // the carve capsule + seed marker exist only while selected
+        // the carve capsule + seed marker show while selected or previewed
         const capsuleSel = sel === 'capsule';
-        this.seedMarker.enabled = capsuleSel;
-        this.capsuleEntity.enabled = capsuleSel;
+        this.seedMarker.enabled = capsuleSel || this.seedPreview;
+        this.capsuleEntity.enabled = capsuleSel || this.seedPreview;
         // exactly one gizmo at a time — detach all, then attach for the selection
         this.detachSelectionGizmos();
         // measure/origin and crop tools own the viewport; no selection gizmo then

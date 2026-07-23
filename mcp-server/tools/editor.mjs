@@ -186,7 +186,7 @@ export function register(server) {
     // ---- dock ----
     server.registerTool('panel', {
         title: 'Panel',
-        description: 'Open or close a dock panel by id: panel-files, panel-convert (titled "Export"), panel-generate, panel-lod, panel-render, panel-analyze, panel-edit, panel-collision, panel-scene, camera-view, panel-job, or panel-settings (opens the Settings dialog — the MCP consent toggle lives there).',
+        description: 'Open or close a dock panel by id: panel-files (titled "Scene" — viewport objects + project files), panel-convert (titled "Export"), panel-generate, panel-lod, panel-render, panel-analyze, panel-edit, panel-collision, camera-view, panel-job, or panel-settings (opens the Settings dialog — the MCP consent toggle lives there).',
         annotations: SAFE,
         inputSchema: {
             action: z.enum(['open', 'close']),

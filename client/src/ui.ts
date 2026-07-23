@@ -90,6 +90,63 @@ export const twoStageConfirm = (
     return { confirm, disarm };
 };
 
+// ---------- advanced-options disclosure ----------
+// Each workflow panel's optional half lives in an .adv-body (id `<panel>-adv`)
+// toggled by its .adv-toggle button (data-adv-panel names the owning panel).
+// Open state persists per panel; panelValid() opens it to reveal a bad value.
+const ADV_KEY = 'splat-studio.adv';
+const advOpen: Record<string, boolean> = (() => {
+    try { return JSON.parse(localStorage.getItem(ADV_KEY) ?? '{}') as Record<string, boolean>; } catch { return {}; }
+})();
+const advToggles = new Map<string, HTMLButtonElement>();
+const renderAdv = (panelId: string): void => {
+    const btn = advToggles.get(panelId);
+    if (!btn) return;
+    const open = !!advOpen[panelId];
+    $(`${panelId}-adv`).classList.toggle('hidden', !open);
+    btn.classList.toggle('open', open);
+    btn.textContent = `${open ? '▾' : '▸'} Advanced options`;
+};
+export const setAdvOpen = (panelId: string, open: boolean): void => {
+    advOpen[panelId] = open;
+    localStorage.setItem(ADV_KEY, JSON.stringify(advOpen));
+    renderAdv(panelId);
+};
+for (const btn of document.querySelectorAll<HTMLButtonElement>('.adv-toggle')) {
+    const panelId = btn.dataset.advPanel ?? '';
+    advToggles.set(panelId, btn);
+    btn.onclick = () => setAdvOpen(panelId, !advOpen[panelId]);
+    renderAdv(panelId);
+}
+
+// ---------- preset chips ----------
+// A .preset-row of buttons mirrors a hidden <select> (data-preset-for) that
+// carries the state — form persistence and the panel's onchange applier keep
+// working unchanged. A chip with data-open-adv also expands that panel's
+// Advanced options.
+export const syncPresetRows = (): void => {
+    for (const row of document.querySelectorAll<HTMLElement>('.preset-row')) {
+        const sel = document.getElementById(row.dataset.presetFor ?? '') as HTMLSelectElement | null;
+        if (!sel) continue;
+        for (const b of row.querySelectorAll<HTMLButtonElement>('.preset-btn')) {
+            b.classList.toggle('active', b.dataset.value === sel.value);
+        }
+    }
+};
+for (const row of document.querySelectorAll<HTMLElement>('.preset-row')) {
+    const sel = document.getElementById(row.dataset.presetFor ?? '') as HTMLSelectElement | null;
+    if (!sel) continue;
+    row.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.preset-btn');
+        if (!btn?.dataset.value) return;
+        if (btn.dataset.openAdv) setAdvOpen(btn.dataset.openAdv, true);
+        sel.value = btn.dataset.value;
+        sel.dispatchEvent(new Event('change', { bubbles: true })); // apply + persist
+        syncPresetRows();
+    });
+    sel.addEventListener('change', syncPresetRows); // undo/programmatic changes re-sync chips
+}
+
 // bytes -> human size ('1.2 GB')
 export const fmtSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -110,11 +167,21 @@ export const numOrNull = (el: HTMLInputElement): number | null => el.value.trim(
 // path -> basename, for compact file labels
 export const baseLabel = (n: string): string => n.split('/').pop() ?? n;
 
-/** every visible number input in the panel must hold a valid value */
+/** Every active number input in the panel must hold a valid value. Inputs in a
+ * mode-hidden row are skipped; inputs hidden only because the Advanced
+ * disclosure is collapsed still count — the disclosure opens to reveal them. */
 export const panelValid = (panelId: string): boolean => {
     for (const input of document.querySelectorAll<HTMLInputElement>(`#${panelId} input[type=number]`)) {
-        if (input.closest('.hidden')) continue;
-        if (!input.reportValidity()) return false;
+        let inactive = false;
+        let inCollapsedAdv = false;
+        for (let el = input.parentElement; el; el = el.parentElement) {
+            if (!el.classList.contains('hidden')) continue;
+            if (el.classList.contains('adv-body')) inCollapsedAdv = true;
+            else { inactive = true; break; }
+        }
+        if (inactive || input.checkValidity()) continue;
+        if (inCollapsedAdv) setAdvOpen(panelId, true); // reveal before reporting
+        return input.reportValidity();
     }
     return true;
 };

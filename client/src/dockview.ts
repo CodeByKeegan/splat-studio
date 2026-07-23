@@ -18,7 +18,7 @@ markDockviewPackageLoaded(); // silence the "internal package" dev notice — we
 // component is the createComponent key; closable=false omits the tab close button.
 export type Win = { id: string; component: string; title: string; closable: boolean };
 export const WINDOWS: Win[] = [
-    { id: 'panel-files', component: 'panel-files', title: 'Files', closable: true },
+    { id: 'panel-files', component: 'panel-files', title: 'Scene', closable: true },
     { id: 'panel-convert', component: 'panel-convert', title: 'Export', closable: true },
     { id: 'panel-generate', component: 'panel-generate', title: 'Generate', closable: true },
     { id: 'panel-lod', component: 'panel-lod', title: 'LOD', closable: true },
@@ -26,7 +26,6 @@ export const WINDOWS: Win[] = [
     { id: 'panel-analyze', component: 'panel-analyze', title: 'Analyze', closable: true },
     { id: 'panel-edit', component: 'panel-edit', title: 'Edit', closable: true },
     { id: 'panel-collision', component: 'panel-collision', title: 'Collision', closable: true },
-    { id: 'panel-scene', component: 'panel-scene', title: 'Scene', closable: true },
     { id: 'camera-view', component: 'camera-view', title: 'Camera view', closable: true },
     { id: 'viewer', component: 'viewer', title: 'Viewer 3D', closable: false },
     { id: 'panel-job', component: 'panel-job', title: 'Jobs', closable: false }
@@ -115,11 +114,9 @@ export function applyDefaultLayout(): void {
     for (const id of ['panel-convert', 'panel-generate', 'panel-lod', 'panel-render', 'panel-analyze', 'panel-edit', 'panel-collision']) {
         dock.addPanel({ id, component: id, title: titleOf(id), position: { referencePanel: 'panel-files', direction: 'within' } });
     }
-    dock.addPanel({ id: 'panel-scene', component: 'panel-scene', title: titleOf('panel-scene'), position: { referencePanel: 'viewer', direction: 'right' } });
     dock.addPanel({ id: 'panel-job', component: 'panel-job', title: titleOf('panel-job'), position: { referencePanel: 'viewer', direction: 'below' } });
     // size the side/bottom groups so the 3D viewport keeps the bulk of the window
     dock.getPanel('panel-files')?.group.api.setSize({ width: 340 });
-    dock.getPanel('panel-scene')?.group.api.setSize({ width: 300 });
     dock.getPanel('panel-job')?.group.api.setSize({ height: 180 });
     dock.getPanel('panel-files')?.api.setActive();
 }
@@ -151,7 +148,7 @@ export function panelActive(id: string): boolean {
 }
 
 // ---------- per-workspace layout persistence ----------
-const LAYOUT_VERSION = 2; // v1 layouts had a Settings dock panel (now a dialog)
+const LAYOUT_VERSION = 3; // v2 layouts had a separate Scene dock panel (now merged into Files as the Scene tab)
 let saveTimer: number | undefined;
 export const persistNow = (): void => { void api.saveLayout({ __v: LAYOUT_VERSION, dockview: dock.toJSON() as unknown as Record<string, unknown> }); };
 // debounced persist — layout changes arrive in bursts while dragging

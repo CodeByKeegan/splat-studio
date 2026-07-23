@@ -3,13 +3,14 @@
 import * as api from './api';
 import { $, lodInput } from './dom';
 import { splatFileNames } from './state';
-import { showToast, fmtCount, baseLabel, panelValid } from './ui';
+import { showToast, fmtCount, baseLabel, panelValid, syncPresetRows, setAdvOpen } from './ui';
 import { runJob } from './jobs';
 import { fillSelect, filesRefreshHooks } from './files-panel';
 
 const lodMode = $<HTMLSelectElement>('lod-mode');
 const lodFileRows = $<HTMLDivElement>('lod-file-rows');
 const lodRun = $<HTMLButtonElement>('lod-run');
+const lodPreset = $<HTMLSelectElement>('lod-preset');
 
 const lodRowSelects = (): HTMLSelectElement[] => [...lodFileRows.querySelectorAll('select')];
 // refill the level-row selects whenever the file list refreshes
@@ -142,20 +143,49 @@ const autotuneCombine = async (input: string): Promise<void> => {
     if (tooBig) showToast(`${baseLabel(tooBig.file)} has more gaussians than the Input — consider making it the Input (LOD 0).`, true);
 };
 
-lodAutotuneBtn.onclick = () => {
+const runAutotune = (): void => {
     const input = lodInput.value;
     if (!input) return showToast('Pick a LOD input first', true);
     if (input.toLowerCase().endsWith('.mjs')) return showToast('Auto-tune reads existing splats, not generators — convert the generator to a splat first', true);
     lodAutotuneBtn.disabled = true;
-    const prevLabel = lodAutotuneBtn.textContent;
-    lodAutotuneBtn.textContent = 'Reading stats…';
+    showLodPlan('Reading splat stats…');
     const run = lodMode.value === 'combine' ? autotuneCombine(input) : autotuneDecimate(input);
-    void run.catch((err) => showToast(`Auto-tune failed: ${err}`, true))
-        .finally(() => {
-            lodAutotuneBtn.disabled = false;
-            lodAutotuneBtn.textContent = prevLabel;
-        });
+    void run.catch((err) => {
+        showLodPlan('');
+        showToast(`Auto-tune failed: ${err}`, true);
+    }).finally(() => { lodAutotuneBtn.disabled = false; });
 };
+
+// ----- scene-type presets: static ladders, or ⚡ Auto = the stats auto-tune -----
+// values land in the fields via change events, so they persist like typed input;
+// the change events don't flip the preset to Custom (only user 'input' does)
+const LOD_PRESETS: Record<string, { levels: number; keep: number; chunkExtent: number }> = {
+    indoor: { levels: 3, keep: 50, chunkExtent: 16 },
+    outdoor: { levels: 5, keep: 50, chunkExtent: 32 },
+    object: { levels: 2, keep: 50, chunkExtent: 8 }
+};
+const setNumField = (id: string, v: number): void => {
+    const el = $<HTMLInputElement>(id);
+    el.value = String(v);
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+};
+lodPreset.onchange = () => {
+    if (lodPreset.value === 'auto') return runAutotune();
+    const p = LOD_PRESETS[lodPreset.value];
+    if (!p) return; // custom — nothing to apply
+    lodMode.value = 'decimate';
+    lodMode.dispatchEvent(new Event('change', { bubbles: true })); // updateLodRows + persist
+    setNumField('lod-levels', p.levels);
+    setNumField('lod-keep', p.keep);
+    setNumField('lod-chunk-extent', p.chunkExtent);
+    showLodPlan(`${lodPreset.value[0].toUpperCase()}${lodPreset.value.slice(1)}: ${p.levels} levels at ${p.keep}% keep each, ${p.chunkExtent} m chunks. ⚡ Auto instead sizes these from the input's stats.`);
+};
+// editing any preset-owned level/chunk control flips the active chip to Custom
+for (const id of ['lod-mode', 'lod-levels', 'lod-keep', 'lod-chunk-count', 'lod-chunk-extent']) {
+    $(id).addEventListener('input', () => { lodPreset.value = 'custom'; syncPresetRows(); });
+}
+// combine mode lives in Advanced — reveal it when picked so the level rows show
+lodMode.addEventListener('change', () => { if (lodMode.value === 'combine') setAdvOpen('panel-lod', true); });
 
 // ---------- LOD panel: bake a streamed multi-LOD SOG ----------
 lodRun.onclick = () => {

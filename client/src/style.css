@@ -337,6 +337,64 @@ button.primary:focus-visible { outline-color: var(--text); }
     margin: 12px 0 6px;
 }
 
+/* ----- section cards: one bordered container per group of related controls ----- */
+.sec {
+    border: 1px solid var(--group-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-deep) 28%, transparent);
+    padding: 9px 11px 10px;
+    margin: 0 0 10px;
+}
+.sec-head {
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-dim);
+    margin: 0 0 7px;
+}
+.sec-head em { font-style: normal; text-transform: none; letter-spacing: normal; }
+.sec > :last-child { margin-bottom: 0; }
+
+/* ----- advanced-options disclosure (▸/▾ toggle + collapsible body) ----- */
+.adv-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    border-top: 1px solid var(--group-border);
+    border-radius: 0;
+    color: var(--text-dim);
+    font-size: var(--fs-sm);
+    padding: 8px 2px 6px;
+    margin: 10px 0 0;
+    cursor: pointer;
+    text-align: left;
+}
+.adv-toggle:hover { color: var(--text); }
+.adv-body { padding-top: 2px; }
+
+/* ----- preset chips — mirror a hidden select that carries the state ----- */
+.preset-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
+.preset-btn {
+    flex: 1 1 auto;
+    padding: 5px 9px;
+    font-size: var(--fs-sm);
+    border-radius: 6px;
+    white-space: nowrap;
+}
+.preset-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    font-weight: 600;
+}
+
+/* ----- in-panel gizmo select buttons — mirror the scene selection ----- */
+button[data-sel] { width: 100%; font-size: var(--fs-sm); }
+button[data-sel].active { border-color: var(--selection); color: var(--selection); }
+
 .axis { flex: 1; min-width: 0; }
 .axis > span {
     display: block;
@@ -427,11 +485,12 @@ body.dropping #viewport::after {
     max-height: 240px;
     overflow-y: auto;
 }
-/* Files is a dedicated dock panel — lay it out as a column so the list grows to
-   fill the panel (scrolling internally) instead of leaving the area below empty. */
+/* The merged Scene panel is a column: scene objects + files; the file list grows
+   to fill the panel (scrolling internally), the section cards keep their height. */
 #panel-files { display: flex; flex-direction: column; }
 #panel-files .file-list { flex: 1 1 auto; min-height: 80px; max-height: none; }
-#panel-files #group-actions { flex-shrink: 0; } /* linked group pinned below the file list */
+#panel-files .sec, #panel-files .sec-head, #panel-files #drop-zone, #panel-files #file-list-bar { flex-shrink: 0; }
+#panel-files .scene-list { max-height: 190px; overflow-y: auto; }
 
 /* scene hierarchy */
 .scene-list { list-style: none; margin: 0 0 8px; padding: 0; }
@@ -984,11 +1043,8 @@ body.dropping #viewport::after {
 #generate-view { background: var(--bg-input); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; }
 #generate-view:hover { background: var(--accent); color: var(--on-accent); }
 
-/* ----- LOD auto-tune ----- */
-#lod-autotune { background: var(--bg-input); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; }
-#lod-autotune:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
-#lod-autotune:disabled { opacity: 0.6; cursor: wait; }
-#lod-autotune-plan { margin-top: 2px; }
+/* ----- LOD auto-tune plan line (under the preset chips) ----- */
+#lod-autotune-plan { margin: 2px 0 8px; }
 
 /* ----- carve out / trim (removes data → amber accent) ----- */
 #carve-remove { width: 100%; margin-top: 4px; border-color: var(--warn); color: var(--warn); font-weight: 600; }

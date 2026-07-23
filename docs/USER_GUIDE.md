@@ -41,8 +41,9 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
 - **Top menu bar** — the app title, the **Window** and **Layout** menus, and the
   project picker.
 - **Dock** — the default layout puts the panel tabs (Files, Export, Generate, LOD, Render,
-  Analyze, Edit, Collision) on the left, the **3D viewport** in the center, the **Jobs** panel
-  (the job queue + live `splat-transform` output) below it, and **Scene** on the right. Drag any tab
+  Analyze, Edit, Collision) on the left — with **Scene** (viewport objects + project files)
+  as the first tab — the **3D viewport** in the center, and the **Jobs** panel
+  (the job queue + live `splat-transform` output) below it. Drag any tab
   to rearrange; drag a tab out to float it in its own window. **Settings** opens as
   its own dialog (⚙ in the viewport toolbar, or **Window ▸ Settings…**).
 - **Viewport** — the live 3D view, with a [toolbar](#viewport-toolbar--settings) along
@@ -50,6 +51,13 @@ Splat Studio is a **dockable tab editor** (think Unity/Unreal). Every panel and 
   fast, Ctrl slow). Switch to orbit from the toolbar.
 
 Every control has a tooltip — hover to see what it does and which CLI flag it maps to.
+
+The workflow panels share one shape: the essentials up top (input, a **preset** row
+where one applies, and the primary action button), with everything else grouped into
+cards behind an **▸ Advanced options** disclosure. Presets are one-click chips
+(editing an advanced control they own switches the chip to **Custom**), and a bad
+value hidden in a collapsed Advanced section pops the section open rather than
+failing silently.
 
 ### Top menu
 
@@ -79,7 +87,8 @@ The top bar holds (1) the app title, (2) the menus, and (3) the project picker.
 
 A **project** is a folder in your workspace; the dropdown in the top bar
 switches between them, and **+ New** creates one. Everything is scoped to the
-active project.
+active project. The file list lives in the **Scene** tab under **Project files**,
+below the [In-viewport object list](#scene-hierarchy).
 
 To add splats:
 
@@ -132,7 +141,7 @@ To add splats:
    project — run it from the [Generate tab](#generate-procedural-mjs-generators).
 
 > **Linked group — edit a proxy, apply to every LOD:** the **Linked group** section at
-> the bottom of the Files panel lets you tick the files that are the same location at
+> the bottom of the Scene tab lets you tick the files that are the same location at
 > different detail (its LODs). Edit the proxy once, then fan that one edit across the
 > whole ladder so it stays consistent. Two actions:
 >
@@ -181,11 +190,13 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
    | **CSV** | Raw gaussian data for analysis |
    | **HTML viewer** | Self-contained viewer page with the splat embedded |
 
-3. Set format-specific options as they appear. For SOG-backed outputs that's a
-   paired **SH iterations** / **Encoder workers** row — iterations trade quality
-   for speed, while Encoder workers (`--max-workers`) only changes encode speed,
-   not the output (`0` = serial). Other formats surface SPZ version, HTML viewer
-   options, etc. Then click **Export**. The job lands in the **Jobs** panel — click it
+3. Click **Export** — for most exports that's the whole flow. Everything else lives
+   under **▸ Advanced options**, grouped into cards: **Encoding** (format-specific —
+   for SOG-backed outputs a paired **SH iterations** / **Encoder workers** row, where
+   iterations trade quality for speed and Encoder workers (`--max-workers`) only
+   changes encode speed, not the output, `0` = serial; SPZ version and HTML viewer
+   options appear for those formats), **Reduce** (decimate), **Filter**, and
+   **Device & diagnostics**. The job lands in the **Jobs** panel — click it
    there for its exact CLI command and live output. Jobs queue up and run one at a
    time by default; the panel's **parallel** field raises how many may run at once
    (keep it at 1 for GPU-heavy jobs like collision), and **✕** on a row cancels a
@@ -210,7 +221,8 @@ the Generate tab's params apply to that run too.
 
 ### Filters
 
-The **Filter** section applies encode-time filters to the splat before it's written.
+The **Filter** card (under the Export panel's **Advanced options**) applies
+encode-time filters to the splat before it's written.
 They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 
 - **Strip SH bands above** — drop spherical-harmonic bands to shrink the file
@@ -235,18 +247,24 @@ The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-
 folders that the engine streams by camera distance, for scenes too big to load at once.
 
 1. **Input** — the highest-detail source (LOD 0).
-2. Set the paired **SH iterations** / **Encoder workers** row (as in Export).
-3. **LOD source** — *Decimate input automatically* derives the lighter levels from the
-   single input, or *Combine existing files as levels* uses files you already have
-   (e.g. exports at different gaussian counts) as explicit levels.
-4. In Decimate mode, set **LOD levels** and **Keep per level (%)**. In Combine mode,
-   each **Additional level** row is the next, lighter level — order matters (each level
-   should have fewer gaussians than the one before). Tick a row's **Env** box to make
-   that file an always-visible far/background shell (a coarse, decimated backdrop —
-   skybox, distant cityscape — emitted as LOD `-1`) the runtime keeps resident instead
-   of culling it by distance. One environment layer per bake; Combine mode only.
-5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
-   **Generate streamed LOD**.
+2. **Scene type** — pick a preset chip: **⚡ Auto** (recommended — reads the input's
+   stats and sizes everything, see below), or **Indoor** (3 levels, 16 m chunks),
+   **Outdoor** (5 levels, 32 m chunks), **Object** (2 levels, 8 m chunks) — all at
+   50% keep per level. The plan line under the chips spells out what will be baked.
+3. **Generate streamed LOD**. That's the whole simple flow; the knobs the presets set
+   live under **▸ Advanced options**:
+   - **Levels** — the **LOD source** (*Decimate input automatically* derives the
+     lighter levels from the single input; *Combine existing files as levels* uses
+     files you already have as explicit levels — picking it opens Advanced). In
+     Decimate mode, **LOD levels** and **Keep per level (%)**. In Combine mode, each
+     **Additional level** row is the next, lighter level — order matters (each level
+     should have fewer gaussians than the one before). Tick a row's **Env** box to
+     make that file an always-visible far/background shell (a coarse backdrop —
+     skybox, distant cityscape — emitted as LOD `-1`) the runtime keeps resident
+     instead of culling it by distance. One environment layer per bake; Combine only.
+   - **Streaming chunks** — **Chunk size (K splats)** and **Chunk extent (m)**.
+   - **Encoding** — the paired **SH iterations** / **Encoder workers** row (as in
+     Export) and the **Device**.
 
 Every bake also writes a `build-meta.json` next to the bundle's `lod-meta.json` — the
 recipe it was built from: the source file per level, the environment selection, the
@@ -254,7 +272,7 @@ effective settings, and per-level gaussian counts. Expand the bundle's row in th
 panel (its **▸** chevron, or **Details** in the **⋯** menu) to read the recipe inline
 (bundles baked before this file existed report "No build recipe").
 
-> **⚡ Auto-tune from splat stats:** the **Auto-tune** button reads each source's
+> **⚡ Auto:** the **⚡ Auto** scene-type chip reads each source's
 > gaussian count and world-space extents (a quick CPU summary, cached) and fills the
 > settings for you:
 >
@@ -278,9 +296,11 @@ rasterizer.
 1. Pick the **Input** splat.
 2. Set the per-axis **Camera** and **Look at** fields — or click **📷 from viewer** to copy
    the current viewport camera as a starting point, then fine-tune by dragging the
-   **Render camera** gizmo (select it in the [Scene panel](#scene-hierarchy)).
-3. Set **FOV°**, **Resolution**, **Projection** (pinhole or equirect 360°), and a
-   **Background** color.
+   **Render camera** gizmo (**🎥 Select & drag in viewport** in the Camera card, or
+   select it in the [Scene tab's In-viewport list](#scene-hierarchy)).
+3. Set the **Resolution**, then **Render WebP image**. The rest lives under
+   **▸ Advanced options**: **Lens & framing** (FOV°, **Projection** — pinhole or
+   equirect 360° — and a **Background** color), depth of field, motion blur, device.
 4. Optionally add **Depth of field** (f-stop + focus distance, pinhole only) and
    **Motion blur** (an end camera pose + shutter / sample count).
 5. Pick the **Device** and click **Render WebP image**.
@@ -384,18 +404,21 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
 (`.voxel.json/.bin`) from a splat.
 
 1. **Input** — the source splat.
-2. **Preset** — a one-click starting point that fills in the controls below:
-   - **Indoor** — seal the model from outside air, then carve the walkable interior.
-   - **Outdoor** — fill each column up from the bottom so terrain is solid.
-   - **Object** — plain voxelization, no sealing or carving.
-   Editing any control switches the preset to **Custom**.
-3. **Voxelize** — set the **voxel size** (edge length, e.g. 0.05 m) and **opacity
-   cutoff** (ignore wispy gaussians).
-4. **Seed point** — a spot *inside* the scene used by sealing, carving and the
-   cluster filter. Type XYZ, or fly inside with WASD and click **📷 from camera**
-   (recommended — typed axes are CLI-space, rotated 180° from the viewer). To see and
-   drag the seed in the viewport, select **Carve capsule** in the
-   [Scene panel](#scene-hierarchy).
+2. **Preset** — one-click chips that fill in the collision controls:
+   - **🏠 Indoor** — seal the model from outside air, then carve the walkable interior.
+   - **🌍 Outdoor** — fill each column up from the bottom so terrain is solid.
+   - **📦 Object** — plain voxelization, no sealing or carving.
+   Editing any preset-owned control in Advanced switches the chip to **Custom**.
+3. **Seed point** — a spot *inside* the scene used by sealing, carving and the
+   cluster filter. Fly inside with WASD and click **📷 from camera** (recommended —
+   typed axes are CLI-space, rotated 180° from the viewer). While the Collision tab
+   is open the seed marker + carve capsule preview in the viewport; click
+   **💊 Select & drag in viewport** to grab them with a gizmo (the seed XYZ fields
+   update live).
+4. **Generate collision** — with a preset and a seed, that's the whole simple flow.
+   Steps 5–8 below are the **▸ Advanced options** cards, for when the preset isn't
+   enough: **Voxelize** (voxel size — edge length, e.g. 0.05 m — opacity cutoff, and
+   the cluster filter), **Collision region**, **Seal**, **Carve**, and **Mesh**.
 5. **Collision region** *(optional)* — limit generation to part of a large scene.
    Tick **Limit to box** to crop the splat to an axis-aligned box (everything outside
    is ignored before voxelizing). An amber box appears in the viewport: drag a **square
@@ -413,11 +436,11 @@ Generate a runtime collision mesh (`.collision.glb`) and sparse voxel octree
 6. **Seal** — choose hole sealing (external fill for interiors, floor fill for
    terrain, or none) and the distance to seal over.
 7. **Carve** — flood-fill walkable space from the seed with a player-sized capsule
-   (height/radius). Select **Carve capsule** in the Scene panel to preview it in cyan
-   and size it against the splat. Essential after external fill.
-8. **Mesh style** — smooth (marching cubes) or exact voxel faces — then **Generate
-   collision**. With **Load result into viewport** checked (default), the outputs load
-   as a wireframe + voxel overlay when the job finishes.
+   (height/radius). The cyan capsule previews in the viewport while the Collision tab
+   is open — size it against the splat. Essential after external fill.
+8. **Mesh style** — smooth (marching cubes) or exact voxel faces. With **Load result
+   into viewport** checked (default), the outputs load as a wireframe + voxel overlay
+   when the job finishes.
 
 > The **cluster filter** (keep only the splats connected to the seed) is GPU-only and
 > can trip the Windows GPU watchdog on multi-million-gaussian scenes — uncheck it for
@@ -444,7 +467,8 @@ Display controls live in a **toolbar along the top of the Viewer 3D window**:
 - **⚙** — opens the **Settings** dialog (also under **Window ▸ Settings…**).
 
 Layer visibility (splat / collision / voxels) is toggled per-object with the **👁 eye
-buttons in the [Scene panel](#scene-hierarchy)**.
+buttons in the [Scene tab's In-viewport list](#scene-hierarchy)** (the file rows'
+eyes mirror the same state).
 
 ![Settings dialog](screenshots/settings-panel.png)
 
@@ -477,23 +501,25 @@ setup and [docs/MCP_WORKFLOWS.md](MCP_WORKFLOWS.md) for step-by-step agent workf
 
 ![Scene hierarchy](screenshots/scene-hierarchy.png)
 
-The **Scene** panel lists the objects currently in the viewport and lets you select
-one to move it with a gizmo — **selecting nothing shows no gizmo**. Each layer has a
-**👁 eye button** to show/hide it.
+The **In viewport** list at the top of the **Scene** tab shows the objects currently
+in the viewport and lets you select one to move it with a gizmo — **selecting nothing
+shows no gizmo**. Each layer has a **👁 eye button** to show/hide it. The workflow
+panels' **Select & drag in viewport** buttons (Collision, Render) drive the same
+selection, so you rarely need this list while a workflow tab is open.
 
 - **Splat / Collision mesh / Voxels** — appear once loaded; the 👁 toggles visibility,
   and selecting them just clears any active gizmo.
-- **Carve capsule** (✥) — shows up only while you're actively setting up collision
-  carving (the **Collision** tab is active **and** *Carve* is on). Select it to show
-  the seed marker + carve capsule and a **translate gizmo**; drag to position the
-  collision seed (the Collision panel's seed XYZ update live). Leaving the Collision
-  tab or turning off carve removes it (and clears the selection).
+- **Seed / carve capsule** (✥) — listed whenever a splat is loaded. It also previews
+  automatically (seed marker + cyan capsule) while the **Collision** tab is open.
+  Select it — here or via the Collision panel's **💊 Select & drag** button — for a
+  **translate gizmo**; drag to position the collision seed (the Collision panel's
+  seed XYZ update live).
 - **Render camera** (✥) — appears only while a WebP render is set up. Select it to move
   the render camera with a gizmo; the **Move / Rotate** toggle switches between a
   translate and a rotate gizmo — dragging updates the WebP **Camera** / **Look-at**
   fields, the frustum preview follows, and the [Camera view](#camera-view) updates live.
 
-**Environment / skybox:** at the bottom of the panel, pick an equirectangular panorama
+**Environment / skybox:** further down the Scene tab, pick an equirectangular panorama
 image (`.webp/.jpg/.png/.hdr`) from the project and click **Apply** to use it as the
 scene skybox; **Clear** removes it.
 

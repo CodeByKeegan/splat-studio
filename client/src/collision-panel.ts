@@ -3,8 +3,9 @@
 import * as api from './api';
 import { $, collisionInput, carveBox } from './dom';
 import { viewer } from './state';
-import { showToast, panelValid } from './ui';
-import { rebuildSceneList } from './viewport';
+import { showToast, panelValid, syncPresetRows } from './ui';
+import { rebuildSceneList, selectScene, viewportCallbacks } from './viewport';
+import { panelActive } from './dockview';
 import { runJob } from './jobs';
 import { regionBoxOn, regionSphereOn, getRegionRiskLevel, regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR } from './region-panel';
 
@@ -25,6 +26,22 @@ export const syncSeedViz = (): void => {
 };
 for (const el of [seedX, seedY, seedZ, carveHeight, carveRadius]) {
     el.addEventListener('input', syncSeedViz);
+}
+
+// the seed marker + capsule preview in the viewport whenever the Collision tab
+// is the shown one (selection still owns the gizmo) — called on tab changes
+export const syncSeedPreview = (): void => {
+    viewer?.setSeedPreviewVisible(panelActive('panel-collision') && !!viewer.hasSplat);
+};
+viewportCallbacks.syncSeedPreview = syncSeedPreview; // rebuildSceneList keeps the preview fresh
+
+// "Select & drag in viewport" — selects the object in the scene hierarchy so its
+// gizmo attaches; a second click deselects. Buttons light via their data-sel.
+for (const [btnId, selId] of [['capsule-select', 'capsule'], ['region-box-select', 'collision-region'], ['region-sphere-select', 'collision-sphere']] as const) {
+    $<HTMLButtonElement>(btnId).onclick = () => {
+        if (!viewer?.hasSplat) return showToast('View a splat first — the gizmo needs something to attach to', true);
+        selectScene(viewer.selection === selId ? 'none' : selId);
+    };
 }
 
 interface Preset {
@@ -57,12 +74,14 @@ preset.onchange = () => {
     carveHeight.value = String(p.carveHeight);
     carveRadius.value = String(p.carveRadius);
     syncCollisionRows();
+    syncSeedViz(); // capsule dimensions may have changed
+    rebuildSceneList();
 };
 
-// editing any preset-owned control flips the label to Custom (the seed is
+// editing any preset-owned control flips the active chip to Custom (the seed is
 // scene-specific, not preset-owned, so it doesn't count)
 for (const id of ['fill-mode', 'carve', 'filter-cluster', 'voxel-size', 'voxel-opacity', 'fill-size', 'carve-height', 'carve-radius', 'mesh-shape']) {
-    $(id).addEventListener('input', () => { preset.value = 'custom'; });
+    $(id).addEventListener('input', () => { preset.value = 'custom'; syncPresetRows(); });
 }
 carveBox.addEventListener('input', syncCollisionRows);
 carveBox.addEventListener('change', () => rebuildSceneList()); // capsule item depends on carve

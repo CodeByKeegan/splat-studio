@@ -3,17 +3,17 @@
 // viewportCallbacks late-binds upward calls into files-panel / edit-panel.
 import * as api from './api';
 import type { SelId } from './viewer';
-import { $, hudSplat, hudCollision, hudVoxel, carveBox, skyboxSelect } from './dom';
+import { $, hudSplat, hudCollision, hudVoxel, skyboxSelect } from './dom';
 import { viewer, layerVisible, setCurrentSplatName, setCurrentCollisionName, setCurrentVoxelName, hooks } from './state';
 import type { LayerId } from './state';
 import { showToast } from './ui';
-import { panelActive } from './dockview';
 
-// late-bound upward calls (files-panel / edit-panel assign their entries at eval)
-export const viewportCallbacks: { updateFileEyes: () => void; syncActiveSplatChip: () => void; syncPreview: () => void } = {
+// late-bound upward calls (files-panel / edit-panel / collision-panel assign their entries at eval)
+export const viewportCallbacks: { updateFileEyes: () => void; syncActiveSplatChip: () => void; syncPreview: () => void; syncSeedPreview: () => void } = {
     updateFileEyes: () => {},
     syncActiveSplatChip: () => {},
-    syncPreview: () => {}
+    syncPreview: () => {},
+    syncSeedPreview: () => {}
 };
 
 // chips carry a label span + a remove ✕; set/clear the label, not the chip itself
@@ -103,8 +103,9 @@ export const SCENE_ITEMS: { id: SelId; label: string; icon: string; gizmo: boole
     // selection + gizmo must survive tab switches too)
     { id: 'collision-region', label: 'Collision region box', icon: '⬚', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-box-on').checked },
     { id: 'collision-sphere', label: 'Collision region sphere', icon: '◯', gizmo: true, has: () => !!viewer?.hasSplat && $<HTMLInputElement>('region-sphere-on').checked },
-    // capsule only while actively setting up collision carving (Collision tab + carve on)
-    { id: 'capsule', label: 'Carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat && panelActive('panel-collision') && carveBox.checked },
+    // seed + capsule: always selectable with a splat loaded — the Collision panel's
+    // "Select & drag" button targets it, and it previews while the Collision tab is up
+    { id: 'capsule', label: 'Seed / carve capsule', icon: '💊', gizmo: true, has: () => !!viewer?.hasSplat },
     // render camera only when a WebP render is actually being set up
     { id: 'render-camera', label: 'Render camera', icon: '🎥', gizmo: true, has: () => !!viewer?.hasRenderCamera }
 ];
@@ -144,7 +145,12 @@ export function rebuildSceneList(): void {
         sceneList.appendChild(li);
     }
     $('cam-gizmo-mode').classList.toggle('hidden', sel !== 'render-camera');
+    // the workflow panels' "Select & drag in viewport" buttons mirror the selection
+    for (const b of document.querySelectorAll<HTMLButtonElement>('button[data-sel]')) {
+        b.classList.toggle('active', b.dataset.sel === sel);
+    }
     viewportCallbacks.updateFileEyes(); // file-row eyes mirror the same visibility state
+    viewportCallbacks.syncSeedPreview(); // capsule preview tracks splat presence + active tab
 }
 
 export function selectScene(id: SelId): void {

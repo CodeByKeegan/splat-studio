@@ -4,7 +4,7 @@
 import './boot-theme'; // theme first — before any UI paints
 import { $, projectSelect } from './dom';
 import { setViewer, hooks } from './state';
-import { showToast } from './ui';
+import { showToast, syncPresetRows } from './ui';
 import { round } from './line-meshes';
 import { formState, restoreFormState } from './form-state';
 import { dock, getCameraViewCanvas, bootLayout } from './dockview';
@@ -17,7 +17,7 @@ import { updateLodRows } from './lod-panel';
 import { writeVecField, updateRenderFrustum } from './render-panel';
 import { syncPreview, syncCropViz, ownerBoxFields, ownerSphFields, syncCarveBtn, measureToggle, updateMeasureReadout, reflectActiveMarker } from './edit-panel';
 import { regMinX, regMinY, regMinZ, regMaxX, regMaxY, regMaxZ, regSphX, regSphY, regSphZ, regSphR, regionShadeEl, syncRegionViz, updateRegionEstimate } from './region-panel';
-import { syncCollisionRows, seedX, seedY, seedZ, syncSeedViz } from './collision-panel';
+import { syncCollisionRows, seedX, seedY, seedZ, syncSeedViz, syncSeedPreview } from './collision-panel';
 import './upload';
 import './groups';
 import './analyze-panel';
@@ -35,11 +35,12 @@ import { startMcpBridge } from './mcp-bridge';
 // keep the scene list fresh when tabs change (the capsule item depends on the
 // Collision tab being visible) or the Scene tab is shown; the render frustum +
 // camera-view preview are gated on the Render tab being the active one
-dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); });
+dock.onDidActivePanelChange(() => { updateRenderFrustum(); rebuildSceneList(); syncSeedPreview(); });
 
 // re-apply persisted form values, then re-run the row/label syncs that already
 // fired at panel-module eval (i.e. before restore) so they reflect restored values
 restoreFormState();
+syncPresetRows(); // preset chips reflect the restored hidden selects
 updateConvertRows();
 updateLodRows();
 updateInputRows();
@@ -90,6 +91,7 @@ void SplatViewer.create($<HTMLCanvasElement>('gs-canvas'))
             syncSeedViz(); // snap the node to the rounded field values
         };
         syncSeedViz();
+        syncSeedPreview(); // capsule preview if the Collision tab is already up
         // crop gizmo -> reflect into the OWNING panel's box/sphere fields (Convert crop
         // or Edit carve), live; persist on release
         v.onCropSphereMove = (c) => { const [x, y, z] = ownerSphFields(); x.value = String(c.x); y.value = String(c.y); z.value = String(c.z); };

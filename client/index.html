@@ -33,7 +33,17 @@
     <div id="panel-pool" hidden>
 
             <section class="panel" id="panel-files">
-                <h2 title="Files live in the local workspace/ folder. Click a row's eye to show it in the 3D viewer.">Files</h2>
+                <h2 title="Everything in one place: what's loaded in the 3D viewport, and this project's files. Click a row's eye to show it in the viewer.">Scene</h2>
+                <div class="sec" id="scene-objects" title="Objects in the viewport. Select one to move it with a gizmo; selecting nothing hides all gizmos.">
+                    <div class="sec-head">In viewport</div>
+                    <ul id="scene-list" class="scene-list"></ul>
+                    <div class="field-row hidden" id="cam-gizmo-mode" title="What the render-camera gizmo does">
+                        <button id="cam-move" class="active" title="Drag the gizmo to move the render camera (updates the WebP Camera position)">Move</button>
+                        <button id="cam-rotate" title="Drag the gizmo to rotate the render camera (updates the WebP Look-at)">Rotate</button>
+                    </div>
+                    <span class="hint" id="scene-hint">Select an object to move it. Click it again to deselect.</span>
+                </div>
+                <div class="sec-head" id="files-head" title="Files live in the local workspace/ folder — each project is one folder">Project files</div>
                 <div id="drop-zone" title="Drop anywhere in the window — files land in the workspace">
                     Drop splat files anywhere or
                     <button type="button" class="link" id="browse-btn">browse</button>
@@ -58,8 +68,16 @@
                 </div>
                 <ul id="file-list" class="file-list"></ul>
 
-                <div id="group-actions" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
-                    <div class="group">Linked group <em>— apply edits to several files at once</em></div>
+                <div class="sec" id="env-sec" title="Scene environment shown in the viewport (not written into any output)">
+                    <div class="sec-head">Environment</div>
+                    <label class="field" title="Use an equirectangular panorama image (.webp/.jpg/.png/.hdr) from this project as the scene skybox"><span>Skybox</span><select id="skybox-select"></select></label>
+                    <div class="field-row">
+                        <button id="skybox-apply" title="Apply the selected image as the scene skybox">Apply</button>
+                        <button id="skybox-clear" title="Remove the skybox">Clear</button>
+                    </div>
+                </div>
+                <div id="group-actions" class="sec" title="Group the files that are the same location at different detail (its LODs), then apply a proxy's edits to all of them at once.">
+                    <div class="sec-head">Linked group <em>— apply edits to several files at once</em></div>
                     <span class="hint">Tick the files that are the same location at different detail (LODs). On your proxy, set a <strong>Transform</strong> (+ output format in Export) or a <strong>Region</strong> in the <strong>Edit</strong> panel, then apply it to every member here — a transform or a carve/crop affects all the LODs at once. Choices are remembered per project.</span>
                     <div id="group-members" class="group-members"></div>
                     <div class="hint hidden" id="group-warn"></div>
@@ -111,43 +129,49 @@
                         <option value="html" title="Self-contained HTML viewer page with the splat embedded">HTML viewer</option>
                     </select>
                 </label>
-                <div class="field-row" id="row-sog-encode">
-                    <label class="field half" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
-                        <span>SH iterations</span>
-                        <input type="number" id="convert-iterations" value="10" min="1" max="100" required />
+                <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
+                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Jobs panel">Export</button>
+
+                <button type="button" class="adv-toggle" data-adv-panel="panel-convert">▸ Advanced options</button>
+                <div class="adv-body hidden" id="panel-convert-adv">
+                <div class="sec" title="Encoder settings for the chosen output format">
+                    <div class="sec-head">Encoding</div>
+                    <div class="field-row" id="row-sog-encode">
+                        <label class="field half" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
+                            <span>SH iterations</span>
+                            <input type="number" id="convert-iterations" value="10" min="1" max="100" required />
+                        </label>
+                        <label class="field half" title="Worker threads for SOG encoding (--max-workers). Higher = faster on many-core machines; 0 = inline/serial. Changes speed, not output. Default 4">
+                            <span>Encoder workers</span>
+                            <input type="number" id="convert-max-workers" value="4" min="0" max="64" />
+                        </label>
+                    </div>
+                    <label class="field hidden" id="row-spz-version" title="SPZ container version (--spz-version). 4 is current; use 3 for older consumers">
+                        <span>SPZ version</span>
+                        <select id="convert-spz-version">
+                            <option value="4" selected>4</option>
+                            <option value="3">3</option>
+                        </select>
                     </label>
-                    <label class="field half" title="Worker threads for SOG encoding (--max-workers). Higher = faster on many-core machines; 0 = inline/serial. Changes speed, not output. Default 4">
-                        <span>Encoder workers</span>
-                        <input type="number" id="convert-max-workers" value="4" min="0" max="64" />
+                    <div class="hidden" id="html-rows">
+                        <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
+                        <label class="field" title="HTML viewer settings JSON file in this project (--viewer-settings). Upload it first, then type its name here. Optional">
+                            <span>Viewer settings (.json)</span>
+                            <input type="text" id="convert-viewer-settings" placeholder="e.g. settings.json — optional" />
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sec" title="Shrink the splat before writing">
+                    <div class="sec-head">Reduce</div>
+                    <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
+                        <span>Decimate to (count or %)</span>
+                        <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
                     </label>
                 </div>
-                <label class="field hidden" id="row-spz-version" title="SPZ container version (--spz-version). 4 is current; use 3 for older consumers">
-                    <span>SPZ version</span>
-                    <select id="convert-spz-version">
-                        <option value="4" selected>4</option>
-                        <option value="3">3</option>
-                    </select>
-                </label>
-                <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
-                    <span>Decimate to (count or %)</span>
-                    <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
-                </label>
 
-                <div class="hidden" id="html-rows">
-                    <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
-                    <label class="field" title="HTML viewer settings JSON file in this project (--viewer-settings). Upload it first, then type its name here. Optional">
-                        <span>Viewer settings (.json)</span>
-                        <input type="text" id="convert-viewer-settings" placeholder="e.g. settings.json — optional" />
-                    </label>
-                </div>
-
-                <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU">
-                    <span>Device</span>
-                    <select id="convert-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
-                </label>
-
-                <div id="convert-actions" title="Encode-time filters applied to the splat before it's written. They run in a fixed pipeline order and don't apply to streamed-LOD bakes.">
-                    <div class="group">Filter</div>
+                <div class="sec" id="convert-actions" title="Encode-time filters applied to the splat before it's written. They run in a fixed pipeline order and don't apply to streamed-LOD bakes.">
+                    <div class="sec-head">Filter</div>
                     <label class="field" title="Strip spherical-harmonic colour bands above this level (-H/--filter-harmonics). Lower = smaller files and flatter, less view-dependent shading. 0 keeps base colour only; 'Keep all' leaves SH untouched.">
                         <span>Strip SH bands above</span>
                         <select id="convert-harmonics">
@@ -210,14 +234,19 @@
                         <label class="field half" title="Opacity cutoff (default 0.1)"><span>Opacity</span><input type="number" id="ff-op" step="0.05" min="0" max="1" placeholder="0.1" title="Opacity cutoff (default 0.1)" /></label>
                         <label class="field half" title="Minimum contribution (default 0.004)"><span>Min contrib</span><input type="number" id="ff-min" step="0.001" min="0" placeholder="0.004" title="Min contribution (default 0.004)" /></label>
                     </div>
+                    <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
                     <label class="check" title="Reorder gaussians along a Morton / Z-order curve for better spatial locality and faster streaming (--morton-order). Applied last, after any transforms and filters."><input type="checkbox" id="convert-morton" /> Reorder (Morton / Z-order)</label>
                 </div>
-                <div class="field-row">
-                    <label class="check" title="Drop gaussians containing NaN/Infinity values (-N/--filter-nan)"><input type="checkbox" id="convert-filter-nan" /> Filter NaN</label>
+
+                <div class="sec" title="Which processor runs the export, and what lands in the job log">
+                    <div class="sec-head">Device &amp; diagnostics</div>
+                    <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU">
+                        <span>Device</span>
+                        <select id="convert-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
+                    </label>
                     <label class="check" title="Verbose CLI diagnostics + peak memory in the job log (--verbose --memory)"><input type="checkbox" id="convert-verbose" /> Verbose</label>
                 </div>
-                <label class="check" title="When the conversion finishes, load the result into the 3D viewport (viewable formats only)"><input type="checkbox" id="convert-autoload" checked /> Load result into viewport</label>
-                <button id="convert-run" class="primary" title="Run the export as a background job — the exact CLI command appears in the Jobs panel">Export</button>
+                </div>
             </section>
 
             <section class="panel" id="panel-lod">
@@ -226,28 +255,39 @@
                     <span>Input</span>
                     <select id="lod-input"></select>
                 </label>
-                <div class="field-row" id="row-lod-encode">
-                    <label class="field half" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
-                        <span>SH iterations</span>
-                        <input type="number" id="lod-iterations" value="10" min="1" max="100" required />
-                    </label>
-                    <label class="field half" title="Worker threads for SOG encoding (--max-workers). Higher = faster on many-core machines; 0 = inline/serial. Changes speed, not output. Default 4">
-                        <span>Encoder workers</span>
-                        <input type="number" id="lod-max-workers" value="4" min="0" max="64" />
-                    </label>
-                </div>
-                <label class="field" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
-                    <span>LOD source</span>
-                    <select id="lod-mode">
-                        <option value="decimate" selected>Decimate input automatically</option>
-                        <option value="combine">Combine existing files as levels</option>
+                <div class="field" title="Scene-type presets fill the LOD settings; ⚡ Auto reads the input's gaussian count + extents and sizes them to match. Editing a setting in Advanced switches to Custom">
+                    <span>Scene type <em>— fills the LOD settings</em></span>
+                    <div class="preset-row" data-preset-for="lod-preset">
+                        <button type="button" class="preset-btn" id="lod-autotune" data-value="auto" title="Read the input's gaussian count + extents (a quick CPU summary) and fill the LOD settings to match — recommended">⚡ Auto</button>
+                        <button type="button" class="preset-btn" data-value="indoor" title="Room-scale scan: 3 levels at 50% keep each, 16 m chunks">🏠 Indoor</button>
+                        <button type="button" class="preset-btn" data-value="outdoor" title="Large exterior scene: 5 levels at 50% keep each, 32 m chunks">🌍 Outdoor</button>
+                        <button type="button" class="preset-btn" data-value="object" title="Single object: 2 levels at 50% keep each, 8 m chunks">📦 Object</button>
+                        <button type="button" class="preset-btn" data-value="custom" data-open-adv="panel-lod" title="Your own combination — opens Advanced options">Custom</button>
+                    </div>
+                    <select id="lod-preset" class="hidden" aria-hidden="true">
+                        <option value="auto">Auto</option>
+                        <option value="indoor" selected>Indoor</option>
+                        <option value="outdoor">Outdoor</option>
+                        <option value="object">Object</option>
+                        <option value="custom">Custom</option>
                     </select>
-                </label>
-                <div class="field-row" id="row-lod-autotune">
-                    <button id="lod-autotune" title="Read each source's gaussian count + extents (a quick CPU summary) and fill the LOD settings automatically — decimate levels/keep for a single input, or order the combine rows by detail and tag a backdrop as the environment">⚡ Auto-tune from splat stats</button>
                 </div>
                 <div class="hint hidden" id="lod-autotune-plan"></div>
-                <div class="field-row" id="row-lod-levels">
+                <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
+                <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Jobs panel">Generate streamed LOD</button>
+
+                <button type="button" class="adv-toggle" data-adv-panel="panel-lod">▸ Advanced options</button>
+                <div class="adv-body hidden" id="panel-lod-adv">
+                <div class="sec" title="How many detail levels the bake writes, and where they come from">
+                    <div class="sec-head">Levels</div>
+                    <label class="field" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
+                        <span>LOD source</span>
+                        <select id="lod-mode">
+                            <option value="decimate" selected>Decimate input automatically</option>
+                            <option value="combine">Combine existing files as levels</option>
+                        </select>
+                    </label>
+                    <div class="field-row" id="row-lod-levels">
                     <label class="field half" title="Number of LOD levels including the full-resolution level 0 (-l tags). 3 levels = 100%, 50%, 25% at the default keep ratio">
                         <span>LOD levels</span>
                         <input type="number" id="lod-levels" value="3" min="1" max="8" required />
@@ -262,22 +302,40 @@
                     <div id="lod-file-rows"></div>
                     <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
                 </div>
-                <div class="field-row" id="row-lod-chunks">
-                    <label class="field half" title="Approximate gaussians per streamed chunk, in thousands (--lod-chunk-count). Default 512">
-                        <span>Chunk size (K splats)</span>
-                        <input type="number" id="lod-chunk-count" value="512" min="16" max="8192" required />
-                    </label>
-                    <label class="field half" title="Approximate world-space size of a chunk in meters (--lod-chunk-extent, whole meters). Default 16">
-                        <span>Chunk extent (m)</span>
-                        <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
+                </div>
+
+                <div class="sec" title="How the baked scene is cut into distance-streamed chunks">
+                    <div class="sec-head">Streaming chunks</div>
+                    <div class="field-row" id="row-lod-chunks">
+                        <label class="field half" title="Approximate gaussians per streamed chunk, in thousands (--lod-chunk-count). Default 512">
+                            <span>Chunk size (K splats)</span>
+                            <input type="number" id="lod-chunk-count" value="512" min="16" max="8192" required />
+                        </label>
+                        <label class="field half" title="Approximate world-space size of a chunk in meters (--lod-chunk-extent, whole meters). Default 16">
+                            <span>Chunk extent (m)</span>
+                            <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sec" title="SOG encoder settings — quality/speed, not scene structure">
+                    <div class="sec-head">Encoding</div>
+                    <div class="field-row" id="row-lod-encode">
+                        <label class="field half" title="SOG spherical-harmonics compression iterations (-i). More iterations = better quality, slower compression. Default 10">
+                            <span>SH iterations</span>
+                            <input type="number" id="lod-iterations" value="10" min="1" max="100" required />
+                        </label>
+                        <label class="field half" title="Worker threads for SOG encoding (--max-workers). Higher = faster on many-core machines; 0 = inline/serial. Changes speed, not output. Default 4">
+                            <span>Encoder workers</span>
+                            <input type="number" id="lod-max-workers" value="4" min="0" max="64" />
+                        </label>
+                    </div>
+                    <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower)">
+                        <span>Device</span>
+                        <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                     </label>
                 </div>
-                <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower)">
-                    <span>Device</span>
-                    <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
-                </label>
-                <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
-                <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Jobs panel">Generate streamed LOD</button>
+                </div>
             </section>
 
             <section class="panel" id="panel-render">
@@ -286,49 +344,64 @@
                     <span>Input</span>
                     <select id="render-input"></select>
                 </label>
-                <div class="group">Render camera</div>
-                <div class="field" title="Camera position in world space (--camera-pos). The 📷 button grabs the current viewer camera; drag the Render camera gizmo in the viewport to adjust">
-                    <div class="label-row"><span>Camera <em>(x, y, z)</em></span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
-                    <div class="field-row">
-                        <label class="axis"><span>x</span><input type="number" id="webp-camera-x" value="2" step="0.1" required title="Camera X" /></label>
-                        <label class="axis"><span>y</span><input type="number" id="webp-camera-y" value="1" step="0.1" required title="Camera Y" /></label>
-                        <label class="axis"><span>z</span><input type="number" id="webp-camera-z" value="-2" step="0.1" required title="Camera Z" /></label>
+                <div class="sec" title="Where the render is shot from. While this tab is open the camera shows as a frustum in the viewport">
+                    <div class="sec-head">Camera</div>
+                    <div class="field" title="Camera position in world space (--camera-pos). The 📷 button grabs the current viewer camera; drag the Render camera gizmo in the viewport to adjust">
+                        <div class="label-row"><span>Camera <em>(x, y, z)</em></span><button id="webp-from-viewer" class="link inline" title="Grab the viewer camera position + direction">📷 from viewer</button></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="webp-camera-x" value="2" step="0.1" required title="Camera X" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="webp-camera-y" value="1" step="0.1" required title="Camera Y" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="webp-camera-z" value="-2" step="0.1" required title="Camera Z" /></label>
+                        </div>
                     </div>
-                </div>
-                <div class="field" title="Camera target point (--camera-target)">
-                    <div class="label-row"><span>Look at <em>(x, y, z)</em></span></div>
-                    <div class="field-row">
-                        <label class="axis"><span>x</span><input type="number" id="webp-lookat-x" value="0" step="0.1" required title="Look-at X" /></label>
-                        <label class="axis"><span>y</span><input type="number" id="webp-lookat-y" value="0" step="0.1" required title="Look-at Y" /></label>
-                        <label class="axis"><span>z</span><input type="number" id="webp-lookat-z" value="0" step="0.1" required title="Look-at Z" /></label>
+                    <div class="field" title="Camera target point (--camera-target)">
+                        <div class="label-row"><span>Look at <em>(x, y, z)</em></span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="webp-lookat-x" value="0" step="0.1" required title="Look-at X" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="webp-lookat-y" value="0" step="0.1" required title="Look-at Y" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="webp-lookat-z" value="0" step="0.1" required title="Look-at Z" /></label>
+                        </div>
                     </div>
+                    <button type="button" id="render-camera-select" data-sel="render-camera" title="Select the render camera in the viewport and drag its gizmo — the Move / Rotate switch is in the Scene panel's In-viewport list. Click again to deselect">🎥 Select &amp; drag in viewport</button>
+                    <label class="field" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
                 </div>
-                <div class="field-row">
-                    <label class="field half" title="Vertical field of view in degrees (--camera-fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
-                    <label class="field half" title="Output resolution WxH (--resolution)"><span>Resolution</span><input type="text" id="webp-resolution" value="1280x720" /></label>
-                </div>
-                <div class="field-row">
-                    <label class="field half" title="--projection. equirect renders a 360°×180° panorama (FOV ignored, resolution forced 2:1)"><span>Projection</span>
-                        <select id="webp-projection"><option value="pinhole" selected>Pinhole</option><option value="equirect">Equirect 360°</option></select>
-                    </label>
-                    <label class="field half" title="Background colour r,g,b in 0..1 (--background)"><span>Background</span><input type="text" id="webp-background" value="0,0,0" /></label>
-                </div>
-                <div class="group">Depth of field <em>— pinhole only</em></div>
-                <div class="field-row">
-                    <label class="field half" title="Aperture f-stop (--f-stop). Smaller = more blur. Empty = no defocus"><span>f-stop</span><input type="number" id="webp-fstop" step="0.1" min="0.5" placeholder="off" /></label>
-                    <label class="field half" title="Focus plane distance in world units (--focus-distance). Empty = distance to look-at"><span>Focus dist</span><input type="number" id="webp-focus" step="0.1" min="0.001" placeholder="look-at" /></label>
-                </div>
-                <div class="group">Motion blur</div>
-                <label class="field" title="End camera position (--camera-pos-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
-                <div class="field-row">
-                    <label class="field half" title="Shutter fraction 0..1 (--shutter). 1=full, 0.5=180°"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
-                    <label class="field half" title="Sub-frames accumulated (--motion-samples). Cost is N× a render"><span>Samples</span><input type="number" id="webp-motionsamples" value="16" min="1" max="256" /></label>
-                </div>
-                <label class="field" id="row-render-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). The render needs a GPU rasterizer; 'Auto' picks the default">
-                    <span>Device</span>
-                    <select id="render-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
-                </label>
                 <button id="render-run" class="primary" title="Render the WebP image as a background job — the exact CLI command appears in the Jobs panel">Render WebP image</button>
+
+                <button type="button" class="adv-toggle" data-adv-panel="panel-render">▸ Advanced options</button>
+                <div class="adv-body hidden" id="panel-render-adv">
+                <div class="sec" title="Optics + framing of the shot">
+                    <div class="sec-head">Lens &amp; framing</div>
+                    <div class="field-row">
+                        <label class="field half" title="Vertical field of view in degrees (--camera-fov). Pinhole only"><span>FOV°</span><input type="number" id="webp-fov" value="60" min="1" max="179" /></label>
+                        <label class="field half" title="--projection. equirect renders a 360°×180° panorama (FOV ignored, resolution forced 2:1)"><span>Projection</span>
+                            <select id="webp-projection"><option value="pinhole" selected>Pinhole</option><option value="equirect">Equirect 360°</option></select>
+                        </label>
+                    </div>
+                    <label class="field" title="Background colour r,g,b in 0..1 (--background)"><span>Background</span><input type="text" id="webp-background" value="0,0,0" /></label>
+                </div>
+                <div class="sec" title="Defocus blur — pinhole projection only">
+                    <div class="sec-head">Depth of field <em>— pinhole only</em></div>
+                    <div class="field-row">
+                        <label class="field half" title="Aperture f-stop (--f-stop). Smaller = more blur. Empty = no defocus"><span>f-stop</span><input type="number" id="webp-fstop" step="0.1" min="0.5" placeholder="off" /></label>
+                        <label class="field half" title="Focus plane distance in world units (--focus-distance). Empty = distance to look-at"><span>Focus dist</span><input type="number" id="webp-focus" step="0.1" min="0.001" placeholder="look-at" /></label>
+                    </div>
+                </div>
+                <div class="sec" title="Blur from camera movement during the exposure">
+                    <div class="sec-head">Motion blur</div>
+                    <label class="field" title="End camera position (--camera-pos-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
+                    <div class="field-row">
+                        <label class="field half" title="Shutter fraction 0..1 (--shutter). 1=full, 0.5=180°"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
+                        <label class="field half" title="Sub-frames accumulated (--motion-samples). Cost is N× a render"><span>Samples</span><input type="number" id="webp-motionsamples" value="16" min="1" max="256" /></label>
+                    </div>
+                </div>
+                <div class="sec" title="Which GPU renders the image">
+                    <div class="sec-head">Device</div>
+                    <label class="field" id="row-render-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). The render needs a GPU rasterizer; 'Auto' picks the default">
+                        <span>Device</span>
+                        <select id="render-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
+                    </label>
+                </div>
+                </div>
             </section>
 
             <section class="panel" id="panel-analyze">
@@ -354,47 +427,29 @@
                 <h2 title="Viewport-driven edits: measure a feature to set real-world scale, or pick a new origin. Applies splat-transform -s/-t to write a new, edited splat">Edit</h2>
                 <label class="field" title="Splat to edit — load it in the viewer too, then measure/pick against it"><span>Input</span><select id="edit-input"></select></label>
 
-                <div class="group">Transform</div>
-                <div class="field" title="Move every gaussian by (x, y, z) before writing (-t/--translate), in splat-transform world units. All three zero = no move.">
-                    <div class="label-row"><span>Translate <em>(x, y, z)</em></span></div>
-                    <div class="field-row">
-                        <label class="axis"><span>x</span><input type="number" id="tf-translate-x" value="0" step="0.1" required title="Translate X" /></label>
-                        <label class="axis"><span>y</span><input type="number" id="tf-translate-y" value="0" step="0.1" required title="Translate Y" /></label>
-                        <label class="axis"><span>z</span><input type="number" id="tf-translate-z" value="0" step="0.1" required title="Translate Z" /></label>
+                <div class="sec" title="Give the splat real-world size: measure a feature you know the length of, and the splat scales to match">
+                    <div class="sec-head">Measure → real scale</div>
+                    <label class="check" title="Click the splat to drop two points (A green, B orange) on the ends of a feature whose real-world size you know. Points snap to the splat surface and hide behind it as you orbit"><input type="checkbox" id="measure-toggle" /> Measure mode</label>
+                    <span class="hint" id="measure-readout">Enable, then click the splat to place points.</span>
+                    <div class="field-row hidden" id="measure-edit-row">
+                        <button id="measure-edit-a" class="active" title="The next click places point A (green)">Place A</button>
+                        <button id="measure-edit-b" title="The next click places point B (orange)">Place B</button>
                     </div>
+                    <label class="field" title="The real-world length the A–B span should equal. The splat scales uniformly so it matches (-s/--scale)">
+                        <span>Real A–B length (m)</span>
+                        <input type="number" id="measure-length" step="0.01" min="0.0001" placeholder="e.g. 2.0" />
+                    </label>
+                    <button id="apply-scale" class="primary" title="Scale the splat so the A–B span equals the real length, writing a new splat that auto-loads">Apply scale</button>
                 </div>
-                <div class="field" title="Rotate every gaussian by Euler angles (x, y, z) in degrees (-r/--rotate). All three zero = no rotation.">
-                    <div class="label-row"><span>Rotate <em>(°, Euler x · y · z)</em></span></div>
-                    <div class="field-row">
-                        <label class="axis"><span>x</span><input type="number" id="tf-rotate-x" value="0" step="5" required title="Rotate X (deg)" /></label>
-                        <label class="axis"><span>y</span><input type="number" id="tf-rotate-y" value="0" step="5" required title="Rotate Y (deg)" /></label>
-                        <label class="axis"><span>z</span><input type="number" id="tf-rotate-z" value="0" step="5" required title="Rotate Z (deg)" /></label>
-                    </div>
+
+                <div class="sec" title="Pick where (0,0,0) should be — engines place the splat by its origin">
+                    <div class="sec-head">Set origin</div>
+                    <label class="check" title="Click the splat at the point that should become the origin (0,0,0). The point snaps to the surface"><input type="checkbox" id="origin-toggle" /> Pick origin point</label>
+                    <button id="apply-origin" class="primary" title="Recenter the splat so the marker sits at the origin (-t/--translate), writing a new splat that auto-loads">Set as origin</button>
                 </div>
-                <label class="field" title="Uniformly scale every gaussian by this factor (-s/--scale). 1 = no scaling; 0.5 = half size; 2 = double.">
-                    <span>Scale <em>(uniform factor)</em></span>
-                    <input type="number" id="tf-scale" value="1" step="0.1" required title="Uniform scale factor" />
-                </label>
-                <button id="apply-transform" class="primary" title="Apply the translate / rotate / scale above (-t/-r/-s), writing a new edited .ply that auto-loads">Apply transform</button>
 
-                <div class="group">Measure → scale</div>
-                <label class="check" title="Click the splat to drop two points (A green, B orange) on the ends of a feature whose real-world size you know. Points snap to the splat surface and hide behind it as you orbit"><input type="checkbox" id="measure-toggle" /> Measure mode</label>
-                <span class="hint" id="measure-readout">Enable, then click the splat to place points.</span>
-                <div class="field-row hidden" id="measure-edit-row">
-                    <button id="measure-edit-a" class="active" title="The next click places point A (green)">Place A</button>
-                    <button id="measure-edit-b" title="The next click places point B (orange)">Place B</button>
-                </div>
-                <label class="field" title="The real-world length the A–B span should equal. The splat scales uniformly so it matches (-s/--scale)">
-                    <span>Real A–B length (m)</span>
-                    <input type="number" id="measure-length" step="0.01" min="0.0001" placeholder="e.g. 2.0" />
-                </label>
-                <button id="apply-scale" class="primary" title="Scale the splat so the A–B span equals the real length, writing a new splat that auto-loads">Apply scale</button>
-
-                <div class="group">Set origin</div>
-                <label class="check" title="Click the splat at the point that should become the origin (0,0,0). The point snaps to the surface"><input type="checkbox" id="origin-toggle" /> Pick origin point</label>
-                <button id="apply-origin" class="primary" title="Recenter the splat so the marker sits at the origin (-t/--translate), writing a new splat that auto-loads">Set as origin</button>
-
-                <div class="group">Region (crop / carve)</div>
+                <div class="sec" title="Cut a piece out of the splat (carve) or keep only a piece of it (crop)">
+                <div class="sec-head">Region (crop / carve)</div>
                 <span class="hint">Enable a box or sphere and shape it in the viewport: square handles resize a box face, the round knob sets the sphere radius, arrows move it. Remove deletes the inside (carve); Keep deletes everything outside (crop). Writes a trimmed .ply that auto-loads (the source is untouched). Works on any splat — non-PLY inputs are decompressed to PLY first.</span>
                 <label class="field" title="What 'Apply to region' does: Remove deletes the gaussians inside the box/sphere (carve); Keep deletes everything outside, keeping only the inside (crop)."><span>Mode</span>
                     <select id="region-mode">
@@ -429,6 +484,35 @@
                 </div>
                 <div class="hint hidden" id="carve-count" title="How many gaussians the carve would remove, counted live in the viewport"></div>
                 <button id="carve-remove" title="Apply the region to the splat and write a trimmed .ply that loads into the viewport: Remove deletes inside (carve), Keep deletes outside (crop). Runs a local trim — non-PLY inputs are decompressed to PLY first.">✂ Apply to region</button>
+                </div>
+
+                <button type="button" class="adv-toggle" data-adv-panel="panel-edit">▸ Advanced options</button>
+                <div class="adv-body hidden" id="panel-edit-adv">
+                <div class="sec" title="Type an exact transform instead of using the viewport tools above">
+                    <div class="sec-head">Transform <em>— numeric</em></div>
+                    <div class="field" title="Move every gaussian by (x, y, z) before writing (-t/--translate), in splat-transform world units. All three zero = no move.">
+                        <div class="label-row"><span>Translate <em>(x, y, z)</em></span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="tf-translate-x" value="0" step="0.1" required title="Translate X" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="tf-translate-y" value="0" step="0.1" required title="Translate Y" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="tf-translate-z" value="0" step="0.1" required title="Translate Z" /></label>
+                        </div>
+                    </div>
+                    <div class="field" title="Rotate every gaussian by Euler angles (x, y, z) in degrees (-r/--rotate). All three zero = no rotation.">
+                        <div class="label-row"><span>Rotate <em>(°, Euler x · y · z)</em></span></div>
+                        <div class="field-row">
+                            <label class="axis"><span>x</span><input type="number" id="tf-rotate-x" value="0" step="5" required title="Rotate X (deg)" /></label>
+                            <label class="axis"><span>y</span><input type="number" id="tf-rotate-y" value="0" step="5" required title="Rotate Y (deg)" /></label>
+                            <label class="axis"><span>z</span><input type="number" id="tf-rotate-z" value="0" step="5" required title="Rotate Z (deg)" /></label>
+                        </div>
+                    </div>
+                    <label class="field" title="Uniformly scale every gaussian by this factor (-s/--scale). 1 = no scaling; 0.5 = half size; 2 = double.">
+                        <span>Scale <em>(uniform factor)</em></span>
+                        <input type="number" id="tf-scale" value="1" step="0.1" required title="Uniform scale factor" />
+                    </label>
+                    <button id="apply-transform" class="primary" title="Apply the translate / rotate / scale above (-t/-r/-s), writing a new edited .ply that auto-loads">Apply transform</button>
+                </div>
+                </div>
             </section>
 
             <section class="panel" id="panel-collision">
@@ -437,45 +521,57 @@
                     <span>Input</span>
                     <select id="collision-input"></select>
                 </label>
-                <label class="field" title="Presets mirror SuperSplat Studio's one-click options; they just set the controls below. Editing any control switches to Custom">
-                    <span>Preset <em>— sets the controls below</em></span>
-                    <select id="collision-preset">
-                        <option value="indoor" selected title="Room scans: seal the model from outside air, then carve the walkable interior open from the seed">Indoor (seal exterior + carve)</option>
-                        <option value="outdoor" title="Terrain: fill each column up from the bottom so the ground is solid">Outdoor (floor fill)</option>
-                        <option value="object" title="Single object: plain voxelization, no hole sealing or carving">Object (voxelize only)</option>
-                        <option value="custom" title="Your own combination of the controls below">Custom (edited below)</option>
-                    </select>
-                </label>
-
-                <div class="group">Voxelize</div>
-                <div class="field-row">
-                    <label class="field half" title="Voxel edge length in meters (--voxel-size). Smaller = more detail but more memory/time; 0.05 m = 5 cm voxels">
-                        <span>Voxel size (m)</span>
-                        <input type="number" id="voxel-size" value="0.05" step="0.005" min="0.001" required />
-                    </label>
-                    <label class="field half" title="Gaussians with opacity below this are ignored when voxelizing (--voxel-opacity). Raise it to ignore wispy fog/floaters">
-                        <span>Opacity cutoff (0–1)</span>
-                        <input type="number" id="voxel-opacity" value="0.1" step="0.05" min="0" max="1" required />
-                    </label>
-                </div>
-                <label class="check" title="Keep only the cluster of splats connected to the seed position, removing disconnected floaters before voxelizing (--filter-cluster). GPU-only. On multi-million-gaussian scenes this pass can exceed the Windows GPU watchdog and kill the job (DEVICE_HUNG)"><input type="checkbox" id="filter-cluster" checked />
-                    Filter to connected cluster at seed</label>
-                <span class="hint" title="The cluster filter runs one long GPU dispatch per region; Windows resets the GPU if a dispatch exceeds ~2 s">GPU pass — uncheck for multi-million-splat scenes (watchdog risk)</span>
-                <div class="field" title="A point inside the scene (--seed-pos) used by the cluster filter, hole sealing and carving. For a room: ~1 m above the floor">
-                    <div class="label-row">
-                        <span>Seed point <em>(a spot inside the scene)</em></span>
-                        <span class="hint" title="Select 'Carve capsule' in the Scene panel to show the seed marker + capsule and drag them in the viewport">in Scene ▸ Carve capsule</span>
+                <div class="field" title="Presets mirror SuperSplat Studio's one-click options; they set the collision controls in Advanced. Editing any of those controls switches to Custom">
+                    <span>Preset <em>— sets the collision controls</em></span>
+                    <div class="preset-row" data-preset-for="collision-preset">
+                        <button type="button" class="preset-btn" data-value="indoor" title="Room scans: seal the model from outside air, then carve the walkable interior open from the seed">🏠 Indoor</button>
+                        <button type="button" class="preset-btn" data-value="outdoor" title="Terrain: fill each column up from the bottom so the ground is solid">🌍 Outdoor</button>
+                        <button type="button" class="preset-btn" data-value="object" title="Single object: plain voxelization, no hole sealing or carving">📦 Object</button>
+                        <button type="button" class="preset-btn" data-value="custom" data-open-adv="panel-collision" title="Your own combination — opens Advanced options">Custom</button>
                     </div>
+                    <select id="collision-preset" class="hidden" aria-hidden="true">
+                        <option value="indoor" selected>Indoor (seal exterior + carve)</option>
+                        <option value="outdoor">Outdoor (floor fill)</option>
+                        <option value="object">Object (voxelize only)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+
+                <div class="sec" title="A point inside the scene (--seed-pos) used by the cluster filter, hole sealing and carving. For a room: ~1 m above the floor">
+                    <div class="sec-head">Seed point <em>— a spot inside the scene</em></div>
                     <div class="field-row">
                         <label class="axis"><span>x</span><input type="number" id="seed-x" value="0" step="0.1" required title="Seed X (CLI axes)" /></label>
                         <label class="axis"><span>y · up</span><input type="number" id="seed-y" value="1" step="0.1" required title="Seed Y, up (CLI axes)" /></label>
                         <label class="axis"><span>z</span><input type="number" id="seed-z" value="0" step="0.1" required title="Seed Z (CLI axes)" /></label>
                         <button id="seed-from-camera" title="Set the seed from the current camera position, converted to splat-transform's coordinate space — fly inside the scene first, then click">📷 from camera</button>
                     </div>
-                    <span class="hint">Typed XYZ use CLI axes — prefer 📷, or drag the capsule gizmo: its arrows are these axes (red x, green y, blue z).</span>
+                    <span class="hint">Fly inside the scene and click 📷 — the seed marker + capsule preview in the viewport while this tab is open. Typed XYZ use CLI axes (capsule gizmo arrows: red x, green y, blue z).</span>
+                    <button type="button" id="capsule-select" data-sel="capsule" title="Select the seed capsule in the viewport and drag its gizmo to move the seed. Click again to deselect">💊 Select &amp; drag in viewport</button>
+                </div>
+                <label class="check" title="When generation finishes, load the collision mesh + voxels into the 3D viewport"><input type="checkbox" id="collision-autoload" checked /> Load result into viewport</label>
+                <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb">Generate collision</button>
+
+                <button type="button" class="adv-toggle" data-adv-panel="panel-collision">▸ Advanced options</button>
+                <div class="adv-body hidden" id="panel-collision-adv">
+                <div class="sec" title="How the splat becomes solid voxels">
+                    <div class="sec-head">Voxelize</div>
+                    <div class="field-row">
+                        <label class="field half" title="Voxel edge length in meters (--voxel-size). Smaller = more detail but more memory/time; 0.05 m = 5 cm voxels">
+                            <span>Voxel size (m)</span>
+                            <input type="number" id="voxel-size" value="0.05" step="0.005" min="0.001" required />
+                        </label>
+                        <label class="field half" title="Gaussians with opacity below this are ignored when voxelizing (--voxel-opacity). Raise it to ignore wispy fog/floaters">
+                            <span>Opacity cutoff (0–1)</span>
+                            <input type="number" id="voxel-opacity" value="0.1" step="0.05" min="0" max="1" required />
+                        </label>
+                    </div>
+                    <label class="check" title="Keep only the cluster of splats connected to the seed position, removing disconnected floaters before voxelizing (--filter-cluster). GPU-only. On multi-million-gaussian scenes this pass can exceed the Windows GPU watchdog and kill the job (DEVICE_HUNG)"><input type="checkbox" id="filter-cluster" checked />
+                        Filter to connected cluster at seed</label>
+                    <span class="hint" title="The cluster filter runs one long GPU dispatch per region; Windows resets the GPU if a dispatch exceeds ~2 s">GPU pass — uncheck for multi-million-splat scenes (watchdog risk)</span>
                 </div>
 
-                <div class="group">Collision region</div>
+                <div class="sec" title="Limit collision to part of the scene — smaller regions also avoid the marching-cubes vertex limit on large scans">
+                <div class="sec-head">Collision region</div>
                 <label class="check" title="Limit collision to an axis-aligned box (-B/--filter-box): only gaussians inside are voxelized. Shrinks the marching-cubes surface, which avoids the vertex-limit error on large scenes. Leave a side blank for no limit."><input type="checkbox" id="region-box-on" /> Limit to box</label>
                 <div class="field hidden" id="region-box-rows" title="Box corners in splat-transform world units (same axes as the seed). Blank = unbounded on that side.">
                     <div class="label-row"><span>Box min <em>(x, y, z)</em></span></div>
@@ -490,7 +586,8 @@
                         <label class="axis"><span>y</span><input type="number" id="region-max-y" step="0.1" placeholder="+∞" title="Box max Y (blank = unbounded)" /></label>
                         <label class="axis"><span>z</span><input type="number" id="region-max-z" step="0.1" placeholder="+∞" title="Box max Z (blank = unbounded)" /></label>
                     </div>
-                    <span class="hint">Or drag it in the viewport: square handles resize a face, arrows move the box (red x, green y, blue z — same axes as these fields).</span>
+                    <span class="hint">Square handles resize a face, arrows move the box (red x, green y, blue z — same axes as these fields).</span>
+                    <button type="button" id="region-box-select" data-sel="collision-region" title="Select the region box in the viewport and shape it with its handles. Click again to deselect">⬚ Select &amp; drag in viewport</button>
                 </div>
                 <label class="check" title="Limit collision to a sphere (-S/--filter-sphere)."><input type="checkbox" id="region-sphere-on" /> Limit to sphere</label>
                 <div class="field hidden" id="region-sphere-rows" title="Sphere centre + radius in splat-transform world units (same axes as the seed).">
@@ -501,7 +598,8 @@
                         <label class="axis"><span>z</span><input type="number" id="region-sphere-z" value="0" step="0.1" title="Sphere centre Z" /></label>
                         <label class="axis"><span>r</span><input type="number" id="region-sphere-r" value="1" step="0.1" min="0" title="Sphere radius" /></label>
                     </div>
-                    <span class="hint">Or drag it in the viewport: the round knob on the edge sets the radius, arrows move the centre.</span>
+                    <span class="hint">The round knob on the edge sets the radius, arrows move the centre.</span>
+                    <button type="button" id="region-sphere-select" data-sel="collision-sphere" title="Select the region sphere in the viewport and shape it with its knob + arrows. Click again to deselect">◯ Select &amp; drag in viewport</button>
                 </div>
                 <label class="field hidden" id="region-shade-row" title="Tint the region's faces so you can see where it cuts through the splat. 0 = wireframe only.">
                     <span>Region face shading</span>
@@ -513,63 +611,52 @@
                     <button id="region-coarsen" title="Raise the voxel size just enough to drop the overflow risk">Coarsen voxel</button>
                     <button id="region-shrink-seed" title="Resize the region to a small box around the seed point">Shrink to seed</button>
                 </div>
+                </div>
 
-                <div class="group">Seal</div>
-                <div class="field-row">
-                    <label class="field half" title="How splat holes get sealed so the volume is watertight">
-                        <span>Hole sealing</span>
-                        <select id="fill-mode">
-                            <option value="external" selected title="Flood-fill from outside the model; anything unreachable becomes solid (--voxel-external-fill). Best for interior scans">External fill (indoor)</option>
-                            <option value="floor" title="Fill each vertical column upward from the bottom until hitting solid (--voxel-floor-fill). Best for terrain">Floor fill (outdoor)</option>
-                            <option value="none" title="No sealing — voxelize exactly what's there">None</option>
+                <div class="sec" title="Close the holes every real scan has, so the volume is watertight before meshing">
+                    <div class="sec-head">Seal</div>
+                    <div class="field-row">
+                        <label class="field half" title="How splat holes get sealed so the volume is watertight">
+                            <span>Hole sealing</span>
+                            <select id="fill-mode">
+                                <option value="external" selected title="Flood-fill from outside the model; anything unreachable becomes solid (--voxel-external-fill). Best for interior scans">External fill (indoor)</option>
+                                <option value="floor" title="Fill each vertical column upward from the bottom until hitting solid (--voxel-floor-fill). Best for terrain">Floor fill (outdoor)</option>
+                                <option value="none" title="No sealing — voxelize exactly what's there">None</option>
+                            </select>
+                        </label>
+                        <label class="field half" id="row-fill-size" title="Dilation distance in meters for the fill — how big a hole gets sealed over. Default 1.6">
+                            <span>Seal holes up to (m)</span>
+                            <input type="number" id="fill-size" value="1.6" step="0.1" min="0" required />
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sec" title="Keep the walkable interior open through the sealing step">
+                    <div class="sec-head">Carve</div>
+                    <label class="check" title="Flood-fill walkable space from the seed with a player-sized capsule, keeping it open through the sealing step (--voxel-carve). Essential after external fill, or the whole interior reads as solid"><input type="checkbox" id="carve" checked />
+                        Carve walkable space from seed (capsule)</label>
+                    <div class="field-row" id="carve-params">
+                        <label class="field half" title="Carve capsule height in meters (player height). Default 1.6">
+                            <span>Capsule height (m)</span>
+                            <input type="number" id="carve-height" value="1.6" step="0.1" min="0.1" required />
+                        </label>
+                        <label class="field half" title="Carve capsule radius in meters (player radius). Default 0.2">
+                            <span>Capsule radius (m)</span>
+                            <input type="number" id="carve-radius" value="0.2" step="0.05" min="0.05" required />
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sec" title="How the triangle mesh is extracted from the voxels">
+                    <div class="sec-head">Mesh</div>
+                    <label class="field" title="How the triangle mesh is extracted from the voxels (--collision-mesh)">
+                        <span>Mesh style</span>
+                        <select id="mesh-shape">
+                            <option value="smooth" selected title="Marching cubes with lossless coplanar merging — fewer, smoother triangles">Smooth (marching cubes)</option>
+                            <option value="faces" title="Exact axis-aligned voxel faces — watertight, blocky, faithful to the voxels">Faces (exact voxel faces)</option>
                         </select>
                     </label>
-                    <label class="field half" id="row-fill-size" title="Dilation distance in meters for the fill — how big a hole gets sealed over. Default 1.6">
-                        <span>Seal holes up to (m)</span>
-                        <input type="number" id="fill-size" value="1.6" step="0.1" min="0" required />
-                    </label>
                 </div>
-
-                <div class="group">Carve</div>
-                <label class="check" title="Flood-fill walkable space from the seed with a player-sized capsule, keeping it open through the sealing step (--voxel-carve). Essential after external fill, or the whole interior reads as solid"><input type="checkbox" id="carve" checked />
-                    Carve walkable space from seed (capsule)</label>
-                <div class="field-row" id="carve-params">
-                    <label class="field half" title="Carve capsule height in meters (player height). Default 1.6">
-                        <span>Capsule height (m)</span>
-                        <input type="number" id="carve-height" value="1.6" step="0.1" min="0.1" required />
-                    </label>
-                    <label class="field half" title="Carve capsule radius in meters (player radius). Default 0.2">
-                        <span>Capsule radius (m)</span>
-                        <input type="number" id="carve-radius" value="0.2" step="0.05" min="0.05" required />
-                    </label>
-                </div>
-
-                <div class="group">Mesh</div>
-                <label class="field" title="How the triangle mesh is extracted from the voxels (--collision-mesh)">
-                    <span>Mesh style</span>
-                    <select id="mesh-shape">
-                        <option value="smooth" selected title="Marching cubes with lossless coplanar merging — fewer, smoother triangles">Smooth (marching cubes)</option>
-                        <option value="faces" title="Exact axis-aligned voxel faces — watertight, blocky, faithful to the voxels">Faces (exact voxel faces)</option>
-                    </select>
-                </label>
-                <label class="check" title="When generation finishes, load the collision mesh + voxels into the 3D viewport"><input type="checkbox" id="collision-autoload" checked /> Load result into viewport</label>
-                <button id="collision-run" class="primary" title="Run the voxel + collision pipeline as a background job. Outputs <name>.voxel.json/.bin and <name>.collision.glb">Generate collision</button>
-            </section>
-
-            <section class="panel" id="panel-scene">
-                <h2 title="Objects in the viewport. Select one to move it with a gizmo; selecting nothing hides all gizmos. The carve capsule only appears while it's selected.">Scene</h2>
-                <ul id="scene-list" class="scene-list"></ul>
-                <div class="field-row hidden" id="cam-gizmo-mode" title="What the render-camera gizmo does">
-                    <button id="cam-move" class="active" title="Drag the gizmo to move the render camera (updates the WebP Camera position)">Move</button>
-                    <button id="cam-rotate" title="Drag the gizmo to rotate the render camera (updates the WebP Look-at)">Rotate</button>
-                </div>
-                <span class="hint" id="scene-hint">Select an object to move it. Click it again to deselect.</span>
-
-                <div class="group">Environment</div>
-                <label class="field" title="Use an equirectangular panorama image (.webp/.jpg/.png/.hdr) from this project as the scene skybox"><span>Skybox</span><select id="skybox-select"></select></label>
-                <div class="field-row">
-                    <button id="skybox-apply" title="Apply the selected image as the scene skybox">Apply</button>
-                    <button id="skybox-clear" title="Remove the skybox">Clear</button>
                 </div>
             </section>
 
@@ -587,7 +674,7 @@
                 <canvas id="gs-canvas"></canvas>
                 <div id="viewport-welcome">
                     <div class="vw-title">Nothing loaded yet</div>
-                    <div class="vw-line"><strong>Drop a splat file anywhere</strong> — or click a file's <strong>👁 eye</strong> in the Files panel.</div>
+                    <div class="vw-line"><strong>Drop a splat file anywhere</strong> — or click a file's <strong>👁 eye</strong> in the Scene panel.</div>
                     <div class="vw-line">Hover any control for what it does and the CLI flag it maps to.</div>
                     <div class="vw-line">Camera: <strong>WASD</strong> + mouse-look to fly · scroll zooms (<strong>Shift</strong> fast, <strong>Ctrl</strong> slow).</div>
                 </div>

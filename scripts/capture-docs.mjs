@@ -119,7 +119,7 @@ window.__doc = {
     const dock = window.__dock;
     if (!dock) return;
     if (!dock.getPanel(panel)) {
-      const w = { 'panel-files':'Files','panel-convert':'Export','panel-generate':'Generate','panel-lod':'LOD','panel-render':'Render','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','panel-scene':'Scene','camera-view':'Camera view' }[panel];
+      const w = { 'panel-files':'Scene','panel-convert':'Export','panel-generate':'Generate','panel-lod':'LOD','panel-render':'Render','panel-analyze':'Analyze','panel-edit':'Edit','panel-collision':'Collision','camera-view':'Camera view' }[panel];
       try { dock.addPanel({ id: panel, component: panel, title: w || panel }); } catch (e) {}
     }
     const p = dock.getPanel(panel);
@@ -210,13 +210,13 @@ async function run() {
     // transforms now live in the Edit panel (Convert is format + filters only):
     // one clean box around the whole Transform group (header → Apply transform)
     add('edit-transform', async () => {
-        await js(`window.__doc.clear(); window.__doc.rail('panel-scene'); window.__doc.rail('panel-edit');`);
+        await js(`window.__doc.clear(); window.__doc.rail('panel-files'); window.__doc.rail('panel-edit');`);
         await sleep(200);
         await js(`(function(){window.__doc.clear();var hdr=[...document.querySelectorAll('#panel-edit .group')].find(e=>/^transform/i.test(e.textContent.trim())),btn=document.getElementById('apply-transform');if(!hdr||!btn){window.__doc.hl(['#apply-transform'],{});return;}var a=hdr.getBoundingClientRect(),b=btn.getBoundingClientRect(),pad=5,left=Math.min(a.left,b.left)-pad,top=a.top-pad,right=Math.max(a.right,b.right)+pad,bottom=b.bottom+pad,box=document.createElement('div');box.className='__doc-hl';Object.assign(box.style,{position:'fixed',left:left+'px',top:top+'px',width:(right-left)+'px',height:(bottom-top)+'px',border:'2.5px solid #ffcf4d',borderRadius:'7px',boxShadow:'0 0 0 2px rgba(255,207,77,.35), 0 0 16px 3px rgba(255,207,77,.45)',pointerEvents:'none',zIndex:'99998'});document.body.appendChild(box);})();`);
     });
     // WebP rendering is its own Render tab — settle the layout before highlighting
     add('render-tab', async () => {
-        await js(`window.__doc.clear(); window.__doc.rail('panel-scene'); window.__doc.rail('panel-render'); var ri=document.getElementById('render-input'); if(ri){ri.value='demo-room.ply'; ri.dispatchEvent(new Event('change',{bubbles:true}));}`);
+        await js(`window.__doc.clear(); window.__doc.rail('panel-files'); window.__doc.rail('panel-render'); var ri=document.getElementById('render-input'); if(ri){ri.value='demo-room.ply'; ri.dispatchEvent(new Event('change',{bubbles:true}));}`);
         await sleep(350);
         await js(`var p=document.getElementById('panel-render'); if(p) p.scrollTop=0; window.__doc.hl(['#render-input','#webp-camera','#render-run'],{numbered:true});`);
         await sleep(150);
@@ -255,7 +255,7 @@ async function run() {
         await js(`var f=document.getElementById('convert-format'); f.value='webp'; f.dispatchEvent(new Event('change',{bubbles:true}));
             window.__doc.rail('panel-collision');
             var cv=document.getElementById('carve'); if(!cv.checked){cv.checked=true; cv.dispatchEvent(new Event('change',{bubbles:true}));}
-            window.__doc.rail('panel-scene');`);
+            window.__doc.rail('panel-files');`);
         await sleep(200);
         await js(`(function(){var rows=[...document.querySelectorAll('#scene-list .scene-item')];var cap=rows.find(r=>/capsule/i.test(r.textContent));if(cap)cap.click();return true;})()`);
         await sleep(300);
@@ -295,7 +295,7 @@ async function run() {
         // load the demo splat so the carve box previews against it
         await js(`(function(){var li=[...document.querySelectorAll('#file-list li')].find(x=>x.textContent.includes('demo-room.ply'));if(li){var v=[...li.querySelectorAll('button')].find(b=>/view/i.test(b.textContent));v&&v.click();}return true;})()`);
         await sleep(1300);
-        await js(`window.__doc.rail('panel-scene'); window.__doc.rail('panel-edit');
+        await js(`window.__doc.rail('panel-files'); window.__doc.rail('panel-edit');
             var mt=document.getElementById('measure-toggle'); if(mt.checked){mt.checked=false; mt.dispatchEvent(new Event('change',{bubbles:true}));}
             var ei=document.getElementById('edit-input'); ei.value='demo-room.ply'; ei.dispatchEvent(new Event('change',{bubbles:true}));
             var cb=document.getElementById('carve-box-on'); if(!cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));}
@@ -328,7 +328,7 @@ async function run() {
         await js(`document.getElementById('lod-autotune').click();`);
         await js(`new Promise(function(res){var t=Date.now();(function p(){var el=document.getElementById('lod-autotune-plan'); if(el && !el.classList.contains('hidden') && el.textContent.trim()) return res(true); if(Date.now()-t>9000) return res(false); setTimeout(p,200);})();})`);
         await sleep(300);
-        await js(`window.__doc.rail('panel-scene');`); // clean right side (avoid the stale Camera view render)
+        await js(`window.__doc.rail('panel-files');`); // clean right side (avoid the stale Camera view render)
         await sleep(150);
         // plain glow on the auto-tune button + the ordered rows (no numbered badges to overlap)
         await js(`window.__doc.hl(['#lod-autotune','#row-lod-files'],{});`);
@@ -342,7 +342,7 @@ async function run() {
             var f=document.getElementById('convert-format'); f.value='ply'; f.dispatchEvent(new Event('change',{bubbles:true}));
             var tx=document.getElementById('tf-translate-x'); tx.value='1'; tx.dispatchEvent(new Event('input',{bubbles:true})); tx.dispatchEvent(new Event('change',{bubbles:true}));`);
         await sleep(150);
-        await js(`window.__doc.rail('panel-scene'); window.__doc.rail('panel-files');
+        await js(`window.__doc.rail('panel-files');
             var want=['demo-room.ply','scene-mid.ply'];
             [...document.querySelectorAll('#group-members input[type=checkbox]')].forEach(function(cb){ if(want.indexOf(cb.value)>=0 && !cb.checked){cb.checked=true; cb.dispatchEvent(new Event('change',{bubbles:true}));} });`);
         await sleep(300);
