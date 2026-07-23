@@ -853,21 +853,21 @@ body.dropping #viewport::after {
 .badge.queued { color: var(--text-dim); }
 .badge.cancelled { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
 
-#lod-file-rows .lod-row {
+#panel-lod .lod-row {
     display: flex;
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
 }
-#lod-file-rows .lod-row .lod-label {
+#panel-lod .lod-row .lod-label {
     font-size: var(--fs-xs);
     color: var(--text-dim);
     white-space: nowrap;
     min-width: 38px;
 }
-#lod-file-rows .lod-row select { flex: 1; min-width: 0; }
-#lod-file-rows .lod-row button { padding: 2px 8px; font-size: var(--fs-sm); }
-#lod-file-rows .lod-row .lod-env {
+#panel-lod .lod-row select { flex: 1; min-width: 0; }
+#panel-lod .lod-row button { padding: 2px 8px; font-size: var(--fs-sm); }
+#panel-lod .lod-row .lod-env {
     display: flex;
     align-items: center;
     gap: 3px;
@@ -877,7 +877,7 @@ body.dropping #viewport::after {
     flex-shrink: 0;
     cursor: pointer;
 }
-#lod-file-rows .lod-row .lod-env input { margin: 0; }
+#panel-lod .lod-row .lod-env input { margin: 0; }
 #lod-add-level { margin-top: 2px; font-size: var(--fs-sm); }
 
 /* the console grows/shrinks with the Jobs tab */
@@ -1047,7 +1047,11 @@ body.dropping #viewport::after {
 #lod-autotune-plan { margin: 2px 0 8px; }
 
 /* ----- LOD level ladder — read-only pills reflecting the current settings ----- */
-.lod-ladder { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.lod-ladder { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; }
+.lod-ladder:empty { display: none; }
+/* section header with an inline mode select (the LOD Levels card) */
+.sec-head.with-inline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sec-head.with-inline select { width: auto; font-size: var(--fs-sm); text-transform: none; letter-spacing: normal; padding: 2px 6px; }
 .lod-pill {
     font-size: var(--fs-xs);
     padding: 2px 8px;

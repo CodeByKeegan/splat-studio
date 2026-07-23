@@ -251,26 +251,10 @@
 
             <section class="panel" id="panel-lod">
                 <h2 title="Bake a streamed multi-LOD SOG (lod-meta.json + per-LOD chunk folders). The engine streams chunks by camera distance — the format for big scenes">LOD</h2>
-                <label class="field" title="Source splat to build LODs from — the highest-detail level (LOD 0)">
-                    <span>Input</span>
-                    <select id="lod-input"></select>
-                </label>
-                <label class="field" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
-                    <span>Levels from</span>
-                    <select id="lod-mode">
-                        <option value="decimate" selected>Decimate input automatically</option>
-                        <option value="combine">Combine existing files as levels</option>
-                    </select>
-                </label>
-                <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick a row's Env box to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
-                    <span>Additional levels <em>(Input = LOD 0; tick 'Env' for an always-visible backdrop)</em></span>
-                    <div id="lod-file-rows"></div>
-                    <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
-                </div>
-                <div class="field" title="Scene-type presets fill the LOD settings; ⚡ Auto reads the input's gaussian count + extents and sizes them to match. Editing a setting in Advanced switches to Custom">
+                <div class="field" title="Scene-type presets fill the LOD settings; ⚡ Auto reads LOD 0's gaussian count + extents and sizes them to match. Editing a setting in Advanced switches to Custom">
                     <span>Scene type <em>— fills the LOD settings</em></span>
                     <div class="preset-row" data-preset-for="lod-preset">
-                        <button type="button" class="preset-btn" id="lod-autotune" data-value="auto" title="Read the input's gaussian count + extents (a quick CPU summary) and fill the LOD settings to match — recommended">⚡ Auto</button>
+                        <button type="button" class="preset-btn" id="lod-autotune" data-value="auto" title="Read LOD 0's gaussian count + extents (a quick CPU summary) and fill the LOD settings to match — recommended">⚡ Auto</button>
                         <button type="button" class="preset-btn" data-value="indoor" title="Room-scale scan: 3 levels at 50% keep each, 16 m chunks">🏠 Indoor</button>
                         <button type="button" class="preset-btn" data-value="outdoor" title="Large exterior scene: 5 levels at 50% keep each, 32 m chunks">🌍 Outdoor</button>
                         <button type="button" class="preset-btn" data-value="object" title="Single object: 2 levels at 50% keep each, 8 m chunks">📦 Object</button>
@@ -285,9 +269,23 @@
                     </select>
                 </div>
                 <div class="hint hidden" id="lod-autotune-plan"></div>
-                <div class="field" id="row-lod-ladder" title="The detail ladder the bake will write, from the current settings — L0 is the input at full detail. Tune it under Advanced options">
-                    <span>Levels</span>
-                    <div id="lod-ladder" class="lod-ladder"></div>
+                <div class="sec" id="lod-levels-sec" title="The detail ladder the bake will write. LOD 0 is the source splat at full detail; each next level is lighter">
+                    <div class="sec-head with-inline">
+                        <span>Levels</span>
+                        <select id="lod-mode" title="Where the lighter levels come from: derived from LOD 0 automatically (--decimate), or files you already have (e.g. exports at different gaussian counts)">
+                            <option value="decimate" selected>decimated automatically</option>
+                            <option value="combine">from existing files</option>
+                        </select>
+                    </div>
+                    <div class="lod-row" title="LOD 0 — the source splat, streamed at full detail up close">
+                        <span class="lod-label">LOD 0</span>
+                        <select id="lod-input"></select>
+                    </div>
+                    <div class="field hidden" id="row-lod-files" title="Each row is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick Env to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
+                        <div id="lod-file-rows"></div>
+                        <button id="lod-add-level" title="Add another, lighter LOD level">+ Add LOD level</button>
+                    </div>
+                    <div id="lod-ladder" class="lod-ladder" title="The lighter levels derived from LOD 0 by the current settings — tune them under Advanced options"></div>
                 </div>
                 <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
                 <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Jobs panel">Generate streamed LOD</button>

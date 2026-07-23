@@ -246,22 +246,21 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-LOD chunk
 folders that the engine streams by camera distance, for scenes too big to load at once.
 
-1. **Input** — the highest-detail source (LOD 0).
-2. **Scene type** — pick a preset chip: **⚡ Auto** (recommended — reads the input's
+1. **Scene type** — pick a preset chip: **⚡ Auto** (recommended — reads LOD 0's
    stats and sizes everything, see below), or **Indoor** (3 levels, 16 m chunks),
    **Outdoor** (5 levels, 32 m chunks), **Object** (2 levels, 8 m chunks) — all at
-   50% keep per level. The **Levels** ladder under the chips always shows what the
-   bake will write (per-level keep % in Decimate mode, the chosen files in Combine
-   mode, plus the chunk extent), updating live as settings change.
-3. **Levels from** — *Decimate input automatically* (default) derives the lighter
-   levels from the single input; *Combine existing files as levels* uses files you
-   already have as explicit levels. In Combine mode the **Additional level** rows
-   appear right below: each row is the next, lighter level — order matters (each
-   level should have fewer gaussians than the one before). Tick a row's **Env** box
-   to make that file an always-visible far/background shell (a coarse backdrop —
-   skybox, distant cityscape — emitted as LOD `-1`) the runtime keeps resident
-   instead of culling it by distance. One environment layer per bake; Combine only.
-4. **Generate streamed LOD**. The tuning knobs the presets set live under
+   50% keep per level.
+2. **Levels** — one card holds the whole ladder. The **LOD 0** row is the source
+   splat (full detail up close); the picker in the card's header chooses where the
+   lighter levels come from: *decimated automatically* (default) derives them from
+   LOD 0 — shown as read-only pills with each level's keep % plus the chunk extent,
+   updating live — while *from existing files* adds a row per level below LOD 0.
+   In that mode order matters (each level should have fewer gaussians than the one
+   before), and ticking a row's **Env** box makes that file an always-visible
+   far/background shell (a coarse backdrop — skybox, distant cityscape — emitted as
+   LOD `-1`) the runtime keeps resident instead of culling it by distance. One
+   environment layer per bake; existing-files mode only.
+3. **Generate streamed LOD**. The tuning knobs the presets set live under
    **▸ Advanced options**:
    - **Decimate ladder** — **LOD levels** and **Keep per level (%)**.
    - **Streaming chunks** — **Chunk size (K splats)** and **Chunk extent (m)**.

@@ -78,19 +78,12 @@ const updateLodLadder = (): void => {
         el.textContent = text;
         lodLadder.appendChild(el);
     };
-    if (lodMode.value === 'combine') {
-        pill(`L0 ${baseLabel(lodInput.value) || '—'}`);
-        let n = 1;
-        for (const row of lodFileRows.children) {
-            const file = row.querySelector('select')?.value;
-            if (!file) continue;
-            const env = row.querySelector<HTMLInputElement>('.lod-env-box')?.checked;
-            pill(env ? `ENV ${baseLabel(file)}` : `L${n++} ${baseLabel(file)}`, env ? 'env' : '');
-        }
-    } else {
+    // LOD 0 and the combine rows are the editable rows above — the pills carry
+    // only what's derived: the decimated levels, and the chunk extent
+    if (lodMode.value !== 'combine') {
         const levels = Math.max(1, Math.min(8, Number($<HTMLInputElement>('lod-levels').value) || 1));
         const keep = Number($<HTMLInputElement>('lod-keep').value) || 50;
-        for (let i = 0; i < levels; i++) pill(`L${i} · ${Math.round(100 * (keep / 100) ** i)}%`);
+        for (let i = 1; i < levels; i++) pill(`LOD ${i} · ${Math.round(100 * (keep / 100) ** i)}%`);
     }
     const ext = Number($<HTMLInputElement>('lod-chunk-extent').value);
     if (Number.isFinite(ext) && ext > 0) pill(`${ext} m chunks`, 'meta');
