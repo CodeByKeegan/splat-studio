@@ -47,7 +47,7 @@
     "@types/node": "^26.1.1",
     "concurrently": "^10.0.3",
     "electron": "^43.1.1",
-    "electron-builder": "^26.15.6",
+    "electron-builder": "^26.15.7",
     "playcanvas": "^2.21.0",
     "png-to-ico": "^3.0.1",
     "pngjs": "^7.0.0",
