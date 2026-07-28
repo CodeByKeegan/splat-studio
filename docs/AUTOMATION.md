@@ -5,6 +5,10 @@ Splat Studio maintains itself. It tracks its two upstreams
 the GUI, keeps a black-box regression suite green, and regenerates its own
 documentation — all gated behind a reviewable pull request.
 
+None of that is hidden in a scheduler. Each scheduled agent session runs a **prompt file
+committed to this repository** (`.agents/workflows/`), so the routine that runs tomorrow
+is whatever the last merged PR says it should be.
+
 This document explains how those pieces fit together.
 
 ## The big picture
@@ -109,9 +113,37 @@ The installed app checks the GitHub Releases API on startup (and via **Help → 
 for Updates…**); when a newer version exists it offers to open the downloads page.
 It's a check-and-link updater by design — the user chooses when to update.
 
-## The dependency-update loop
+## The routines — scheduled work, in the open
 
-A scheduled agent runs the `splat-studio-update-deps` skill on a cadence (weekly).
+Three routines run unattended. Each one is a markdown prompt in `.agents/workflows/`;
+the scheduler stores only a pointer to it.
+
+```mermaid
+flowchart LR
+    CRON([scheduler]) -- "read .agents/workflows/&lt;name&gt;.md on dev" --> FILE
+    subgraph repo [Repository — reviewable, PR-able]
+        FILE[[routine prompt]] --> SKILLS[skills<br/>.claude/skills/]
+        SKILLS --> WORK[branch + change]
+        WORK --> SUITE{{npm test<br/>+ typecheck}}
+    end
+    SUITE -- green --> PR[[Pull Request → dev]]
+    SUITE -- red --> REPORT([report, no PR])
+    PR --> REVIEW([human review])
+    REVIEW -- merge --> FILE
+```
+
+| Routine | Cadence | Output |
+| --- | --- | --- |
+| `dep-update` | weekdays | A bump PR when an upstream shipped; nothing otherwise. |
+| `pr-merge` | daily | Open PRs tested against `dev` and merged if green **and** eligible — outside contributions get a test report and wait for review. |
+| `dev-cycle` | weekdays | One backlog item designed, built, and PR'd — or a public design proposal when the item needs a human decision. |
+
+Because the loop's last edge runs back into the prompt file, changing how the automation
+behaves is an ordinary pull request: edit the routine, get it reviewed, and the next run
+follows the new instructions.
+
+### The dependency-update loop
+
 Each run is self-limiting — if nothing upstream changed, it exits in seconds.
 
 ```mermaid
@@ -173,9 +205,24 @@ place, so a docs PR is a clean diff of only what visually changed.
 | `splat-studio-mcp` | The MCP server contract: tools, consent, jobs, coordinate frames, extending the surface. |
 | `splat-studio-workflows` | End-to-end MCP recipes (web optimization, collision, renders, cleanup, scaling, batch). |
 | `splat-studio-test` | Run and extend the regression suite. |
+| `splat-studio-design-pass` | Design a control before building it: discover → design against the system → adversarially critique → record publicly. |
 | `splat-studio-add-feature` | Wire a new CLI flag (or viewer feature) into the GUI end-to-end, with a test. |
-| `splat-studio-update-deps` | The autonomous routine: detect an upstream update, bump it, wire new flags, run tests, open a PR. |
+| `splat-studio-update-deps` | Detect an upstream update, bump it, wire new flags, run tests, open a PR. |
 | `splat-studio-update-docs` | Regenerate the user guide (text + screenshots) and this architecture doc after any change. |
+
+Skills are the reusable procedures; the routines above are the schedules that call them.
+Both are equally readable by hand — a contributor can follow `splat-studio-update-deps`
+without any scheduler involved. `npm run sync-skills` mirrors the bank to
+`.agents/skills/` for Codex and Antigravity; `npm run check-routines` fails if the mirror
+or a routine's skill list has drifted.
+
+## Coverage — `docs/CLI_COVERAGE.md`
+
+`npm run coverage` runs the installed CLI's `--help`, diffs it against the flags
+`server/commands.mjs` actually builds, and rewrites the coverage table. It is generated,
+never hand-kept, so it can't quietly overstate what the GUI supports — and the flags it
+lists as unwired are the backlog the `dev-cycle` routine pulls from. Passing `--check`
+verifies the table is current and fails instead of writing it, for use in a routine or CI.
 
 ## The regression suite — `tests/e2e.mjs`
 
@@ -190,4 +237,6 @@ through before its PR can merge.
 - **Branch + PR per change** (worktrees preferred); the suite must be green.
 - Commits authored **CodeByKeegan** with Claude Code co-authorship (see the README's AI-assisted development section).
 - Every GUI control's tooltip names the CLI flag it maps to, in parentheses.
-- New feature work is tracked on an internal coverage board (one task per CLI flag).
+- Work is tracked in public: GitHub issues for the backlog (`next` is the dev routine's
+  queue), `docs/CLI_COVERAGE.md` for flag coverage, `ROADMAP.md` for direction.
+- The routines themselves are code: change one by PR'ing its file in `.agents/workflows/`.

@@ -44,6 +44,7 @@ nav:
   - MCP Setup: MCP_SETUP.md
   - MCP Workflows: MCP_WORKFLOWS.md
   - Automation: AUTOMATION.md
+  - CLI Coverage: CLI_COVERAGE.md
 
 markdown_extensions:
   - admonition

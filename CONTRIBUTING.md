@@ -19,6 +19,22 @@ The maintainer (@CodeByKeegan) reviews and merges all PRs.
 For anything larger than a small fix, **[open an issue](https://github.com/CodeByKeegan/splat-studio/issues)
 first** so we can agree on the approach — it saves everyone rework.
 
+## The automation is contributable too
+
+Splat Studio runs scheduled agent sessions — dependency bumps, a daily test-and-merge
+pass, a development cycle. **Those routines are prompt files in the repo**
+([`.agents/workflows/`](.agents/workflows/README.md)), not settings in someone's
+scheduler, and the reusable procedures they call are the skills in `.claude/skills/`.
+
+So "the bot should also check X" or "this routine shouldn't do Y unattended" is a normal
+pull request against a markdown file, reviewed like any other change. The most useful
+contributions there are missing guardrails, stale steps, and checks worth running before
+a PR is opened. `npm run check-routines` validates the bank.
+
+What the automation works from is public too: [issues](https://github.com/CodeByKeegan/splat-studio/issues)
+(the `next` label is its queue), [`docs/CLI_COVERAGE.md`](docs/CLI_COVERAGE.md) for which
+CLI flags the GUI wires, and [`ROADMAP.md`](ROADMAP.md) for direction.
+
 ## Development setup
 
 See **[Getting started](README.md#getting-started)** for prerequisites (Node 22+) and the

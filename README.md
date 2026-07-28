@@ -6,7 +6,7 @@ collision-mesh generation, with a [PlayCanvas](https://playcanvas.com) 3D viewer
 all in a dockable, Unity/Unreal-style tab editor you can rearrange and save per
 workspace.
 
-<!-- versions: the "Built with" line below is kept in sync by the weekly dependency-update routine -->
+<!-- versions: the "Built with" line below is kept in sync by the dependency-update routine -->
 **Built with [PlayCanvas](https://github.com/playcanvas/engine) `2.21.1` · [@playcanvas/splat-transform](https://github.com/playcanvas/splat-transform) `3.1.7`**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -272,10 +272,11 @@ Both write a new splat and load it straight into the viewer.
   server (the Electron binary runs as Node via `ELECTRON_RUN_AS_NODE`, so it can
   still spawn the native-WebGPU `splat-transform` CLI), waits for it to come up,
   then opens the UI in a Chromium window.
-- **Automation** — every push to `main` builds and publishes a Windows release via
-  GitHub Actions, and a weekly routine tracks new splat-transform / PlayCanvas
-  releases and wires new CLI flags into the GUI. See
-  [docs/AUTOMATION.md](docs/AUTOMATION.md).
+- **Automation** — GitHub Actions builds and publishes releases, and scheduled agent
+  routines track new splat-transform / PlayCanvas releases, wire new CLI flags into the
+  GUI, and test open PRs. Those routines are prompt files in the repo
+  ([`.agents/workflows/`](.agents/workflows/README.md)) — readable, and changeable by PR.
+  See [docs/AUTOMATION.md](docs/AUTOMATION.md).
 
 ## Notes & caveats
 
@@ -375,9 +376,14 @@ want to discuss a larger change.
 
 Splat Studio is developed with [Claude Code](https://claude.com/claude-code).
 Commits and pull requests carry standard `Co-Authored-By` attribution, and PRs
-opened autonomously by the weekly dependency-update routine say so in their
-description. All changes — human- or agent-authored — are reviewed before merge
-and held to the same checks described in [Contributing](#contributing).
+opened autonomously by a scheduled routine say so in their description. All changes —
+human- or agent-authored — are reviewed before merge and held to the same checks
+described in [Contributing](#contributing).
+
+The scheduled routines are not a black box: each one is a prompt file in
+[`.agents/workflows/`](.agents/workflows/README.md), the procedures they follow are the
+skills in `.claude/skills/`, and both are changed the same way anything else here is — by
+pull request.
 
 ## License
 

@@ -9,6 +9,10 @@ Goal: surface a CLI flag in the GUI with a tooltip, then prove it with a test.
 Read **splat-studio-control** first for the API/architecture. Work on a new
 branch (worktree preferred); open a PR.
 
+This skill builds what **splat-studio-design-pass** decided — run that first for
+anything whose shape isn't obvious. A flag is not a feature until someone has
+worked out what it's for.
+
 ## 1. Pin the exact CLI semantics
 Run the real CLI — never guess:
 ```
@@ -46,7 +50,8 @@ running it against `workspace/demo-room.ply` (regenerate with `npm run demo`).
 
 ## 5. Ship
 Commit (author CodeByKeegan; Claude attribution comes from repo settings — leave it),
-push the branch, open a PR with a "Verification" section. Check off the matching coverage-board task.
+push the branch, open a PR with a "Verification" section. Run `npm run coverage` to
+refresh `docs/CLI_COVERAGE.md` and commit it in the same PR.
 
 ## Exclusions (not applicable to a GUI)
 `--help/-h`, `--version/-v`, `--quiet/-q` (the summary feature uses `-q`

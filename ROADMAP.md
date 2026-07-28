@@ -23,8 +23,9 @@ The foundation is in place and in daily use:
 - **Dockable editor** — movable/floatable panels, layouts saved per workspace.
 - **Self-updating desktop app** — Windows build that updates itself from GitHub Releases.
 - **MCP server** — drive the headless pipeline and (with consent) the live editor from an AI agent.
-- **Autonomous maintenance** — a scheduled routine tracks upstream releases, wires new CLI
-  flags into the GUI, runs the regression suite, and opens a PR.
+- **Autonomous maintenance** — scheduled routines track upstream releases, wire new CLI
+  flags into the GUI, run the regression suite, and open PRs. Each routine is a prompt
+  file in [`.agents/workflows/`](.agents/workflows/README.md), changeable by pull request.
 
 ## 🔜 Near-term
 
@@ -38,7 +39,8 @@ What's actively being built or next up:
 - **Public documentation site** — the user guide and MCP docs published via GitHub Pages,
   kept in sync from the repo.
 - **Continuous CLI coverage** — keep pace with new `splat-transform` flags as they ship
-  (handled largely by the maintenance routine).
+  (handled largely by the maintenance routine). Current state:
+  [`docs/CLI_COVERAGE.md`](docs/CLI_COVERAGE.md).
 
 ## 🧭 Exploring
 
