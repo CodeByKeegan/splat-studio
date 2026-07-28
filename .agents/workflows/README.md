@@ -33,6 +33,28 @@ so the same procedure is available to an interactive session:
 | `pr-merge` | `splat-studio-test` |
 | `dev-cycle` | `splat-studio-design-pass` → `splat-studio-add-feature` → `splat-studio-test` → `splat-studio-update-docs` |
 
+## Registering one with a scheduler
+
+The job's prompt should carry nothing about *what to do* — only where to read it and
+what's true about the machine it runs on:
+
+```
+Run the <name> routine for CodeByKeegan/splat-studio.
+
+The routine is not in this prompt — it lives in the repo, so it can be reviewed and
+changed by pull request. Clone or refresh the repo, read .agents/workflows/<name>.md
+on the `dev` branch, and follow it exactly; .agents/workflows/README.md holds the
+guardrails every routine inherits. If that file isn't there, stop and report rather
+than improvising.
+
+Environment notes (about this machine, not the project): <no GPU → SKIP_GPU=1 npm test;
+git identity; PATH; which notification channel to finish on>.
+```
+
+Anything you find yourself adding beyond that — a step, a caveat, a "don't forget to" —
+belongs in the routine file instead, where it's visible and reviewable. A prompt that
+grows steps is how the automation goes private again.
+
 ## Rules every routine inherits
 
 These hold for any unattended run; individual files don't restate them.
