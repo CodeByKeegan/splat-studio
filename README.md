@@ -23,7 +23,8 @@ workspace.
 
 📚 **[Documentation site](https://codebykeegan.github.io/splat-studio/)** ·
 📖 **[User Guide](docs/USER_GUIDE.md)** (illustrated, every feature) ·
-⚙️ **[Automation Architecture](docs/AUTOMATION.md)** (how the app keeps itself current) ·
+🏗️ **[Architecture](docs/ARCHITECTURE.md)** (processes, modules, job pipeline) ·
+⚙️ **[Automation](docs/AUTOMATION.md)** (how the app keeps itself current) ·
 ⬇️ **[Download the latest release](https://github.com/CodeByKeegan/splat-studio/releases/latest)**
 
 ---
@@ -193,9 +194,10 @@ Then in the browser:
    wireframe (small meshes), hidden-line wireframe (a depth-only prepass culls
    hidden edges — dense meshes auto-switch to this above 100K triangles), and
    *Solid + edges* (lit translucent surface — the mode for verifying placement
-   against the splat and flying inside carved interiors). Visual settings (wire
-   and voxel colours/opacity, plus dark-mode / font / language placeholders) live
-   in a separate **Settings** window (⚙ in the toolbar).
+   against the splat and flying inside carved interiors). A separate **Settings**
+   window (⚙ in the toolbar) holds visual settings (wire and voxel
+   colours/opacity), the theme editor, workspace tools, advanced job options
+   (`--scratch-dir`), and update preferences.
    Clicking the **eye** on a `.voxel.json` renders the sparse voxel octree as
    hardware-instanced translucent boxes (solid octree regions render as one
    merged box; display is capped at 1.5 M boxes — regenerate with a coarser
@@ -206,7 +208,7 @@ Then in the browser:
 
 ## Analyze & procedural generators
 
-- **Analyze** panel — pick any splat and **Summarize stats** (`-m/--summary`,
+- **Analyze** panel — pick any splat and **Summarize stats** (`--stats`,
   `null` output, writes nothing). Results render as a **persistent card**:
   headline tiles (gaussian count, X×Y×Z extent, a NaN/Inf flag) over a per-column
   table with histograms, with a **copy** button for the raw Markdown. The card
@@ -236,7 +238,7 @@ Then in the browser:
   of field** (`--f-stop`/`--focus-distance`, pinhole only) and **motion blur**
   (`--camera-end`/`--shutter`/`--motion-samples`) are exposed too.
 - **Device** dropdown — choose the GPU adapter (listed via `-L/--list-gpus`) or
-  CPU (`-g`). **Verbose** adds `--verbose --mem` diagnostics to the Job log.
+  CPU (`-g`). **Verbose** adds `--verbose --memory` diagnostics to the Job log.
 - **HTML viewer** output gains **Unbundled** (`-U`, separate files) and a
   **Viewer settings** JSON (`-E`). An **.lcc** input gains **LOD levels** (`-O`).
 
@@ -272,10 +274,10 @@ Both write a new splat and load it straight into the viewer.
   server (the Electron binary runs as Node via `ELECTRON_RUN_AS_NODE`, so it can
   still spawn the native-WebGPU `splat-transform` CLI), waits for it to come up,
   then opens the UI in a Chromium window.
-- **Automation** — every push to `main` builds and publishes a Windows release via
-  GitHub Actions, and a weekly routine tracks new splat-transform / PlayCanvas
-  releases and wires new CLI flags into the GUI. See
-  [docs/AUTOMATION.md](docs/AUTOMATION.md).
+- **Automation** — GitHub Actions builds and publishes a Windows release on every
+  push: `dev` cuts a **beta**, promoting `dev` to `main` cuts a **stable** release.
+  A weekly routine tracks new splat-transform / PlayCanvas releases and wires new
+  CLI flags into the GUI. See [docs/AUTOMATION.md](docs/AUTOMATION.md).
 
 ## Notes & caveats
 
@@ -302,15 +304,28 @@ Both write a new splat and load it straight into the viewer.
 
 ## HTTP API
 
+Everything the GUI does goes through this loopback API, so the whole app is
+scriptable (see the `splat-studio-control` skill for a full walkthrough):
+
 | Route | Purpose |
 | --- | --- |
+| `GET /api/health` · `GET /api/versions` | liveness, app/CLI/engine versions |
+| `GET`/`POST /api/workspace` | read / repoint the workspace root |
+| `GET`/`POST /api/projects` | list / create projects |
 | `GET /api/files` | list workspace files |
 | `POST /api/upload?name=` | upload (raw body stream) |
 | `DELETE /api/files/:name` | delete file (folder for unbundled SOG) |
 | `POST /api/convert` | `{ input, format, options }` → `{ jobId }` |
 | `POST /api/collision` | `{ input, options }` → `{ jobId }` |
-| `GET /api/jobs/:id` | job status, log, outputs |
+| `POST /api/summary` · `GET /api/stats` | stats as a job / parsed on demand |
+| `POST /api/trim` | box/sphere carve → new splat |
+| `GET /api/gpus` | list GPU adapters |
+| `GET /api/generator-params` | a generator's slider schema |
+| `GET /api/jobs` · `GET /api/jobs/:id` | job list / status, log, outputs |
 | `POST /api/jobs/:id/cancel` | kill a running job |
+| `GET`/`POST /api/layout` | saved dock layout |
+| `GET`/`POST /api/groups` | linked-location groups |
+| `POST /api/editor/command` · `GET /api/editor/status` · `POST /api/editor/control` | MCP live-editor relay (consent-gated) |
 | `GET /files/*` | static workspace files |
 
 ## MCP server (AI agent control)
@@ -355,7 +370,10 @@ For the agent-facing playbooks, see the `splat-studio-mcp` and `splat-studio-wor
 
 Contributions are welcome — issues and pull requests both.
 
-1. Fork and create a branch off `main`.
+1. Fork and create a branch off **`dev`**, named `<type>/<kebab-summary>`
+   (`feat`, `fix`, `chore`, `docs`, `ci`, or `refactor` — e.g. `fix/region-gizmo-detach`).
+   PRs target `dev` (the beta channel); `main` only moves by promoting `dev` to a
+   stable release. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full flow.
 2. `npm install`, then make your change. Keep it focused (one feature/fix per PR).
 3. Before opening a PR, run the checks:
    ```bash
@@ -364,7 +382,8 @@ Contributions are welcome — issues and pull requests both.
    ```
    Both must pass. UI/viewer changes should be verified against a running
    `npm run dev`.
-4. Match the existing style: brief, what-not-why code comments; new CLI flags get
+4. Match the existing style: brief code comments (file headers + one-line function
+   signatures; short whys only for non-obvious constraints); new CLI flags get
    a control + tooltip in the GUI and a `check(...)` in the e2e suite (see the
    `.claude/skills/` routines for how features and dependency bumps are wired).
 

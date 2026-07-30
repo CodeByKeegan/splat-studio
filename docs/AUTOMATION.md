@@ -90,24 +90,31 @@ flowchart LR
 
 ## The release pipeline
 
-Every push/merge to `main` ships a build. `.github/workflows/release.yml` runs on
-`windows-latest`:
+Every push ships a build. `.github/workflows/release.yml` runs on `windows-latest`
+for both branches. Betas are **release candidates for the next stable**: after
+stable `X.Y.Z`, each `dev` push publishes `X.Y.(Z+1)-beta.1`, `-beta.2`, …
+(`beta.yml`), and promoting `dev` to `main` publishes `X.Y.(Z+1)` itself
+(`latest.yml`). The patch number auto-increments from the latest stable release
+tag; for a planned bigger jump, set `package.json`'s version to the target
+(e.g. `0.1.0`) — the workflow takes whichever is semver-higher, and fails fast
+if the resolved stable tag already exists.
 
 ```mermaid
 flowchart LR
-    PUSH([push to main]) --> CI[GitHub Actions<br/>windows-latest]
-    CI --> V[version = 0.1.&lt;run&gt;]
+    PUSH([push to dev / main]) --> CI[GitHub Actions<br/>windows-latest]
+    CI --> V[version = next stable<br/>auto patch or package.json<br/>+ -beta.&lt;N&gt; on dev]
     V --> FN[stage node.exe] --> B[build client] --> EB[electron-builder --win]
-    EB --> REL[[GitHub Release<br/>installer + portable + latest.yml]]
-    REL -. on launch .-> APP[installed app]
-    APP --> CHK{newer release<br/>than this build?}
-    CHK -- yes --> POP[dialog → open downloads page]
+    EB --> REL[[GitHub Release<br/>installer + portable + channel yml]]
+    REL -. electron-updater .-> APP[installed app]
+    APP --> CHK{newer release on<br/>this channel?}
+    CHK -- yes --> DL[background download<br/>→ install on restart / quit]
     CHK -- no --> OK[stay]
 ```
 
-The installed app checks the GitHub Releases API on startup (and via **Help → Check
-for Updates…**); when a newer version exists it offers to open the downloads page.
-It's a check-and-link updater by design — the user chooses when to update.
+The installed app checks GitHub Releases on launch (and via **Help → Check for
+Updates…**) through electron-updater; a newer version on the selected channel
+downloads in the background and installs when the user restarts (or on quit).
+The channel (stable / beta) is switchable in **Settings → Updates**.
 
 ## The dependency-update loop
 
@@ -190,4 +197,5 @@ through before its PR can merge.
 - **Branch + PR per change** (worktrees preferred); the suite must be green.
 - Commits authored **CodeByKeegan** with Claude Code co-authorship (see the README's AI-assisted development section).
 - Every GUI control's tooltip names the CLI flag it maps to, in parentheses.
-- New feature work is tracked on an internal coverage board (one task per CLI flag).
+- The maintainer tracks CLI-flag coverage on a task board (one task per flag);
+  to propose or discuss features, [open a GitHub issue](https://github.com/CodeByKeegan/splat-studio/issues).

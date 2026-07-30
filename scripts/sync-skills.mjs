@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Mirror canonical Claude Code skills into the cross-agent .agents/skills dir so
 // Codex (.agents/skills) and Antigravity (.agents/skills) read the same SKILL.md format.
-// Run via `npm run sync-skills`; the weekly maintenance routine keeps it current.
+// Run via `npm run sync-skills` after editing anything under .claude/skills/.
 import { cpSync, rmSync, mkdirSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

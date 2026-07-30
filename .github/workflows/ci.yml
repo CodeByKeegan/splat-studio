@@ -1,0 +1,32 @@
+name: CI
+
+# Typecheck + the CPU-only regression suite on every PR. GPU-only checks
+# (collision, WebP render) are skipped on hosted runners via SKIP_GPU=1;
+# they still run in local full-suite runs (`npm test` on a GPU machine).
+on:
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Regression suite (CPU-only)
+        run: SKIP_GPU=1 npm test

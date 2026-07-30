@@ -43,6 +43,7 @@ nav:
   - User Guide: USER_GUIDE.md
   - MCP Setup: MCP_SETUP.md
   - MCP Workflows: MCP_WORKFLOWS.md
+  - Architecture: ARCHITECTURE.md
   - Automation: AUTOMATION.md
 
 markdown_extensions:

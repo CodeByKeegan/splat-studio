@@ -2,9 +2,15 @@
 // stdio MCP server via the SDK client, and drives the headless tools, the editor
 // relay/consent contract, and the editor-tool forwarding (with a mock WS editor).
 // Run: node tests/mcp-e2e.mjs   (set SKIP_GPU=1 — not needed here, no GPU ops).
-import { Client } from '../mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from '../mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { WebSocket } from 'ws';
+// Resolve the SDK through mcp-server's own dependency tree via its export map —
+// no hardcoded dist/ paths that break on SDK repackaging.
+const sdkRequire = createRequire(new URL('../mcp-server/index.mjs', import.meta.url));
+const sdkImport = (sub) => import(pathToFileURL(sdkRequire.resolve(`@modelcontextprotocol/sdk/${sub}`)).href);
+const { Client } = await sdkImport('client/index.js');
+const { StdioClientTransport } = await sdkImport('client/stdio.js');
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
@@ -27,6 +33,8 @@ async function check(name, fn) { try { await fn(); console.log(`  ✓ ${name}`);
 async function waitHealth(port) { for (let i = 0; i < 120; i++) { try { const r = await fetch(`http://127.0.0.1:${port}/api/health`); if (r.ok) return; } catch { /* */ } await sleep(150); } throw new Error('server never healthy'); }
 
 const PNG1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+// Fake editor on the relay WS: answers pings, screenshots with a 1px PNG, echoes
+// every other command back as { ok:true, data:{ echo:{name,params} } }.
 function mockEditor(port) {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/editor-ws`);
     ws.on('open', () => ws.send(JSON.stringify({ type: 'register', role: 'editor', project: 'Demo', appVersion: 't' })));
@@ -119,6 +127,35 @@ try {
         assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
         const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 60000 }));
         assert(w.status === 'done' && w.outputs?.some((o) => /\.ply$/i.test(o)), `trim job: ${JSON.stringify(w).slice(0, 160)}`);
+    });
+
+    await check('get_summary -> job -> stats table in the log', async () => {
+        const j = data(await call('get_summary', { project: 'Demo', input: 'demo-room.ply' }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 60000 }));
+        assert(w.status === 'done', `summary job: ${JSON.stringify(w).slice(0, 160)}`);
+        const full = data(await call('jobs', { action: 'get', id: j.jobId }));
+        assert(/gaussians:\s*\d+/.test(full.log || ''), 'no stats in job log');
+    });
+
+    await check('build_lod (decimate, CPU) -> lod-meta.json output', async () => {
+        const j = data(await call('build_lod', { project: 'Demo', input: 'demo-room.ply', mode: 'decimate', device: 'cpu', lodLevels: 2, lodKeepPercent: 50 }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 120000 }));
+        assert(w.status === 'done' && w.outputs?.some((o) => /lod-meta\.json$/.test(o)), `lod job: ${JSON.stringify(w).slice(0, 160)}`);
+    });
+
+    await check('render_image equirect rejects a non-2:1 resolution as bad-input', async () => {
+        const r = await call('render_image', { project: 'Demo', input: 'demo-room.ply', image: { projection: 'equirect', resolution: '1000x1000' } });
+        assert(r.isError && data(r).error === 'bad-input', `expected bad-input: ${text(r)}`);
+        const dof = await call('render_image', { project: 'Demo', input: 'demo-room.ply', image: { projection: 'equirect', fStop: 2.8 } });
+        assert(dof.isError && data(dof).error === 'bad-input', `equirect+fStop should be bad-input: ${text(dof)}`);
+    });
+
+    await check('files resource template lists a project\'s assets', async () => {
+        const res = await client.readResource({ uri: 'splat-studio://files/Demo' });
+        const body = JSON.parse(res.contents[0].text);
+        assert(body.files?.some((f) => f.name === 'demo-room.ply'), `resource: ${JSON.stringify(body).slice(0, 160)}`);
     });
 
     await check('import_file with a missing source returns not-found', async () => {

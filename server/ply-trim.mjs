@@ -20,6 +20,7 @@ const TYPE_SIZE = {
     float: 4, float32: 4, double: 8, float64: 8
 };
 
+// parse the PLY header → { format, vertexCount, props, byName, stride, dataStart }
 const parseHeader = (buf) => {
     const marker = Buffer.from('end_header');
     const end = buf.indexOf(marker);
@@ -59,6 +60,7 @@ const parseHeader = (buf) => {
     return { format, vertexCount, props, byName, stride: offset, dataStart };
 };
 
+// read one little-endian scalar of the given PLY type
 const readLE = (buf, off, type) => {
     switch (type) {
         case 'float': case 'float32': return buf.readFloatLE(off);
@@ -106,95 +108,128 @@ const rewriteCount = (headerStr, n) => {
 
 // Read srcAbs, keep (mode 'keep') or remove (mode 'remove') the gaussians inside
 // the region, write outAbs. Returns { kept, total }. onProgress(i, n) is optional.
+// Binary PLYs are processed in fixed-size windows, never fully in memory —
+// multi-GB scans are in-domain and must not OOM (or hit Node's buffer cap).
 export const trimPly = async (srcAbs, outAbs, { box, sphere, mode = 'remove' }, onProgress) => {
-    const buf = await fs.readFile(srcAbs);
-    const h = parseHeader(buf);
-    const inside = makeInside({ box, sphere });
-    const keepInside = mode === 'keep';
-    const { x: ox, y: oy, z: oz } = h.byName;
-    const headerStr = buf.toString('ascii', 0, h.dataStart);
+    const fh = await fs.open(srcAbs, 'r');
+    try {
+        const { size } = await fh.stat();
+        // header window: grow until end_header appears (cap 4 MB — real headers are KBs)
+        const HEADER_CAP = 4 * 1024 * 1024;
+        let headBuf = Buffer.alloc(0);
+        while (headBuf.indexOf('end_header') < 0 && headBuf.length < Math.min(size, HEADER_CAP)) {
+            const next = Math.min(size, HEADER_CAP, Math.max(64 * 1024, headBuf.length * 2));
+            const buf = Buffer.alloc(next);
+            const { bytesRead } = await fh.read(buf, 0, next, 0);
+            headBuf = buf.subarray(0, bytesRead);
+        }
+        const h = parseHeader(headBuf);
+        const inside = makeInside({ box, sphere });
+        const keepInside = mode === 'keep';
+        const { x: ox, y: oy, z: oz } = h.byName;
+        const headerStr = headBuf.toString('ascii', 0, h.dataStart);
 
-    if (h.format === 'binary_little_endian') {
-        // validate the body length up front so a truncated/corrupt PLY yields a clear
-        // diagnostic instead of an opaque RangeError (or a byte-misaligned output)
-        const need = h.dataStart + h.vertexCount * h.stride;
-        if (need > buf.length) {
-            throw new Error(`PLY is truncated: header declares ${h.vertexCount} vertices but the body is too short`);
-        }
-        if ((buf.length - h.dataStart) % h.stride !== 0) {
-            throw new Error('PLY body has unexpected trailing data (length is not a whole number of vertex records — wrong stride?)');
-        }
-        // bake 180°-about-Z (x,y,z -> -x,-y,z) to match the CLI filter frame
-        const survives = (i) => {
-            const base = h.dataStart + i * h.stride;
-            const x = -readLE(buf, base + ox.offset, ox.type);
-            const y = -readLE(buf, base + oy.offset, oy.type);
-            const z = readLE(buf, base + oz.offset, oz.type);
-            return inside(x, y, z) === keepInside;
-        };
-        // pass 1: count survivors (so the header carries the final count)
-        let keptCount = 0;
-        for (let i = 0; i < h.vertexCount; i++) if (survives(i)) keptCount++;
-        // pass 2: stream the header + each surviving record (no Buffer.concat copy)
-        const stream = createWriteStream(outAbs);
-        const write = (chunk) => new Promise((resolve, reject) => {
-            const onError = (err) => { stream.off('error', onError); reject(err); };
-            stream.once('error', onError);
-            if (stream.write(chunk)) {
-                stream.off('error', onError);
-                resolve();
-            } else {
-                stream.once('drain', () => { stream.off('error', onError); resolve(); });
+        if (h.format === 'binary_little_endian') {
+            // validate the body length up front so a truncated/corrupt PLY yields a clear
+            // diagnostic instead of an opaque RangeError (or a byte-misaligned output)
+            const need = h.dataStart + h.vertexCount * h.stride;
+            if (need > size) {
+                throw new Error(`PLY is truncated: header declares ${h.vertexCount} vertices but the body is too short`);
             }
-        });
-        try {
-            await write(Buffer.from(rewriteCount(headerStr, keptCount), 'ascii'));
-            for (let i = 0; i < h.vertexCount; i++) {
-                if (survives(i)) {
-                    const base = h.dataStart + i * h.stride;
-                    await write(buf.subarray(base, base + h.stride));
+            if ((size - h.dataStart) % h.stride !== 0) {
+                throw new Error('PLY body has unexpected trailing data (length is not a whole number of vertex records — wrong stride?)');
+            }
+            const CHUNK_RECORDS = Math.max(1, Math.floor((8 * 1024 * 1024) / h.stride));
+            const chunkBuf = Buffer.alloc(CHUNK_RECORDS * h.stride);
+            // run fn(chunkBuf, firstIndex, count) over every window of records
+            const eachWindow = async (fn) => {
+                for (let i = 0; i < h.vertexCount; i += CHUNK_RECORDS) {
+                    const count = Math.min(CHUNK_RECORDS, h.vertexCount - i);
+                    const bytes = count * h.stride;
+                    const { bytesRead } = await fh.read(chunkBuf, 0, bytes, h.dataStart + i * h.stride);
+                    if (bytesRead !== bytes) throw new Error('PLY read came up short');
+                    await fn(chunkBuf, i, count);
                 }
-                if (onProgress && (i & 0x3ffff) === 0 && i) onProgress(i, h.vertexCount);
-            }
-            await new Promise((resolve, reject) => {
-                stream.once('finish', resolve);
-                stream.once('error', reject);
-                stream.end();
+            };
+            // bake 180°-about-Z (x,y,z -> -x,-y,z) to match the CLI filter frame
+            const survivesAt = (buf, off) => {
+                const x = -readLE(buf, off + ox.offset, ox.type);
+                const y = -readLE(buf, off + oy.offset, oy.type);
+                const z = readLE(buf, off + oz.offset, oz.type);
+                return inside(x, y, z) === keepInside;
+            };
+            // pass 1: count survivors (so the header carries the final count)
+            let keptCount = 0;
+            await eachWindow((buf, i, count) => {
+                for (let k = 0; k < count; k++) if (survivesAt(buf, k * h.stride)) keptCount++;
             });
-        } catch (err) {
-            stream.destroy();
-            throw err;
+            // pass 2: stream the header + each window's surviving records
+            const stream = createWriteStream(outAbs);
+            const write = (chunk) => new Promise((resolve, reject) => {
+                const onError = (err) => { stream.off('error', onError); reject(err); };
+                stream.once('error', onError);
+                if (stream.write(chunk)) {
+                    stream.off('error', onError);
+                    resolve();
+                } else {
+                    stream.once('drain', () => { stream.off('error', onError); resolve(); });
+                }
+            });
+            try {
+                await write(Buffer.from(rewriteCount(headerStr, keptCount), 'ascii'));
+                await eachWindow(async (buf, i, count) => {
+                    // copy survivors out of the reused window before the next read overwrites it
+                    const keep = [];
+                    for (let k = 0; k < count; k++) {
+                        const off = k * h.stride;
+                        if (survivesAt(buf, off)) keep.push(Buffer.from(buf.subarray(off, off + h.stride)));
+                    }
+                    if (keep.length) await write(Buffer.concat(keep));
+                    if (onProgress && i) onProgress(i + count, h.vertexCount);
+                });
+                await new Promise((resolve, reject) => {
+                    stream.once('finish', resolve);
+                    stream.once('error', reject);
+                    stream.end();
+                });
+            } catch (err) {
+                stream.destroy();
+                throw err;
+            }
+            return { kept: keptCount, total: h.vertexCount };
         }
-        return { kept: keptCount, total: h.vertexCount };
-    }
 
-    if (h.format === 'ascii') {
-        // buf.toString('utf8', ...) throws a cryptic ERR_STRING_TOO_LONG past ~512 MB;
-        // guard well under that with a clear, actionable message
-        if (buf.length - h.dataStart > 256 * 1024 * 1024) {
-            throw new Error('ASCII PLY too large to trim (>~256 MB) — convert to binary_little_endian PLY first');
+        if (h.format === 'ascii') {
+            // toString('utf8') throws a cryptic ERR_STRING_TOO_LONG past ~512 MB;
+            // guard well under that with a clear, actionable message
+            if (size - h.dataStart > 256 * 1024 * 1024) {
+                throw new Error('ASCII PLY too large to trim (>~256 MB) — convert to binary_little_endian PLY first');
+            }
+            const buf = await fs.readFile(srcAbs);
+            const xi = h.props.findIndex((p) => p.name === 'x');
+            const yi = h.props.findIndex((p) => p.name === 'y');
+            const zi = h.props.findIndex((p) => p.name === 'z');
+            const rows = buf.toString('utf8', h.dataStart).split('\n');
+            const out = [];
+            let seen = 0;
+            for (const line of rows) {
+                if (seen >= h.vertexCount) break;
+                const t = line.trim();
+                if (!t) continue;
+                seen++;
+                const c = t.split(/\s+/);
+                const x = -Number(c[xi]);
+                const y = -Number(c[yi]);
+                const z = Number(c[zi]);
+                if (inside(x, y, z) === keepInside) out.push(t);
+                if (onProgress && (seen & 0x3ffff) === 0) onProgress(seen, h.vertexCount);
+            }
+            await fs.writeFile(outAbs, rewriteCount(headerStr, out.length) + out.join('\n') + (out.length ? '\n' : ''));
+            return { kept: out.length, total: h.vertexCount };
         }
-        const xi = h.props.findIndex((p) => p.name === 'x');
-        const yi = h.props.findIndex((p) => p.name === 'y');
-        const zi = h.props.findIndex((p) => p.name === 'z');
-        const rows = buf.toString('utf8', h.dataStart).split('\n');
-        const out = [];
-        let seen = 0;
-        for (const line of rows) {
-            if (seen >= h.vertexCount) break;
-            const t = line.trim();
-            if (!t) continue;
-            seen++;
-            const c = t.split(/\s+/);
-            const x = -Number(c[xi]);
-            const y = -Number(c[yi]);
-            const z = Number(c[zi]);
-            if (inside(x, y, z) === keepInside) out.push(t);
-            if (onProgress && (seen & 0x3ffff) === 0) onProgress(seen, h.vertexCount);
-        }
-        await fs.writeFile(outAbs, rewriteCount(headerStr, out.length) + out.join('\n') + (out.length ? '\n' : ''));
-        return { kept: out.length, total: h.vertexCount };
-    }
 
-    throw new Error(`unsupported PLY format "${h.format}" — convert to binary_little_endian or ascii PLY first`);
+        throw new Error(`unsupported PLY format "${h.format}" — convert to binary_little_endian or ascii PLY first`);
+    } finally {
+        await fh.close();
+    }
 };

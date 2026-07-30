@@ -9,7 +9,9 @@ import * as files from './tools/files.mjs';
 import * as analysis from './tools/analysis.mjs';
 import * as convert from './tools/convert.mjs';
 import * as editor from './tools/editor.mjs';
-import * as phase3 from './tools/phase3.mjs';
+import * as advisor from './tools/advisor.mjs';
+import * as resources from './tools/resources.mjs';
+import * as prompts from './tools/prompts.mjs';
 
 const INSTRUCTIONS = [
     'Drive Splat Studio (a GUI over @playcanvas/splat-transform) headlessly and, with consent, control its live editor.',
@@ -32,8 +34,10 @@ analysis.register(server);
 convert.register(server);
 // editor half (consent-gated; needs the GUI running with control enabled)
 editor.register(server);
-// phase 3: opinionated layer (suggest_lod_settings) + MCP resource surface
-phase3.register(server);
+// advisory tools + the MCP resource/prompt surface
+advisor.register(server);
+resources.register(server);
+prompts.register(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

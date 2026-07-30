@@ -131,7 +131,19 @@ export function register(server) {
                 })
                 .optional()
         }
-    }, headless(async ({ project, input, device: dev, image }) => await apiPost('/api/convert', { project, input, format: 'webp', options: { device: dev, image: image ?? {} } })));
+    }, headless(async ({ project, input, device: dev, image }) => {
+        const img = image ?? {};
+        if (img.projection === 'equirect') {
+            // enforce what the description promises: no pinhole-only params, 2:1 resolution
+            for (const k of ['fov', 'fStop', 'focusDistance', 'sensorSize']) {
+                if (img[k] != null) throw new Error(`equirect rejects ${k} — omit it`);
+            }
+            const r = img.resolution ?? '2048x1024';
+            const [w, h] = r.split('x').map(Number);
+            if (w !== 2 * h) throw new Error(`equirect needs a 2:1 resolution (width = 2 × height), got ${r}`);
+        }
+        return await apiPost('/api/convert', { project, input, format: 'webp', options: { device: dev, image: img } });
+    }));
 
     server.registerTool('generate_collision', {
         title: 'Generate collision',

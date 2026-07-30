@@ -1,3 +1,6 @@
+// The 3D viewport: SplatViewer wraps a PlayCanvas app with splat/collision/
+// voxel layers, fly+orbit cameras, gizmos, measure + region tools, and a
+// render-camera preview. Driven by main.ts through methods and callbacks.
 import * as pc from 'playcanvas';
 import { CameraControls } from 'playcanvas/scripts/esm/camera-controls.mjs';
 import { parseVoxelOctree } from './voxel-parser';
@@ -9,6 +12,9 @@ export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'ren
 /** A splat-kind file resident in the viewer ('lod' = streamed multi-LOD bundle). */
 export type FileKind = 'splat' | 'lod';
 type LoadedFile = { entity: pc.Entity; asset: pc.Asset; kind: FileKind; url: string };
+
+// 2-decimal rounding for values emitted back into form fields
+const round = (v: number) => Math.round(v * 100) / 100;
 
 /** An in-flight handle drag: a box face or a sphere's radius knob, on the collision region or the Edit crop. */
 type RegionDrag =
@@ -68,7 +74,10 @@ const lineSphereMesh = (device: pc.GraphicsDevice): pc.Mesh => {
 export class SplatViewer {
     private app!: pc.AppBase;
     private camera!: pc.Entity;
-    private controls: any;
+    // Engine-internal casts (undocumented PlayCanvas surfaces) are tagged
+    // "engine-internal:" at each site — grep for that tag when bumping playcanvas;
+    // every site guards so a renamed private fails soft, not with a crash.
+    private controls!: CameraControls;
     private sceneRoot!: pc.Entity;
     private collisionHolder!: pc.Entity;
     private wireMaterial!: pc.StandardMaterial;
@@ -200,6 +209,7 @@ export class SplatViewer {
     private regionDrag: RegionDrag = null;
 
     /** Bundled PlayCanvas engine version (e.g. "2.20.0"), for the Settings/About section. */
+    // engine-internal: pc.version is not in the public typings
     static get engineVersion(): string { return (pc as unknown as { version?: string }).version ?? ''; }
 
     static async create(canvas: HTMLCanvasElement): Promise<SplatViewer> {
@@ -208,6 +218,7 @@ export class SplatViewer {
         return viewer;
     }
 
+    // create the PlayCanvas app, cameras, gizmos, and input handlers
     private async init(canvas: HTMLCanvasElement): Promise<void> {
         const device = await pc.createGraphicsDevice(canvas, {
             deviceTypes: [pc.DEVICETYPE_WEBGPU, pc.DEVICETYPE_WEBGL2],
@@ -237,7 +248,7 @@ export class SplatViewer {
         const app = new pc.AppBase(canvas);
         app.init(createOptions);
         // size from the canvas's container (CSS 100%), not the window — the
-        // sidebar is resizable, so the viewport is narrower than the window
+        // viewport is a resizable dock tab, so it's rarely the full window
         app.setCanvasFillMode(pc.FILLMODE_NONE);
         app.setCanvasResolution(pc.RESOLUTION_AUTO);
         const observer = new ResizeObserver(() => app.resizeCanvas());
@@ -274,7 +285,7 @@ export class SplatViewer {
                 focusPoint: new pc.Vec3(0, 0.8, 0),
                 zoomRange: new pc.Vec2(0.1, 100)
             }
-        });
+        }) as unknown as CameraControls; // create() types as ScriptType | null
         app.root.addChild(this.camera);
 
         // CameraControls only wheel-zooms in orbit mode; in fly mode feed the
@@ -284,8 +295,10 @@ export class SplatViewer {
         canvas.addEventListener('wheel', (e: WheelEvent) => {
             e.preventDefault();
             if (!this.controls.enabled || this.controls.enableOrbit) return;
-            const fly = (this.controls as any)._flyController; // fails safe if renamed
-            if ((this.controls as any)._mode !== 'fly' || typeof fly?.update !== 'function') return;
+            // engine-internal: _flyController/_mode are private; fails safe if renamed
+            const c = this.controls as unknown as { _mode?: string; _flyController?: { update?: (f: unknown, dt: number) => void } };
+            const fly = c._flyController;
+            if (c._mode !== 'fly' || typeof fly?.update !== 'function') return;
             const radius = this.sceneBounds()?.radius ?? 5;
             const notches = (e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY) / 100;
             const speed = e.shiftKey ? 0.2 : e.ctrlKey ? 0.01 : 0.05;
@@ -558,6 +571,7 @@ export class SplatViewer {
         app.start();
     }
 
+    // load one asset by URL and wait for it (or its error) via the registry
     private loadAsset(url: string, filename: string, type: string): Promise<pc.Asset> {
         return new Promise((resolve, reject) => {
             this.app.assets.loadFromUrlAndFilename(url, filename, type, (err, asset) => {
@@ -868,7 +882,7 @@ export class SplatViewer {
         this.skyboxCubemap = cubemap;
         this.app.scene.skybox = cubemap;
         this.app.scene.skyboxMip = 0; // use the sharp cubemap directly
-        this.skyboxAsset?.unload();
+        if (this.skyboxAsset) { this.app.assets.remove(this.skyboxAsset); this.skyboxAsset.unload(); }
         this.skyboxAsset = asset;
         return true;
     }
@@ -881,19 +895,19 @@ export class SplatViewer {
         if (this.skyboxAsset) { this.app.assets.remove(this.skyboxAsset); this.skyboxAsset.unload(); this.skyboxAsset = null; }
     }
 
-    get hasSkybox(): boolean { return this.skyboxCubemap !== null; }
-
     get hasVoxels(): boolean { return this.voxelEntity !== null; }
 
     setVoxelsVisible(visible: boolean): void {
         if (this.voxelEntity) this.voxelEntity.enabled = visible;
     }
 
+    // '#rrggbb' -> pc.Color
+    private static hexColor(hex: string): pc.Color {
+        return new pc.Color(parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255);
+    }
+
     setVoxelColor(hex: string): void {
-        const r = parseInt(hex.slice(1, 3), 16) / 255;
-        const g = parseInt(hex.slice(3, 5), 16) / 255;
-        const b = parseInt(hex.slice(5, 7), 16) / 255;
-        this.voxelMaterial.emissive = new pc.Color(r, g, b);
+        this.voxelMaterial.emissive = SplatViewer.hexColor(hex);
         this.voxelMaterial.update();
     }
 
@@ -973,10 +987,7 @@ export class SplatViewer {
     }
 
     setWireColor(hex: string): void {
-        const r = parseInt(hex.slice(1, 3), 16) / 255;
-        const g = parseInt(hex.slice(3, 5), 16) / 255;
-        const b = parseInt(hex.slice(5, 7), 16) / 255;
-        this.wireMaterial.emissive = new pc.Color(r, g, b);
+        this.wireMaterial.emissive = SplatViewer.hexColor(hex);
         this.wireMaterial.update();
     }
 
@@ -1019,6 +1030,7 @@ export class SplatViewer {
 
     /** Cache the splat's gaussian centres (entity-local) for click-picking + occlusion. */
     private buildCenterCaches(asset: pc.Asset): void {
+        // engine-internal: gsplat resource _centers; null-guarded below
         const res = asset.resource as unknown as { _centers?: Float32Array };
         const centers = res?._centers ?? null;
         this.pickCenters = centers;
@@ -1227,6 +1239,7 @@ export class SplatViewer {
     }
 
     private drawLine3(a: pc.Vec3, b: pc.Vec3, color: pc.Color): void {
+        // engine-internal: AppBase.drawLine exists at runtime but not in the typings
         (this.app as unknown as { drawLine: (a: pc.Vec3, b: pc.Vec3, c: pc.Color, d?: boolean) => void })
             .drawLine(a, b, color, false);
     }
@@ -1324,6 +1337,7 @@ export class SplatViewer {
         }).catch(() => { this.previewReading = false; });
     }
 
+    // push the gizmo'd render-camera pose back to the Render panel fields (CLI frame)
     private emitRenderCameraFromNode(): void {
         const pos = this.renderCamNode.getPosition();
         const look = pos.clone().add(this.renderCamNode.forward.clone().mulScalar(this.renderCamDist));
@@ -1447,6 +1461,7 @@ export class SplatViewer {
         }
     }
 
+    // immediate-mode wireframe of the render camera's frustum (or equirect sphere)
     private drawRenderFrustum(): void {
         const rf = this.renderFrustum;
         if (!rf) return;
@@ -1513,29 +1528,35 @@ export class SplatViewer {
         return out;
     }
 
+    // position + scale a unit box node to span min/max (nulls fall back to splat bounds)
+    private placeBoxNode(node: pc.Entity, min: (number | null)[], max: (number | null)[]): void {
+        const b = this.splatOutputBounds();
+        const lo = b ? b.getMin() : new pc.Vec3(-10, -10, -10);
+        const hi = b ? b.getMax() : new pc.Vec3(10, 10, 10);
+        const x0 = min[0] ?? lo.x, y0 = min[1] ?? lo.y, z0 = min[2] ?? lo.z;
+        const x1 = max[0] ?? hi.x, y1 = max[1] ?? hi.y, z1 = max[2] ?? hi.z;
+        node.setLocalPosition((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+        node.setLocalScale(Math.max(Math.abs(x1 - x0), 1e-3), Math.max(Math.abs(y1 - y0), 1e-3), Math.max(Math.abs(z1 - z0), 1e-3));
+    }
+
+    // position + scale a unit sphere node to centre + radius
+    private placeSphereNode(node: pc.Entity, centre: [number, number, number], radius: number): void {
+        node.setLocalPosition(centre[0], centre[1], centre[2]);
+        const r = Math.max(radius, 1e-3);
+        node.setLocalScale(r, r, r);
+    }
+
     /** Box wireframe from min/max corners (CLI coords); null entries fall back to the splat bounds. */
     setCropBox(min: (number | null)[], max: (number | null)[], show: boolean): void {
         this.cropBoxNode.enabled = show;
-        if (show) {
-            const b = this.splatOutputBounds();
-            const lo = b ? b.getMin() : new pc.Vec3(-10, -10, -10);
-            const hi = b ? b.getMax() : new pc.Vec3(10, 10, 10);
-            const x0 = min[0] ?? lo.x, y0 = min[1] ?? lo.y, z0 = min[2] ?? lo.z;
-            const x1 = max[0] ?? hi.x, y1 = max[1] ?? hi.y, z1 = max[2] ?? hi.z;
-            this.cropBoxNode.setLocalPosition((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-            this.cropBoxNode.setLocalScale(Math.max(Math.abs(x1 - x0), 1e-3), Math.max(Math.abs(y1 - y0), 1e-3), Math.max(Math.abs(z1 - z0), 1e-3));
-        }
+        if (show) this.placeBoxNode(this.cropBoxNode, min, max);
         this.refreshCropGizmo();
     }
 
     /** Sphere wireframe at centre + radius (CLI coords). */
     setCropSphere(centre: [number, number, number], radius: number, show: boolean): void {
         this.cropSphereNode.enabled = show;
-        if (show) {
-            this.cropSphereNode.setLocalPosition(centre[0], centre[1], centre[2]);
-            const r = Math.max(radius, 1e-3);
-            this.cropSphereNode.setLocalScale(r, r, r);
-        }
+        if (show) this.placeSphereNode(this.cropSphereNode, centre, radius);
         this.refreshCropGizmo();
     }
 
@@ -1549,26 +1570,14 @@ export class SplatViewer {
     /** Region box wireframe from min/max corners (CLI coords); null entries fall back to the splat bounds. */
     setCollisionRegion(min: (number | null)[], max: (number | null)[], show: boolean): void {
         this.regionBoxNode.enabled = show;
-        if (show) {
-            const b = this.splatOutputBounds();
-            const lo = b ? b.getMin() : new pc.Vec3(-10, -10, -10);
-            const hi = b ? b.getMax() : new pc.Vec3(10, 10, 10);
-            const x0 = min[0] ?? lo.x, y0 = min[1] ?? lo.y, z0 = min[2] ?? lo.z;
-            const x1 = max[0] ?? hi.x, y1 = max[1] ?? hi.y, z1 = max[2] ?? hi.z;
-            this.regionBoxNode.setLocalPosition((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-            this.regionBoxNode.setLocalScale(Math.max(Math.abs(x1 - x0), 1e-3), Math.max(Math.abs(y1 - y0), 1e-3), Math.max(Math.abs(z1 - z0), 1e-3));
-        }
+        if (show) this.placeBoxNode(this.regionBoxNode, min, max);
         this.applySelection(); // attach/detach the region gizmo to match enabled + selection
     }
 
     /** Region sphere at centre + radius (CLI coords). */
     setCollisionSphere(centre: [number, number, number], radius: number, show: boolean): void {
         this.regionSphereNode.enabled = show;
-        if (show) {
-            this.regionSphereNode.setLocalPosition(centre[0], centre[1], centre[2]);
-            const r = Math.max(radius, 1e-3);
-            this.regionSphereNode.setLocalScale(r, r, r);
-        }
+        if (show) this.placeSphereNode(this.regionSphereNode, centre, radius);
         this.applySelection();
     }
 
@@ -1582,21 +1591,22 @@ export class SplatViewer {
     /** Total gaussians in the loaded splat (0 if none). */
     get splatGaussianCount(): number { return this.pickCenters ? this.pickCenters.length / 3 : 0; }
 
-    /** Count splat centres inside the active region filters — box ∩ sphere, matching the CLI (0 if none on). */
-    regionGaussianCount(): number {
+    // Count splat centres inside boxNode/sphereNode. 'intersect' matches the CLI's
+    // -B/-S filter semantics (box ∩ sphere); 'union' matches carve-out (box ∪ sphere).
+    private countCentresIn(boxNode: pc.Entity, sphereNode: pc.Entity, combine: 'intersect' | 'union'): number {
         const centers = this.pickCenters, e = this.splatEntity;
-        const boxOn = this.regionBoxNode.enabled, sphOn = this.regionSphereNode.enabled;
+        const boxOn = boxNode.enabled, sphOn = sphereNode.enabled;
         if (!centers || !e || (!boxOn && !sphOn)) return 0;
         const d = this.cropHolder.getWorldTransform().clone().invert().mul(e.getWorldTransform()).data;
         let minx = 0, maxx = 0, miny = 0, maxy = 0, minz = 0, maxz = 0;
         if (boxOn) {
-            const c = this.regionBoxNode.getLocalPosition(), s = this.regionBoxNode.getLocalScale();
+            const c = boxNode.getLocalPosition(), s = boxNode.getLocalScale();
             minx = c.x - s.x / 2; maxx = c.x + s.x / 2; miny = c.y - s.y / 2; maxy = c.y + s.y / 2; minz = c.z - s.z / 2; maxz = c.z + s.z / 2;
         }
         let scx = 0, scy = 0, scz = 0, sr2 = 0;
         if (sphOn) {
-            const c = this.regionSphereNode.getLocalPosition();
-            scx = c.x; scy = c.y; scz = c.z; sr2 = this.regionSphereNode.getLocalScale().x ** 2;
+            const c = sphereNode.getLocalPosition();
+            scx = c.x; scy = c.y; scz = c.z; sr2 = sphereNode.getLocalScale().x ** 2; // unit sphere scaled uniformly to r
         }
         const n = centers.length / 3;
         let cnt = 0;
@@ -1605,41 +1615,22 @@ export class SplatViewer {
             const px = d[0] * X + d[4] * Y + d[8] * Z + d[12];
             const py = d[1] * X + d[5] * Y + d[9] * Z + d[13];
             const pz = d[2] * X + d[6] * Y + d[10] * Z + d[14];
-            const inBox = !boxOn || (px >= minx && px <= maxx && py >= miny && py <= maxy && pz >= minz && pz <= maxz);
-            const inSph = !sphOn || ((px - scx) ** 2 + (py - scy) ** 2 + (pz - scz) ** 2) <= sr2;
-            if (inBox && inSph) cnt++;
+            const inBox = boxOn && px >= minx && px <= maxx && py >= miny && py <= maxy && pz >= minz && pz <= maxz;
+            const inSph = sphOn && ((px - scx) ** 2 + (py - scy) ** 2 + (pz - scz) ** 2) <= sr2;
+            const inside = combine === 'union' ? (inBox || inSph) : (!boxOn || inBox) && (!sphOn || inSph);
+            if (inside) cnt++;
         }
         return cnt;
     }
 
+    /** Count splat centres inside the active region filters — box ∩ sphere, matching the CLI (0 if none on). */
+    regionGaussianCount(): number {
+        return this.countCentresIn(this.regionBoxNode, this.regionSphereNode, 'intersect');
+    }
+
     /** Count splat centres inside the active crop box/sphere — what "Carve out" would remove (0 if none shown). */
     trimInsideCount(): number {
-        const centers = this.pickCenters, e = this.splatEntity;
-        const boxOn = this.cropBoxNode.enabled, sphOn = this.cropSphereNode.enabled;
-        if (!centers || !e || (!boxOn && !sphOn)) return 0;
-        const d = this.cropHolder.getWorldTransform().clone().invert().mul(e.getWorldTransform()).data;
-        let bminx = 0, bmaxx = 0, bminy = 0, bmaxy = 0, bminz = 0, bmaxz = 0;
-        if (boxOn) {
-            const c = this.cropBoxNode.getLocalPosition(), s = this.cropBoxNode.getLocalScale();
-            bminx = c.x - s.x / 2; bmaxx = c.x + s.x / 2; bminy = c.y - s.y / 2; bmaxy = c.y + s.y / 2; bminz = c.z - s.z / 2; bmaxz = c.z + s.z / 2;
-        }
-        let scx = 0, scy = 0, scz = 0, sr2 = 0;
-        if (sphOn) {
-            const c = this.cropSphereNode.getLocalPosition(), s = this.cropSphereNode.getLocalScale();
-            scx = c.x; scy = c.y; scz = c.z; sr2 = s.x * s.x; // unit sphere scaled uniformly to r
-        }
-        const n = centers.length / 3;
-        let cnt = 0;
-        for (let i = 0; i < n; i++) {
-            const j = i * 3, X = centers[j], Y = centers[j + 1], Z = centers[j + 2];
-            const px = d[0] * X + d[4] * Y + d[8] * Z + d[12];
-            const py = d[1] * X + d[5] * Y + d[9] * Z + d[13];
-            const pz = d[2] * X + d[6] * Y + d[10] * Z + d[14];
-            const inBox = boxOn && px >= bminx && px <= bmaxx && py >= bminy && py <= bmaxy && pz >= bminz && pz <= bmaxz;
-            const inSph = sphOn && ((px - scx) ** 2 + (py - scy) ** 2 + (pz - scz) ** 2) <= sr2;
-            if (inBox || inSph) cnt++;
-        }
-        return cnt;
+        return this.countCentresIn(this.cropBoxNode, this.cropSphereNode, 'union');
     }
 
     /** Splat AABB as [min,max] corners in CLI coords, for seeding a default region (or null). */
@@ -1772,6 +1763,7 @@ export class SplatViewer {
             return best;
         };
         const gizmoHover = (): boolean => {
+            // engine-internal: gizmo _hoverAxis; falsy if renamed (drag handles win)
             const hover = (g: pc.TranslateGizmo) => !!(g as unknown as { _hoverAxis?: string })._hoverAxis;
             return hover(this.regionGizmo) || hover(this.cropGizmo);
         };
@@ -1784,6 +1776,9 @@ export class SplatViewer {
             if (!hit) return;
             this.regionDrag = hit;
             this.controls.enabled = false;
+            // keep receiving move/up when the pointer leaves the canvas — releasing
+            // outside must still end the drag (and re-enable the camera)
+            try { canvas.setPointerCapture(e.pointerId); } catch { /* stale pointer id */ }
             e.stopPropagation();
         }, true);
         canvas.addEventListener('pointermove', (e) => {
@@ -1865,6 +1860,7 @@ export class SplatViewer {
         else this.emitRegionBox();
     }
 
+    // fly the camera to frame everything currently loaded
     frame(): void {
         const bounds = this.sceneBounds();
         if (!bounds) return;
@@ -1880,6 +1876,7 @@ export class SplatViewer {
         }
     }
 
+    // bounding sphere around all loaded layers
     private sceneBounds(): { center: pc.Vec3; radius: number } | null {
         const splatAabb = this.splatEntity?.gsplat?.customAabb;
         if (splatAabb && this.splatEntity) {
@@ -1902,5 +1899,3 @@ export class SplatViewer {
         return null;
     }
 }
-
-const round = (v: number) => Math.round(v * 100) / 100;

@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose a new capability or an improvement.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [roadmap](https://github.com/CodeByKeegan/splat-studio/blob/dev/ROADMAP.md)
+        first — your idea may already be on it (adding your use case there still helps).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The workflow or problem behind the request — real use cases drive the roadmap.
+      placeholder: I bake streamed LOD for scenes around 50M gaussians and…
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Splat Studio do? If this maps to a splat-transform CLI flag, name it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use today, or other shapes the feature could take.

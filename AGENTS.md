@@ -7,9 +7,9 @@ packaged as an Electron app. Repo: `github.com/CodeByKeegan/splat-studio`.
 
 ## Source of truth: task tracker — not markdown
 
-**Project planning, design specs, scoping, and task tracking live on the internal coverage
-board (one task per CLI flag) — not in markdown files.** When designing a feature, scoping
-work, or recording a plan, write it there as tasks/subtasks, not into the repo.
+**Project planning, design specs, scoping, and task tracking live on the maintainer's
+task board (one task per CLI flag) — not in markdown files.** When designing a feature,
+scoping work, or recording a plan, write it there as tasks/subtasks, not into the repo.
 
 User-facing product docs (`README.md`, `docs/USER_GUIDE.md`, `docs/AUTOMATION.md`) remain
 markdown — the rule above is about internal planning/design/spec content. External
@@ -64,7 +64,10 @@ Code map: CLI command builders in `server/commands.mjs`; routes, file-kinds, and
 
 ## Code style
 
-- Comments extremely brief — what, not why. No cross-task, date, or history references in code.
+- Comments brief. Every file gets a one-to-three-line header; non-trivial functions get a
+  one-line signature comment; a short *why* is welcome where the code can't show a
+  constraint (security rationale, upstream CLI quirks, coordinate frames). No cross-task,
+  date, version-history, or task-tracker references in code.
 - Match the surrounding idiom: TypeScript in `client/`, plain ESM `.mjs` in `server/`,
   `electron/`, `scripts/`, `mcp-server/`.
 - New user-facing controls follow the design system (`client/src/style.css`): pair related

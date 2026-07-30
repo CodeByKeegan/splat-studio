@@ -1,3 +1,7 @@
+// Subprocess job runner: each GUI action becomes one polled job — optional
+// pre-steps, a main CLI run, a finalize hook — queued FIFO under a concurrency
+// cap, with a capped log, an idle watchdog, cancellation, and a bounded
+// finished-job history.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,8 +31,10 @@ export const setConcurrency = (n) => {
     return concurrency;
 };
 
-const isFinished = (job) => job.status === 'done' || job.status === 'error';
+// terminal = done | error | cancelled (not queued/running)
+const isFinished = (job) => job.status !== 'queued' && job.status !== 'running';
 
+// drop the oldest finished jobs beyond the history cap
 const pruneFinished = () => {
     const finished = [...jobs.values()].filter(isFinished);
     for (let i = 0; i < finished.length - MAX_FINISHED_JOBS; i++) {
@@ -51,6 +57,8 @@ const pump = () => {
     }
 };
 
+// Enqueue a job (status 'queued') and return it immediately; it starts when a
+// slot frees up and lands on 'done' | 'error' | 'cancelled'.
 export const createJob = ({ title, args, command, cwd, expectedOutputs = [], viewables = [], preCommands = [], tempDirs = [], finalize, onOutputs, onStatus }) => {
     pruneFinished();
     const id = String(nextId++);
@@ -102,17 +110,21 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         const onData = (chunk) => { append(chunk); arm(); };
         child.stdout.on('data', onData);
         child.stderr.on('data', onData);
-        child.on('error', (err) => { clearTimeout(idleTimer); children.delete(id); reject({ launch: err }); });
+        child.on('error', (err) => {
+            clearTimeout(idleTimer);
+            children.delete(id);
+            reject(Object.assign(new Error(`Failed to launch: ${err.message}`), { launch: err }));
+        });
         child.on('close', (code) => {
             clearTimeout(idleTimer);
             children.delete(id);
             if (code === 0) resolve();
-            else reject({ code });
+            else reject(Object.assign(new Error(`Process exited with code ${code}`), { code }));
         });
     });
 
     // The one terminal transition — every path (success, failure, cancel of a
-    // running OR still-queued job) settles through here.
+    // running OR still-queued job) settles through here. Outputs collect on 'done'.
     const finish = (status) => {
         if (isFinished(job)) return;
         const wasRunning = job.status === 'running';
@@ -140,7 +152,7 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
 
     // Run the pre-decimate steps in order, then the main command. A failed or
     // cancelled step rejects and stops the chain, so the main step never runs on
-    // a partial temp.
+    // a partial temp. Resolves to the job's terminal status.
     const start = () => {
         job.status = 'running';
         job.startedAt = Date.now();
@@ -148,16 +160,19 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         onStatus?.(job);
         (async () => {
             for (const pre of preCommands) {
-                if (cancelledIds.has(id)) return;
+                if (cancelledIds.has(id)) return 'cancelled';
                 await runStep(pre.args);
             }
-            if (cancelledIds.has(id)) return;
+            if (cancelledIds.has(id)) return 'cancelled';
             await runStep(args);
             // post-success hook before 'done'; a failure warns but doesn't fail the job
             if (finalize && !cancelledIds.has(id)) {
                 try { await finalize(job); } catch (err) { append(`\nWarning: finalize failed: ${err?.message ?? err}\n`); }
             }
-        })().then(() => finish('done')).catch((e) => {
+            return cancelledIds.has(id) ? 'cancelled' : 'done';
+        })().then(finish).catch((e) => {
+            // a step killed by cancelJob rejects too — that's a cancel, not an error
+            if (cancelledIds.has(id)) return finish('cancelled');
             if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
             else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;
             finish('error');
@@ -171,6 +186,8 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
 
 export const getJob = (id) => jobs.get(id);
 
+// cancel a job: drop it from the queue if it never started, else kill the
+// current step (the chain settles it 'cancelled'); false if already finished
 export const cancelJob = (id) => {
     const job = jobs.get(id);
     if (!job) return false;
@@ -179,14 +196,15 @@ export const cancelJob = (id) => {
         const i = queue.findIndex((q) => q.id === id);
         if (i !== -1) queue.splice(i, 1);
         job.log += 'Cancelled while queued\n';
-        settlers.get(id)?.settle('error');
+        settlers.get(id)?.settle('cancelled');
         return true;
     }
     if (job.status !== 'running') return false;
     cancelledIds.add(id); // stop the step chain from advancing past the kill
     job.log += '\nCancelled by user\n';
-    children.get(id)?.kill();
+    children.get(id)?.kill(); // between steps there's no child — the chain checks cancelledIds
     return true;
 };
 
+// all jobs without their logs (the listing payload)
 export const listJobs = () => [...jobs.values()].map(({ log, ...rest }) => rest);

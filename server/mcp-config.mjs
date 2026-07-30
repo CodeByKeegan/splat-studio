@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const configFile = (workspaceDir) => path.join(workspaceDir, '.splat-studio-mcp.json');
 
-export const readMcpConfig = async (workspaceDir) => {
+const readMcpConfig = async (workspaceDir) => {
     try {
         const c = JSON.parse(await fs.readFile(configFile(workspaceDir), 'utf8'));
         return { controlEnabled: c?.controlEnabled === true };

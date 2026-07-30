@@ -1,5 +1,5 @@
 // Universal error shape + HTTP/job-failure mapping shared by every tool.
-// Closed code set (the design's 7 codes); tools never invent new codes.
+// Closed set of 7 codes; tools never invent new codes.
 
 export const ERR = {
     NO_EDITOR: 'no-editor',
