@@ -1,6 +1,7 @@
 name: CI
 
-# Typecheck + the CPU-only regression suite on every PR. GPU-only checks
+# Client build + CPU-only regression suites on every PR, Dependabot PRs included
+# (the automated dependency-merge routine gates on these checks). GPU-only checks
 # (collision, WebP render) are skipped on hosted runners via SKIP_GPU=1;
 # they still run in local full-suite runs (`npm test` on a GPU machine).
 on:
@@ -10,6 +11,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -21,12 +26,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mcp-server/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Install MCP server dependencies
+        run: npm ci
+        working-directory: mcp-server
+
+      - name: Build client (typecheck + bundle)
+        run: npm run build
 
       - name: Regression suite (CPU-only)
         run: SKIP_GPU=1 npm test
+
+      - name: MCP e2e suite
+        run: npm run test:mcp
