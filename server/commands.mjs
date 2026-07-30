@@ -70,8 +70,14 @@ const OUTPUT_NAMES = {
 // never clobber the input, and don't silently overwrite a pre-existing file this
 // app didn't produce (e.g. compressed.ply -> ply landing on the original source);
 // re-running the same conversion stays idempotent
-const outputCollides = (name, input, workspaceDir) => name === input ||
-    (workspaceDir && !priorOutputs.has(name) && existsSync(path.join(workspaceDir, ...name.split('/'))));
+const outputCollides = (name, input, workspaceDir) => {
+    if (name === input) return true;
+    if (!workspaceDir || priorOutputs.has(name)) return false;
+    const base = path.resolve(workspaceDir);
+    const abs = path.resolve(base, ...name.split('/')); // containment barrier: outputs stay in the workspace
+    if (!abs.startsWith(base + path.sep)) throw new Error(`Unsafe output path: ${name}`);
+    return existsSync(abs);
+};
 
 // .mjs generator parameters (-p key=val,...): a per-input action, pushed right
 // after the input token
