@@ -414,7 +414,12 @@ app.delete(/^\/api\/files\/(.+)$/, async (req, res) => {
     }
     const rel = req.params[0]; // express has already percent-decoded the capture
     if (!isSafeRelPath(rel)) return res.status(400).json({ error: 'Invalid path' });
-    const abs = toAbs(projectDir, rel);
+    let abs;
+    try {
+        abs = await containedPath(projectDir, rel); // containment barrier before rm
+    } catch {
+        return res.status(400).json({ error: 'Invalid path' });
+    }
     if (!existsSync(abs)) return res.status(404).json({ error: 'Not found' });
     // deleting an unbundled SOG's / LOD's entry point removes its folder
     const isDirEntry = rel.includes('/') && (rel.endsWith('meta.json') || rel.endsWith('lod-meta.json'));
