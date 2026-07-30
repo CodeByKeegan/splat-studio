@@ -48,7 +48,6 @@ const resolveBase = () => {
 // The base is re-resolved when the app is unreachable, so the packaged app's
 // dynamic port (port.json) is picked up even if it starts AFTER this server.
 let base = resolveBase();
-export const currentBase = () => base;
 export const BASE = base; // startup value, for the ready log only
 
 const isUnreachable = (e) => {

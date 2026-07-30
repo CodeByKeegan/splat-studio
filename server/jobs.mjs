@@ -43,7 +43,7 @@ const pruneFinished = () => {
 };
 
 const cancelledIds = new Set();
-const settlers = new Map(); // id -> { settle } wrapping that job's finish(), for cancel paths
+const settlers = new Map(); // id -> { settle }, that job's finish() for cancel paths
 
 // FIFO of { id, start } waiting for a free slot; cancelled entries are spliced
 // out by cancelJob, so everything here is startable

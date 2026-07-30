@@ -3,60 +3,28 @@
 // render-camera preview. Driven by main.ts through methods and callbacks.
 import * as pc from 'playcanvas';
 import { CameraControls } from 'playcanvas/scripts/esm/camera-controls.mjs';
-import { parseVoxelOctree } from './voxel-parser';
-import type { VoxelMeta } from './voxel-parser';
+import { CameraPreview } from './camera-preview';
+import type { RenderFrustumPose } from './camera-preview';
+import { closestPointOnAxisToRay, flipRowsBottomUp, hexColor, lineBoxMesh, lineSphereMesh, round } from './line-meshes';
+import {
+    makeBoundsMaterial, makeCapsuleMaterial, makeCropMaterial, makeDepthMaterial, makeEditMaterial,
+    makeRegionFillMaterial, makeRegionHandleMaterial, makeRegionMaterial, makeSeedMaterial,
+    makeSolidMaterial, makeWireMaterial
+} from './viewer-materials';
+import { VoxelLayer } from './voxel-layer';
 
 /** Selectable scene-hierarchy objects. 'capsule', 'render-camera', 'collision-region' and 'collision-sphere' carry a gizmo. */
 export type SelId = 'none' | 'splat' | 'collision' | 'voxels' | 'capsule' | 'render-camera' | 'collision-region' | 'collision-sphere';
 
 /** A splat-kind file resident in the viewer ('lod' = streamed multi-LOD bundle). */
 export type FileKind = 'splat' | 'lod';
-type LoadedFile = { entity: pc.Entity; asset: pc.Asset; kind: FileKind; url: string };
-
-// 2-decimal rounding for values emitted back into form fields
-const round = (v: number) => Math.round(v * 100) / 100;
+type LoadedFile = { entity: pc.Entity; asset: pc.Asset; kind: FileKind };
 
 /** An in-flight handle drag: a box face or a sphere's radius knob, on the collision region or the Edit crop. */
 type RegionDrag =
     | { kind: 'face'; axis: 0 | 1 | 2; sign: 1 | -1; family: 'region' | 'crop' }
     | { kind: 'radius'; family: 'region' | 'crop' }
     | null;
-
-/** 12-edge unit line box — no triangle diagonals. */
-const lineBoxMesh = (device: pc.GraphicsDevice): pc.Mesh => {
-    const mesh = new pc.Mesh(device);
-    const h = 0.5;
-    const pos: number[] = [];
-    for (const z of [-h, h]) for (const y of [-h, h]) for (const x of [-h, h]) pos.push(x, y, z); // idx = x + 2y + 4z
-    mesh.setPositions(pos);
-    mesh.setIndices([0, 1, 1, 5, 5, 4, 4, 0, 2, 3, 3, 7, 7, 6, 6, 2, 0, 2, 1, 3, 5, 7, 4, 6]);
-    mesh.update(pc.PRIMITIVE_LINES);
-    return mesh;
-};
-
-/** Three orthogonal unit circles — reads much cleaner over a splat than a triangle wireframe. */
-const lineSphereMesh = (device: pc.GraphicsDevice): pc.Mesh => {
-    const mesh = new pc.Mesh(device);
-    const SEG = 64;
-    const pos: number[] = [];
-    const idx: number[] = [];
-    let base = 0;
-    for (const plane of [0, 1, 2]) {
-        for (let i = 0; i < SEG; i++) {
-            const a = (i / SEG) * Math.PI * 2;
-            const c = Math.cos(a), s = Math.sin(a);
-            if (plane === 0) pos.push(0, c, s);
-            else if (plane === 1) pos.push(c, 0, s);
-            else pos.push(c, s, 0);
-            idx.push(base + i, base + ((i + 1) % SEG));
-        }
-        base += SEG;
-    }
-    mesh.setPositions(pos);
-    mesh.setIndices(idx);
-    mesh.update(pc.PRIMITIVE_LINES);
-    return mesh;
-};
 
 /**
  * PlayCanvas viewer: renders a gaussian splat plus its generated collision mesh
@@ -90,11 +58,7 @@ export class SplatViewer {
     private activeFile: string | null = null;
     private collisionEntity: pc.Entity | null = null;
     private collisionAsset: pc.Asset | null = null;
-    private voxelEntity: pc.Entity | null = null;
-    private voxelBounds: pc.BoundingBox | null = null;
-    private voxelMesh: pc.Mesh | null = null;
-    private voxelVb: pc.VertexBuffer | null = null;
-    private voxelMaterial!: pc.StandardMaterial;
+    private voxels!: VoxelLayer;
     private boundsEntity: pc.Entity | null = null;
     private boundsMaterial!: pc.StandardMaterial;
     private boundsVisible = false;
@@ -136,7 +100,7 @@ export class SplatViewer {
     /** fired after any edit-marker placement (measure or origin) */
     onEditPlaced?: () => void;
     // WebP render-camera frustum preview (drawn each frame when set)
-    private renderFrustum: { camera: pc.Vec3; lookAt: pc.Vec3; fov: number; aspect: number } | null = null;
+    private renderFrustum: RenderFrustumPose | null = null;
     private renderCamNode!: pc.Entity; // backing entity the render-camera gizmo attaches to
     private rotGizmo!: pc.RotateGizmo; // rotation gizmo (render camera)
     // scene-hierarchy selection: drives which gizmo (if any) is shown. Nothing
@@ -145,24 +109,14 @@ export class SplatViewer {
     private camGizmoMode: 'move' | 'rotate' = 'move';
     private renderCamDist = 1; // camera→lookAt distance, preserved while gizmo-dragging
     private gizmoDragging = false; // suppress external node repositioning mid-drag
-    // live "Camera view" panel: a second camera renders the WebP pose to a texture
-    private previewRT: pc.RenderTarget | null = null;
-    private previewTex: pc.Texture | null = null;
-    private previewCam: pc.Entity | null = null;
-    private previewCtx: CanvasRenderingContext2D | null = null;
-    private previewImg: ImageData | null = null; // reused readback buffer
-    private previewW = 0;
-    private previewH = 0;
-    private previewReading = false;
-    private previewFrame = 0;
-    private previewUpdate: (() => void) | null = null;
+    // live "Camera view" panel: renders the WebP pose to a texture (camera-preview.ts)
+    private cameraPreview!: CameraPreview;
     /** fired when the viewport changes the selection (e.g. clears it on mode change) */
     onSelectionChange?: (id: SelId) => void;
     /** fired while the render-camera gizmo moves/rotates; both vectors in CLI render space */
     onRenderCameraMove?: (camera: { x: number; y: number; z: number }, lookAt: { x: number; y: number; z: number }) => void;
     private splatSeq = 0;
     private collisionSeq = 0;
-    private voxelSeq = 0;
     private skyboxSeq = 0;
     private skyboxCubemap: pc.Texture | null = null;
     private skyboxAsset: pc.Asset | null = null;
@@ -256,6 +210,8 @@ export class SplatViewer {
         app.on('destroy', () => observer.disconnect());
 
         this.app = app;
+        this.cameraPreview = new CameraPreview(app, () => this.renderFrustum);
+        this.voxels = new VoxelLayer(app);
 
         this.sceneRoot = new pc.Entity('scene-root');
         this.sceneRoot.setLocalEulerAngles(180, 0, 0);
@@ -315,53 +271,12 @@ export class SplatViewer {
         });
         this.camera.addChild(light);
 
-        this.wireMaterial = new pc.StandardMaterial();
-        this.wireMaterial.useLighting = false;
-        this.wireMaterial.diffuse = new pc.Color(0, 0, 0);
-        this.wireMaterial.emissive = new pc.Color(0, 1, 0.4);
-        this.wireMaterial.blendType = pc.BLEND_NORMAL;
-        this.wireMaterial.opacity = 0.6;
-        this.wireMaterial.depthTest = false;
-        this.wireMaterial.depthWrite = false;
-        this.wireMaterial.update();
-
-        this.voxelMaterial = new pc.StandardMaterial();
-        this.voxelMaterial.useLighting = false;
-        this.voxelMaterial.diffuse = new pc.Color(0, 0, 0);
-        this.voxelMaterial.emissive = new pc.Color(1, 0.62, 0.25);
-        this.voxelMaterial.blendType = pc.BLEND_NORMAL;
-        this.voxelMaterial.opacity = 0.35;
-        this.voxelMaterial.depthWrite = false;
-        this.voxelMaterial.update();
-
+        this.wireMaterial = makeWireMaterial();
         // axis-aligned bounding-box overlay (drawn as a wireframe unit cube,
         // scaled/positioned to the loaded splat's world AABB)
-        this.boundsMaterial = new pc.StandardMaterial();
-        this.boundsMaterial.useLighting = false;
-        this.boundsMaterial.emissive = new pc.Color(0.45, 0.85, 1);
-        this.boundsMaterial.depthTest = false;
-        this.boundsMaterial.depthWrite = false;
-        this.boundsMaterial.update();
-
-        // depth-only prepass: fills the depth buffer so the wireframe becomes
-        // hidden-line instead of X-ray (draws no color)
-        this.depthMaterial = new pc.StandardMaterial();
-        this.depthMaterial.redWrite = false;
-        this.depthMaterial.greenWrite = false;
-        this.depthMaterial.blueWrite = false;
-        this.depthMaterial.alphaWrite = false;
-        this.depthMaterial.depthWrite = true;
-        this.depthMaterial.update();
-
-        // lit translucent surface for placement/carve inspection
-        this.solidMaterial = new pc.StandardMaterial();
-        this.solidMaterial.diffuse = new pc.Color(0.42, 0.55, 0.5);
-        this.solidMaterial.opacity = 0.8;
-        this.solidMaterial.blendType = pc.BLEND_NORMAL;
-        this.solidMaterial.depthWrite = true;
-        this.solidMaterial.cull = pc.CULLFACE_NONE;
-        this.solidMaterial.twoSidedLighting = true;
-        this.solidMaterial.update();
+        this.boundsMaterial = makeBoundsMaterial();
+        this.depthMaterial = makeDepthMaterial();
+        this.solidMaterial = makeSolidMaterial();
 
         // ----- seed + carve-capsule preview (a collision-tuning aid) -----
         // its own holder with the same CLI->viewer 180°-Y rotation as collision,
@@ -371,21 +286,8 @@ export class SplatViewer {
         this.seedHolder.setLocalEulerAngles(0, 180, 0);
         app.root.addChild(this.seedHolder);
 
-        this.seedMaterial = new pc.StandardMaterial();
-        this.seedMaterial.useLighting = false;
-        this.seedMaterial.emissive = new pc.Color(1, 0.85, 0.1); // yellow
-        this.seedMaterial.depthTest = false; // always findable through the splat
-        this.seedMaterial.update();
-
-        this.capsuleMaterial = new pc.StandardMaterial();
-        this.capsuleMaterial.useLighting = false;
-        this.capsuleMaterial.emissive = new pc.Color(0.2, 0.8, 1); // cyan
-        this.capsuleMaterial.blendType = pc.BLEND_NORMAL;
-        this.capsuleMaterial.opacity = 0.3;
-        this.capsuleMaterial.depthWrite = false;
-        this.capsuleMaterial.depthTest = false;
-        this.capsuleMaterial.cull = pc.CULLFACE_NONE;
-        this.capsuleMaterial.update();
+        this.seedMaterial = makeSeedMaterial();
+        this.capsuleMaterial = makeCapsuleMaterial();
 
         // marker + capsule live under a movable node so one gizmo drags both
         this.seedNode = new pc.Entity('seed-node');
@@ -404,10 +306,7 @@ export class SplatViewer {
         // handle is grabbed, and report the new position back in CLI coords
         const gizmoLayer = pc.Gizmo.createLayer(app);
         this.gizmo = new pc.TranslateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
-        this.gizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => {
-            if (mi) { this.controls.enabled = false; this.gizmoDragging = true; }
-        });
-        this.gizmo.on('pointer:up', () => { this.controls.enabled = true; this.gizmoDragging = false; });
+        this.wireGizmoDrag(this.gizmo, true);
         this.gizmo.on('transform:move', () => {
             if (this.gizmoTarget === 'seed') {
                 const p = this.seedNode.getPosition();
@@ -422,18 +321,14 @@ export class SplatViewer {
         this.renderCamNode = new pc.Entity('render-cam-node');
         app.root.addChild(this.renderCamNode);
         this.rotGizmo = new pc.RotateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
-        this.rotGizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => { if (mi) { this.controls.enabled = false; this.gizmoDragging = true; } });
-        this.rotGizmo.on('pointer:up', () => { this.controls.enabled = true; this.gizmoDragging = false; });
+        this.wireGizmoDrag(this.rotGizmo, true);
         this.rotGizmo.on('transform:move', () => { if (this.selected === 'render-camera') this.emitRenderCameraFromNode(); });
         this.rotGizmo.detach();
 
         // edit markers (measure / set-origin) live in world space so the distance
         // between them is the real splat distance (sceneRoot's flip is a rotation).
         // unit-radius spheres scaled per frame to a constant on-screen size.
-        this.editMaterial = new pc.StandardMaterial();
-        this.editMaterial.useLighting = false;
-        this.editMaterial.depthTest = false; // markers hidden behind the splat via CPU occlusion, not the depth buffer
-        this.editMaterial.update();
+        this.editMaterial = makeEditMaterial();
         const marker = (name: string, color: pc.Color): pc.Entity => {
             const mat = this.editMaterial.clone(); mat.emissive = color; mat.update();
             const mesh = pc.Mesh.fromGeometry(device, new pc.SphereGeometry({ radius: 1 }));
@@ -457,14 +352,7 @@ export class SplatViewer {
         this.cropHolder = new pc.Entity('crop-holder');
         this.sceneRoot.addChild(this.cropHolder);
 
-        this.cropMaterial = new pc.StandardMaterial();
-        this.cropMaterial.useLighting = false;
-        this.cropMaterial.emissive = new pc.Color(0.3, 0.7, 1);
-        this.cropMaterial.blendType = pc.BLEND_NORMAL;
-        this.cropMaterial.opacity = 0.9;
-        this.cropMaterial.depthTest = false; // always findable through the splat
-        this.cropMaterial.depthWrite = false;
-        this.cropMaterial.update();
+        this.cropMaterial = makeCropMaterial();
 
         this.cropBoxNode = new pc.Entity('crop-box');
         this.cropBoxNode.addComponent('render', { meshInstances: [new pc.MeshInstance(lineBoxMesh(device), this.cropMaterial)], layers: [pc.LAYERID_IMMEDIATE] });
@@ -480,12 +368,7 @@ export class SplatViewer {
         // arrows point along the SAME axes as the typed fields (red x, green y, blue z)
         this.cropGizmo = new pc.TranslateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
         this.cropGizmo.coordSpace = 'local';
-        this.cropGizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => {
-            if (!mi) return;
-            this.controls.enabled = false;
-            this.cropBoxLast.copy(this.cropBoxNode.getLocalPosition());
-        });
-        this.cropGizmo.on('pointer:up', () => { this.controls.enabled = true; });
+        this.wireGizmoDrag(this.cropGizmo, false, () => this.cropBoxLast.copy(this.cropBoxNode.getLocalPosition()));
         this.cropGizmo.on('transform:move', () => {
             if (this.cropMode === 'box') {
                 const p = this.cropBoxNode.getLocalPosition();
@@ -500,25 +383,8 @@ export class SplatViewer {
         this.cropGizmo.detach();
 
         // ----- collision region box + sphere (dedicated nodes under cropHolder = CLI space) -----
-        this.regionMaterial = new pc.StandardMaterial();
-        this.regionMaterial.useLighting = false;
-        this.regionMaterial.emissive = new pc.Color(0.95, 0.6, 0.15); // amber, distinct from the cyan crop/bounds
-        this.regionMaterial.blendType = pc.BLEND_NORMAL;
-        this.regionMaterial.opacity = 0.95;
-        this.regionMaterial.depthTest = false;
-        this.regionMaterial.depthWrite = false;
-        this.regionMaterial.update();
-
-        // optional translucent face fill (both sides, so it reads from inside a room scan too)
-        this.regionFillMat = new pc.StandardMaterial();
-        this.regionFillMat.useLighting = false;
-        this.regionFillMat.emissive = new pc.Color(0.95, 0.6, 0.15);
-        this.regionFillMat.blendType = pc.BLEND_NORMAL;
-        this.regionFillMat.opacity = 0.15;
-        this.regionFillMat.depthTest = false;
-        this.regionFillMat.depthWrite = false;
-        this.regionFillMat.cull = pc.CULLFACE_NONE;
-        this.regionFillMat.update();
+        this.regionMaterial = makeRegionMaterial();
+        this.regionFillMat = makeRegionFillMaterial();
 
         const regionShape = (name: string, wireMesh: pc.Mesh, fillGeom: pc.Geometry): pc.Entity => {
             const wire = new pc.MeshInstance(wireMesh, this.regionMaterial);
@@ -536,19 +402,13 @@ export class SplatViewer {
 
         this.regionGizmo = new pc.TranslateGizmo(this.camera.camera as pc.CameraComponent, gizmoLayer);
         this.regionGizmo.coordSpace = 'local';
-        this.regionGizmo.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => { if (mi) this.controls.enabled = false; });
-        this.regionGizmo.on('pointer:up', () => { this.controls.enabled = true; });
+        this.wireGizmoDrag(this.regionGizmo, false);
         this.regionGizmo.on('transform:move', () => this.emitRegion());
         this.regionGizmo.on('transform:end', () => { this.emitRegion(); this.endRegion(); });
         this.regionGizmo.detach();
 
         // drag handles: six box faces (opposite face stays pinned) + one sphere radius knob
-        this.regionHandleMat = new pc.StandardMaterial();
-        this.regionHandleMat.useLighting = false;
-        this.regionHandleMat.emissive = new pc.Color(1, 0.85, 0.3);
-        this.regionHandleMat.depthTest = false;
-        this.regionHandleMat.depthWrite = false;
-        this.regionHandleMat.update();
+        this.regionHandleMat = makeRegionHandleMaterial();
         for (const axis of [0, 1, 2] as (0 | 1 | 2)[]) {
             for (const sign of [1, -1] as (1 | -1)[]) {
                 const h = new pc.Entity(`region-handle-${axis}-${sign}`);
@@ -569,6 +429,21 @@ export class SplatViewer {
         this.applySelection(); // nothing selected → no gizmo, capsule/seed hidden
 
         app.start();
+    }
+
+    // suppress the camera while a gizmo handle is grabbed (trackDrag also
+    // maintains gizmoDragging; onDown runs extra per-gizmo grab work)
+    private wireGizmoDrag(g: pc.Gizmo, trackDrag: boolean, onDown?: () => void): void {
+        g.on('pointer:down', (_x: number, _y: number, mi: pc.MeshInstance | null) => {
+            if (!mi) return;
+            this.controls.enabled = false;
+            if (trackDrag) this.gizmoDragging = true;
+            onDown?.();
+        });
+        g.on('pointer:up', () => {
+            this.controls.enabled = true;
+            if (trackDrag) this.gizmoDragging = false;
+        });
     }
 
     // load one asset by URL and wait for it (or its error) via the registry
@@ -609,8 +484,7 @@ export class SplatViewer {
                 // superseded by an unload; a newer load of the same url may share
                 // this asset object (registry dedupe), so don't strand it
                 if (!this.filePending.has(name) && this.files.get(name)?.asset !== asset) {
-                    this.app.assets.remove(asset);
-                    asset.unload();
+                    this.releaseAsset(asset);
                 }
                 return false;
             }
@@ -619,7 +493,7 @@ export class SplatViewer {
             const entity = new pc.Entity(filename);
             entity.addComponent('gsplat', { asset });
             this.sceneRoot.addChild(entity);
-            this.files.set(name, { entity, asset, kind, url });
+            this.files.set(name, { entity, asset, kind });
             this.setActiveFile(name);
             // customAabb appears once the engine has run a frame; don't block the
             // load on that (rAF stalls entirely in hidden tabs) — frame when ready.
@@ -628,6 +502,12 @@ export class SplatViewer {
         })();
         this.filePending.set(name, { token, promise });
         return promise;
+    }
+
+    /** Remove an asset from the registry and free its resources. */
+    private releaseAsset(a: pc.Asset): void {
+        this.app.assets.remove(a);
+        a.unload();
     }
 
     /** Hide a loaded file — entity disabled, resources kept, so re-show is instant. */
@@ -643,8 +523,7 @@ export class SplatViewer {
         if (!f) return;
         this.files.delete(name);
         f.entity.destroy();
-        this.app.assets.remove(f.asset);
-        f.asset.unload();
+        this.releaseAsset(f.asset);
         if (this.activeFile === name) {
             const rest = [...this.files.keys()];
             this.activeFile = null;
@@ -659,8 +538,7 @@ export class SplatViewer {
         this.setActiveFile(null);
         for (const f of this.files.values()) {
             f.entity.destroy();
-            this.app.assets.remove(f.asset);
-            f.asset.unload();
+            this.releaseAsset(f.asset);
         }
         this.files.clear();
     }
@@ -722,10 +600,7 @@ export class SplatViewer {
         const seq = this.collisionSeq;
         const asset = await this.loadAsset(url, filename, 'container');
         if (seq !== this.collisionSeq) {
-            if (asset !== this.collisionAsset) {
-                this.app.assets.remove(asset);
-                asset.unload();
-            }
+            if (asset !== this.collisionAsset) this.releaseAsset(asset);
             return false;
         }
         const entity = (asset.resource as pc.ContainerResource).instantiateRenderEntity();
@@ -785,82 +660,15 @@ export class SplatViewer {
         }
     }
 
-    /**
-     * Renders a sparse voxel octree (.voxel.json + sibling .voxel.bin) as
-     * hardware-instanced translucent boxes. Box transforms are baked from
-     * splat-transform's voxel space into viewer space (180° about Y), since
-     * per-instance matrices replace the node's world transform.
-     */
+    /** Load a voxel-octree overlay (.voxel.json + sibling .voxel.bin) — see VoxelLayer. */
     async loadVoxels(url: string): Promise<{ count: number; truncated: boolean; applied: boolean }> {
-        this.clearVoxels(); // bumps voxelSeq, superseding any in-flight load
-        const seq = this.voxelSeq;
-
-        const meta = (await (await fetch(url)).json()) as VoxelMeta;
-        const binUrl = url.replace(/\.voxel\.json$/, '.voxel.bin');
-        const bin = await (await fetch(binUrl)).arrayBuffer();
-        if (seq !== this.voxelSeq) return { count: 0, truncated: false, applied: false };
-
-        const { boxes, count, truncated } = parseVoxelOctree(meta, bin);
-
-        // mat4 per instance: diag(-sx, sy, -sz) + translation (-cx, cy, -cz)
-        // is R_y(180) · translate · scale — det > 0, so winding is preserved
-        const matrices = new Float32Array(count * 16);
-        for (let i = 0; i < count; i++) {
-            const b = i * 6;
-            const m = i * 16;
-            matrices[m] = -boxes[b + 3];
-            matrices[m + 5] = boxes[b + 4];
-            matrices[m + 10] = -boxes[b + 5];
-            matrices[m + 12] = -boxes[b];
-            matrices[m + 13] = boxes[b + 1];
-            matrices[m + 14] = -boxes[b + 2];
-            matrices[m + 15] = 1;
-        }
-
-        const device = this.app.graphicsDevice;
-        const mesh = pc.Mesh.fromGeometry(device, new pc.BoxGeometry());
-        const mi = new pc.MeshInstance(mesh, this.voxelMaterial);
-        const vb = new pc.VertexBuffer(
-            device,
-            pc.VertexFormat.getDefaultInstancingFormat(device),
-            count,
-            { data: matrices.buffer }
-        );
-        mi.setInstancing(vb);
-        this.voxelMesh = mesh;
-        this.voxelVb = vb;
-
-        const entity = new pc.Entity('voxels');
-        entity.addComponent('render', {
-            meshInstances: [mi],
-            layers: [pc.LAYERID_IMMEDIATE]
-        });
-        this.app.root.addChild(entity);
-        this.voxelEntity = entity;
-
-        // bounds in viewer space (x and z negate, so recompute min/max)
-        const [ax, ay, az] = meta.gridBounds.min;
-        const [bx, by, bz] = meta.gridBounds.max;
-        this.voxelBounds = new pc.BoundingBox();
-        this.voxelBounds.setMinMax(
-            new pc.Vec3(Math.min(-ax, -bx), ay, Math.min(-az, -bz)),
-            new pc.Vec3(Math.max(-ax, -bx), by, Math.max(-az, -bz))
-        );
-
-        if (!this.splatEntity && !this.collisionEntity) this.frame();
-        return { count, truncated, applied: true };
+        const res = await this.voxels.load(url);
+        if (res.applied && !this.splatEntity && !this.collisionEntity) this.frame();
+        return res;
     }
 
     clearVoxels(): void {
-        this.voxelSeq++; // invalidate any in-flight loadVoxels
-        this.voxelEntity?.render?.meshInstances[0]?.setInstancing(null);
-        this.voxelEntity?.destroy();
-        this.voxelEntity = null;
-        this.voxelVb?.destroy();
-        this.voxelVb = null;
-        this.voxelMesh?.destroy();
-        this.voxelMesh = null;
-        this.voxelBounds = null;
+        this.voxels.clear();
     }
 
     /** Unload every layer and empty the viewport. */
@@ -874,7 +682,7 @@ export class SplatViewer {
     async setSkybox(url: string, filename: string): Promise<boolean> {
         const seq = ++this.skyboxSeq;
         const asset = await this.loadAsset(url, filename, 'texture');
-        if (seq !== this.skyboxSeq) { this.app.assets.remove(asset); asset.unload(); return false; }
+        if (seq !== this.skyboxSeq) { this.releaseAsset(asset); return false; }
         const src = asset.resource as pc.Texture;
         src.projection = pc.TEXTUREPROJECTION_EQUIRECT;
         const cubemap = pc.EnvLighting.generateSkyboxCubemap(src);
@@ -882,7 +690,7 @@ export class SplatViewer {
         this.skyboxCubemap = cubemap;
         this.app.scene.skybox = cubemap;
         this.app.scene.skyboxMip = 0; // use the sharp cubemap directly
-        if (this.skyboxAsset) { this.app.assets.remove(this.skyboxAsset); this.skyboxAsset.unload(); }
+        if (this.skyboxAsset) this.releaseAsset(this.skyboxAsset);
         this.skyboxAsset = asset;
         return true;
     }
@@ -892,28 +700,21 @@ export class SplatViewer {
         this.app.scene.skybox = null;
         this.skyboxCubemap?.destroy();
         this.skyboxCubemap = null;
-        if (this.skyboxAsset) { this.app.assets.remove(this.skyboxAsset); this.skyboxAsset.unload(); this.skyboxAsset = null; }
+        if (this.skyboxAsset) { this.releaseAsset(this.skyboxAsset); this.skyboxAsset = null; }
     }
 
-    get hasVoxels(): boolean { return this.voxelEntity !== null; }
+    get hasVoxels(): boolean { return this.voxels.loaded; }
 
     setVoxelsVisible(visible: boolean): void {
-        if (this.voxelEntity) this.voxelEntity.enabled = visible;
-    }
-
-    // '#rrggbb' -> pc.Color
-    private static hexColor(hex: string): pc.Color {
-        return new pc.Color(parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255);
+        this.voxels.setVisible(visible);
     }
 
     setVoxelColor(hex: string): void {
-        this.voxelMaterial.emissive = SplatViewer.hexColor(hex);
-        this.voxelMaterial.update();
+        this.voxels.setColor(hex);
     }
 
     setVoxelOpacity(opacity: number): void {
-        this.voxelMaterial.opacity = opacity;
-        this.voxelMaterial.update();
+        this.voxels.setOpacity(opacity);
     }
 
     // ----- bounding-box overlay -----
@@ -937,7 +738,7 @@ export class SplatViewer {
     }
 
     /** Redraw the box from the current splat's world AABB (no-op while hidden). */
-    refreshBounds(): void {
+    private refreshBounds(): void {
         if (!this.boundsVisible) return;
         const b = this.worldSplatAabb();
         if (!b) { if (this.boundsEntity) this.boundsEntity.enabled = false; return; }
@@ -969,8 +770,7 @@ export class SplatViewer {
         this.collisionEntity?.destroy();
         this.collisionEntity = null;
         if (this.collisionAsset) {
-            this.app.assets.remove(this.collisionAsset);
-            this.collisionAsset.unload();
+            this.releaseAsset(this.collisionAsset);
             this.collisionAsset = null;
         }
     }
@@ -987,7 +787,7 @@ export class SplatViewer {
     }
 
     setWireColor(hex: string): void {
-        this.wireMaterial.emissive = SplatViewer.hexColor(hex);
+        this.wireMaterial.emissive = hexColor(hex);
         this.wireMaterial.update();
     }
 
@@ -1062,6 +862,15 @@ export class SplatViewer {
         });
     }
 
+    /** Camera ray through a canvas pixel (world space), or null when the projection degenerates. */
+    private screenRay(px: number, py: number): { origin: pc.Vec3; dir: pc.Vec3 } | null {
+        const camC = this.camera.camera as pc.CameraComponent;
+        const near = camC.screenToWorld(px, py, camC.nearClip);
+        const far = camC.screenToWorld(px, py, camC.farClip);
+        if (!Number.isFinite(near.x) || !Number.isFinite(far.x)) return null;
+        return { origin: near, dir: far.sub(near).normalize() };
+    }
+
     /**
      * Cast a ray through the clicked pixel and return the front-most splat
      * surface point (world space), or null over empty space. Works against the
@@ -1072,13 +881,11 @@ export class SplatViewer {
         const e = this.splatEntity;
         if (!centers || !e) return null;
         const camC = this.camera.camera as pc.CameraComponent;
-        const near = camC.screenToWorld(px, py, camC.nearClip);
-        const far = camC.screenToWorld(px, py, camC.farClip);
-        if (!Number.isFinite(near.x) || !Number.isFinite(far.x)) return null;
-        const dir = far.clone().sub(near).normalize();
+        const ray = this.screenRay(px, py);
+        if (!ray) return null;
         const inv = e.getWorldTransform().clone().invert();
-        const o = inv.transformPoint(near.clone());
-        const d = inv.transformVector(dir.clone()).normalize();
+        const o = inv.transformPoint(ray.origin.clone());
+        const d = inv.transformVector(ray.dir.clone()).normalize();
         const n = centers.length / 3;
         const stride = Math.max(1, Math.floor(n / 600000)); // cap the per-click scan
         const h = (this.app.graphicsDevice.height || 900);
@@ -1272,69 +1079,13 @@ export class SplatViewer {
     /** Whether a WebP render camera currently exists (so the hierarchy can list it). */
     get hasRenderCamera(): boolean { return this.renderFrustum !== null; }
 
-    /**
-     * Drive a live preview of the WebP render camera into a 2D canvas. A second
-     * camera renders only the WORLD layer (splat) — no gizmos/markers/frustum,
-     * which all live on the immediate layer — to a small RenderTarget; its pixels
-     * are read back (throttled, one read in flight) and drawn into `canvas`.
-     */
+    /** Drive a live preview of the WebP render camera into a 2D canvas (see CameraPreview). */
     setupCameraView(canvas: HTMLCanvasElement, w = 320, h = 180): void {
-        this.teardownCameraView();
-        const device = this.app.graphicsDevice;
-        this.previewTex = new pc.Texture(device, {
-            name: 'webp-preview', width: w, height: h, format: pc.PIXELFORMAT_RGBA8, mipmaps: false,
-            minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
-            addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE
-        });
-        this.previewRT = new pc.RenderTarget({ colorBuffer: this.previewTex, depth: true, samples: 1 });
-        const cam = new pc.Entity('webp-preview-cam');
-        cam.addComponent('camera', {
-            clearColor: new pc.Color(0.055, 0.06, 0.07),
-            fov: 60,
-            layers: [pc.LAYERID_WORLD], // splat only — excludes immediate-layer gizmos/markers/frustum
-            renderTarget: this.previewRT
-        });
-        cam.enabled = false;
-        this.app.root.addChild(cam);
-        this.previewCam = cam;
-        canvas.width = w; canvas.height = h;
-        this.previewCtx = canvas.getContext('2d');
-        this.previewImg = this.previewCtx ? this.previewCtx.createImageData(w, h) : null;
-        this.previewW = w; this.previewH = h;
-        this.previewUpdate = () => this.updateCameraView();
-        this.app.on('update', this.previewUpdate);
+        this.cameraPreview.setup(canvas, w, h);
     }
 
     teardownCameraView(): void {
-        if (this.previewUpdate) { this.app.off('update', this.previewUpdate); this.previewUpdate = null; }
-        this.previewCam?.destroy();
-        this.previewRT?.destroy();
-        this.previewTex?.destroy();
-        this.previewCam = null; this.previewRT = null; this.previewTex = null;
-        this.previewCtx = null; this.previewImg = null; this.previewReading = false;
-    }
-
-    private updateCameraView(): void {
-        const rf = this.renderFrustum, cam = this.previewCam, rt = this.previewRT, tex = this.previewTex;
-        const w = this.previewW, h = this.previewH;
-        if (!rf || !cam || !rt || !tex || !this.previewCtx || !this.previewImg) { if (cam) cam.enabled = false; return; }
-        cam.enabled = true;
-        cam.setPosition(rf.camera);
-        cam.lookAt(rf.lookAt);
-        const cc = cam.camera as pc.CameraComponent;
-        cc.fov = rf.fov;
-        cc.aspectRatio = w / h;
-        // throttle the readback: ~15-20fps, never two reads in flight, one reused buffer
-        if (this.previewReading || (this.previewFrame++ % 3) !== 0) return;
-        this.previewReading = true;
-        tex.read(0, 0, w, h, { renderTarget: rt }).then((data) => {
-            this.previewReading = false;
-            const ctx = this.previewCtx, img = this.previewImg;
-            if (!ctx || !img || !data) return;
-            const out = img.data, row = w * 4;
-            for (let y = 0; y < h; y++) out.set(data.subarray((h - 1 - y) * row, (h - y) * row), y * row); // RT is bottom-up
-            ctx.putImageData(img, 0, 0);
-        }).catch(() => { this.previewReading = false; });
+        this.cameraPreview.teardown();
     }
 
     // push the gizmo'd render-camera pose back to the Render panel fields (CLI frame)
@@ -1352,12 +1103,15 @@ export class SplatViewer {
         this.controls.enableOrbit = mode === 'orbit';
     }
 
+    // fly to eye looking at target via the controls, with a raw-camera fallback
+    private flyTo(target: pc.Vec3, eye: pc.Vec3): void {
+        if (this.controls?.reset) this.controls.reset(target, eye);
+        else { this.camera.setPosition(eye); this.camera.lookAt(target); }
+    }
+
     /** Place the camera at eye looking at target (viewer-world). */
     setCamera(eye: number[], target: number[]): void {
-        const e = new pc.Vec3(eye[0], eye[1], eye[2]);
-        const t = new pc.Vec3(target[0], target[1], target[2]);
-        if (this.controls?.reset) this.controls.reset(t, e);
-        else { this.camera.setPosition(e); this.camera.lookAt(t); }
+        this.flyTo(new pc.Vec3(target[0], target[1], target[2]), new pc.Vec3(eye[0], eye[1], eye[2]));
     }
 
     /** Current camera pose in viewer-world: eye, the look target, fov, mode. */
@@ -1400,8 +1154,7 @@ export class SplatViewer {
             const ctx = canvas.getContext('2d');
             if (!ctx || !data) throw new Error('screenshot readback failed');
             const img = ctx.createImageData(w, h);
-            const row = w * 4;
-            for (let y = 0; y < h; y++) img.data.set(data.subarray((h - 1 - y) * row, (h - y) * row), y * row); // RT is bottom-up
+            flipRowsBottomUp(data, img.data, w, h); // RT is bottom-up
             ctx.putImageData(img, 0, 0);
             return { png: canvas.toDataURL('image/png').split(',')[1], width: w, height: h };
         } finally {
@@ -1434,9 +1187,7 @@ export class SplatViewer {
         this.seedMarker.enabled = capsuleSel;
         this.capsuleEntity.enabled = capsuleSel;
         // exactly one gizmo at a time — detach all, then attach for the selection
-        this.gizmo.detach();
-        this.rotGizmo.detach();
-        this.regionGizmo.detach();
+        this.detachSelectionGizmos();
         // measure/origin and crop tools own the viewport; no selection gizmo then
         if (this.editMode !== 'none' || this.cropMode !== 'none') return;
         if (sel === 'collision-region') {
@@ -1560,11 +1311,21 @@ export class SplatViewer {
         this.refreshCropGizmo();
     }
 
+    private detachSelectionGizmos(): void {
+        this.gizmo.detach();
+        this.rotGizmo.detach();
+        this.regionGizmo.detach();
+    }
+
     private refreshCropGizmo(): void {
         this.cropMode = this.cropBoxNode.enabled ? 'box' : this.cropSphereNode.enabled ? 'sphere' : 'none';
-        if (this.cropMode === 'box') { this.cropGizmo.attach(this.cropBoxNode); this.gizmo.detach(); this.rotGizmo.detach(); this.regionGizmo.detach(); }
-        else if (this.cropMode === 'sphere') { this.cropGizmo.attach(this.cropSphereNode); this.gizmo.detach(); this.rotGizmo.detach(); this.regionGizmo.detach(); }
-        else { this.cropGizmo.detach(); this.applySelection(); } // crop cleared → restore selection gizmo
+        if (this.cropMode !== 'none') {
+            this.cropGizmo.attach(this.cropMode === 'box' ? this.cropBoxNode : this.cropSphereNode);
+            this.detachSelectionGizmos();
+        } else {
+            this.cropGizmo.detach();
+            this.applySelection(); // crop cleared → restore selection gizmo
+        }
     }
 
     /** Region box wireframe from min/max corners (CLI coords); null entries fall back to the splat bounds. */
@@ -1805,18 +1566,14 @@ export class SplatViewer {
         const drag = this.regionDrag;
         if (!drag || drag.kind !== 'radius') return;
         const node = drag.family === 'crop' ? this.cropSphereNode : this.regionSphereNode;
-        const camC = this.camera.camera as pc.CameraComponent;
-        const near = camC.screenToWorld(px, py, camC.nearClip);
-        const far = camC.screenToWorld(px, py, camC.farClip);
-        if (!Number.isFinite(near.x) || !Number.isFinite(far.x)) return;
-        const R0 = near, D = far.clone().sub(near).normalize();
+        const ray = this.screenRay(px, py);
+        if (!ray) return;
+        const R0 = ray.origin, D = ray.dir;
         const wt = this.cropHolder.getWorldTransform();
         const centerWorld = wt.transformPoint(node.getLocalPosition().clone());
         const A = wt.transformVector(this.radiusHandleDir.clone()).normalize();
-        const w0 = centerWorld.clone().sub(R0);
-        const b = A.dot(D), denom = 1 - b * b;
-        if (Math.abs(denom) < 1e-3) return; // direction edge-on to the view — skip this frame
-        const sc = (b * D.dot(w0) - A.dot(w0)) / denom; // signed world units along A from centre
+        const sc = closestPointOnAxisToRay(centerWorld, A, R0, D); // signed world units along A from centre
+        if (sc === null) return; // direction edge-on to the view — skip this frame
         const r = Math.max(Math.abs(sc), 0.01);
         node.setLocalScale(r, r, r);
         if (drag.family === 'crop') this.onCropSphereRadius?.(round(r));
@@ -1828,11 +1585,9 @@ export class SplatViewer {
         const drag = this.regionDrag;
         if (!drag || drag.kind !== 'face') return;
         const node = drag.family === 'crop' ? this.cropBoxNode : this.regionBoxNode;
-        const camC = this.camera.camera as pc.CameraComponent;
-        const near = camC.screenToWorld(px, py, camC.nearClip);
-        const far = camC.screenToWorld(px, py, camC.farClip);
-        if (!Number.isFinite(near.x) || !Number.isFinite(far.x)) return;
-        const R0 = near, D = far.clone().sub(near).normalize();
+        const ray = this.screenRay(px, py);
+        if (!ray) return;
+        const R0 = ray.origin, D = ray.dir;
         const wt = this.cropHolder.getWorldTransform();
         const center = node.getLocalPosition().clone();
         const scale = node.getLocalScale().clone();
@@ -1840,10 +1595,8 @@ export class SplatViewer {
         const unit = new pc.Vec3(drag.axis === 0 ? 1 : 0, drag.axis === 1 ? 1 : 0, drag.axis === 2 ? 1 : 0);
         const A = wt.transformVector(unit).normalize();
         // closest approach between the axis line (centerWorld, A) and the camera ray (R0, D)
-        const w0 = centerWorld.clone().sub(R0);
-        const b = A.dot(D), denom = 1 - b * b;
-        if (Math.abs(denom) < 1e-3) return; // face edge-on to the view — skip this frame
-        const sc = (b * D.dot(w0) - A.dot(w0)) / denom; // signed world units along A from centre
+        const sc = closestPointOnAxisToRay(centerWorld, A, R0, D); // signed world units along A from centre
+        if (sc === null) return; // face edge-on to the view — skip this frame
         const k = drag.axis;
         const cArr = [center.x, center.y, center.z], sArr = [scale.x, scale.y, scale.z];
         let lo = cArr[k] - sArr[k] / 2, hi = cArr[k] + sArr[k] / 2;
@@ -1868,12 +1621,7 @@ export class SplatViewer {
         const size = Math.max(radius, 0.5);
         (this.camera.camera as pc.CameraComponent).farClip = Math.max(1000, size * 20);
         const eye = new pc.Vec3(center.x + size * 1.2, center.y + size * 0.7, center.z + size * 1.2);
-        if (this.controls?.reset) {
-            this.controls.reset(center, eye);
-        } else {
-            this.camera.setPosition(eye);
-            this.camera.lookAt(center);
-        }
+        this.flyTo(center, eye);
     }
 
     // bounding sphere around all loaded layers
@@ -1893,8 +1641,9 @@ export class SplatViewer {
             }
             if (!first) return { center: aabb.center.clone(), radius: aabb.halfExtents.length() };
         }
-        if (this.voxelBounds) {
-            return { center: this.voxelBounds.center.clone(), radius: this.voxelBounds.halfExtents.length() };
+        const vb = this.voxels.bounds;
+        if (vb) {
+            return { center: vb.center.clone(), radius: vb.halfExtents.length() };
         }
         return null;
     }

@@ -20,7 +20,7 @@ flowchart LR
         TRIM[[server/ply-trim-worker.mjs]]
     end
     subgraph window [BrowserWindow renderer]
-        UI[client/src/main.ts<br/>panels · dock · state]
+        UI[client/src/ UI modules<br/>panels · dock · state<br/>main.ts = imports + boot]
         VIEW[client/src/viewer.ts<br/>PlayCanvas 3D]
     end
     subgraph agent [MCP client, optional]
@@ -67,8 +67,14 @@ flowchart LR
 | Server | [server/ply-trim.mjs](https://github.com/CodeByKeegan/splat-studio/blob/dev/server/ply-trim.mjs) + worker | Windowed in-process PLY region trim (no CLI, no GPU) |
 | Server | [server/editor-relay.mjs](https://github.com/CodeByKeegan/splat-studio/blob/dev/server/editor-relay.mjs) | WebSocket relay between MCP editor commands and the running GUI |
 | Server | [server/mcp-config.mjs](https://github.com/CodeByKeegan/splat-studio/blob/dev/server/mcp-config.mjs) | Per-workspace, fail-closed editor-control consent |
-| Client | [client/src/main.ts](https://github.com/CodeByKeegan/splat-studio/blob/dev/client/src/main.ts) | Every panel, dockable layout, app state, jobs UI, undo/redo, MCP command handlers |
+| Client | [client/src/main.ts](https://github.com/CodeByKeegan/splat-studio/blob/dev/client/src/main.ts) | Imports in evaluation order + boot body (restore, viewer boot + wiring, MCP bridge start) |
+| Client | foundation: `boot-theme` · `dom` · `ui` · `state` · `form-state` | Theme-first boot, shared element handles, toast/prompt/format helpers, shared state + late-bound hooks, form persistence |
+| Client | infrastructure: `dockview` · `viewport` | Dockable layout, panel registry + persistence · viewport toolbar, layers, scene list, HUD chips |
+| Client | files + jobs: `files-panel` · `upload` · `jobs` | File list/eyes/details/context menu · uploads, drag-drop, sample generator · job queue UI + poller |
+| Client | panels: `*-panel.ts` (convert · lod · generate · render · edit · region · collision · analyze) + `groups` | One module per function panel — rows, validation, run wiring, previews; `groups` = location groups |
+| Client | top: `undo` · `settings` · `menubar` · `projects` · `workspace` · `mcp-handlers` · `desktop-types` | Undo/redo snapshots, settings + updater, menu bar, project/workspace switching, MCP editor-command handlers, desktop API types |
 | Client | [client/src/viewer.ts](https://github.com/CodeByKeegan/splat-studio/blob/dev/client/src/viewer.ts) | `SplatViewer` — PlayCanvas scene: splat/collision/voxel layers, cameras, gizmos, measure + region tools |
+| Client | viewer satellites: `line-meshes` · `viewer-materials` · `camera-preview` · `voxel-layer` | Wire meshes + shared math kernels · overlay material factories · live Camera-view panel driver · instanced voxel overlay |
 | Client | [client/src/api.ts](https://github.com/CodeByKeegan/splat-studio/blob/dev/client/src/api.ts) | Typed fetch client for the whole HTTP API |
 | Client | [client/src/mcp-bridge.ts](https://github.com/CodeByKeegan/splat-studio/blob/dev/client/src/mcp-bridge.ts) | Registers the GUI as "the editor" on the relay WebSocket |
 | Client | [client/src/theme.ts](https://github.com/CodeByKeegan/splat-studio/blob/dev/client/src/theme.ts) / [voxel-parser.js](https://github.com/CodeByKeegan/splat-studio/blob/dev/client/src/voxel-parser.js) | Theme tokens + editor · sparse voxel-octree binary parser |

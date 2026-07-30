@@ -1,6 +1,7 @@
 // Theme engine: named color themes applied as CSS custom properties on <html>.
 // Built-in Dark + Light are read-only; custom themes live in localStorage and
 // are edited live from the Settings dialog's Appearance page.
+import { twoStageConfirm, promptText, showToast } from './ui';
 
 export type Scheme = 'dark' | 'light';
 
@@ -123,12 +124,7 @@ function applyTheme(t: Theme): void {
 export function applyActiveTheme(): void { applyTheme(activeTheme()); }
 
 // ---------- Settings ▸ Appearance UI ----------
-interface InitOpts {
-    promptText: (title: string, opts?: { value?: string; okLabel?: string; placeholder?: string }) => Promise<string | null>;
-    showToast: (message: string, isError?: boolean) => void;
-}
-
-export function initThemeSettings({ promptText, showToast }: InitOpts): void {
+export function initThemeSettings(): void {
     const q = <T extends HTMLElement>(sel: string): T => {
         const el = document.querySelector<T>(sel);
         if (!el) throw new Error(`missing settings element ${sel}`);
@@ -146,8 +142,8 @@ export function initThemeSettings({ promptText, showToast }: InitOpts): void {
     const editor = q<HTMLDivElement>('.theme-editor');
     const roHint = q<HTMLElement>('.theme-ro-hint');
 
-    let deleteArmTimer = 0;
-    const disarmDelete = (): void => { clearTimeout(deleteArmTimer); btnDelete.classList.remove('armed'); btnDelete.textContent = 'Delete'; };
+    // two-step delete: first click arms the button, second click within 3 s deletes
+    const confirmDelete = twoStageConfirm(btnDelete, { armLabel: 'Sure?', resetLabel: 'Delete', ttl: 3000 });
 
     const rebuildSelect = (): void => {
         sel.innerHTML = '';
@@ -214,7 +210,7 @@ export function initThemeSettings({ promptText, showToast }: InitOpts): void {
         activeId = themeById(id) ? id : 'dark';
         saveActive();
         applyActiveTheme();
-        disarmDelete();
+        confirmDelete.disarm();
         rebuildSelect();
         rebuildEditor();
     };
@@ -242,17 +238,10 @@ export function initThemeSettings({ promptText, showToast }: InitOpts): void {
         rebuildSelect();
     };
 
-    // two-step delete: first click arms the button, second click within 3 s deletes
     btnDelete.onclick = () => {
         const t = activeTheme();
         if (isBuiltIn(t)) return;
-        if (!btnDelete.classList.contains('armed')) {
-            btnDelete.classList.add('armed');
-            btnDelete.textContent = 'Sure?';
-            deleteArmTimer = window.setTimeout(disarmDelete, 3000);
-            return;
-        }
-        disarmDelete();
+        if (!confirmDelete.confirm()) return;
         customThemes = customThemes.filter((x) => x.id !== t.id);
         saveCustom();
         selectTheme(t.scheme); // fall back to the built-in of the same scheme
