@@ -306,6 +306,17 @@ async function run() {
         await js(`window.__doc.hl(['#region-mode','#carve-box-rows','#carve-count','#carve-remove'],{});`);
     });
 
+    // LOD panel in its default Decimate mode — the paired LOD levels/Keep-per-level
+    // row and the Decimation (adaptive/uniform) algorithm choice. lod-autotune below
+    // switches to Combine mode, so this is the only shot of the decimate-mode fields.
+    add('lod-decimate', async () => {
+        await js(`window.__doc.clear(); window.__doc.rail('panel-lod');
+            var li=document.getElementById('lod-input'); li.value='demo-room.ply'; li.dispatchEvent(new Event('change',{bubbles:true}));
+            var m=document.getElementById('lod-mode'); m.value='decimate'; m.dispatchEvent(new Event('change',{bubbles:true}));`);
+        await sleep(200);
+        await js(`window.__doc.hl(['#row-lod-levels','#row-lod-decimate-algo'],{});`);
+    });
+
     // LOD auto-tune: seed a few copies (one a 'sky' backdrop), combine mode, auto-tune
     add('lod-autotune', async () => {
         await js(`window.__doc.clear();`);

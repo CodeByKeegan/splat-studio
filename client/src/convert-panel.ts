@@ -60,6 +60,7 @@ convertRun.onclick = () => {
             maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
             spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
             decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            decimateAlgorithm: $<HTMLSelectElement>('convert-decimate-algo').value as 'adaptive' | 'uniform',
             scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
             filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
             device: $<HTMLSelectElement>('convert-device').value,

@@ -288,6 +288,38 @@ try {
         assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);
     });
 
+    // decimation strategy: adaptive (default/omitted) stays plain --decimate;
+    // 'uniform' switches to the pre-3.2 flat-rate --decimate-uniform algorithm
+    await check('decimate defaults to adaptive (--decimate, not --decimate-uniform)', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(job.command.includes('--decimate 50%'), `no --decimate 50% in cmd: ${job.command}`);
+        assert(!job.command.includes('--decimate-uniform'), `unexpected --decimate-uniform: ${job.command}`);
+    });
+
+    await check('decimateAlgorithm uniform emits --decimate-uniform', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', decimateAlgorithm: 'uniform', device: SKIP_GPU ? 'cpu' : 'auto' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(job.command.includes('--decimate-uniform 50%'), `no --decimate-uniform 50% in cmd: ${job.command}`);
+    });
+
+    await check('LOD decimate mode: decimateAlgorithm uniform emits --decimate-uniform on each pre-command', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 3, lodKeepPercent: 50, decimateAlgorithm: 'uniform' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        const lines = job.command.split('\n');
+        assert(lines.slice(0, 2).every((l) => l.includes('--decimate-uniform')), `pre-commands missing --decimate-uniform: ${job.command}`);
+        assert(!lines[2].includes('--decimate'), `combine step must not carry --decimate: ${lines[2]}`);
+    });
+
     // --scratch-dir: decimation spill location — emitted only when decimate is active
     await check('decimate + scratchDir emits --scratch-dir', async () => {
         const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'splat-studio-scratch-'));

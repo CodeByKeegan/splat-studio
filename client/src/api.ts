@@ -109,6 +109,8 @@ export interface ConvertRequest {
         maxWorkers?: number;
         spzVersion?: number;
         decimate?: string;
+        /** decimation strategy (--decimate vs --decimate-uniform); 'adaptive' or omitted = plain --decimate */
+        decimateAlgorithm?: 'adaptive' | 'uniform';
         /** absolute dir for decimation spill files (--scratch-dir); blank = alongside the output */
         scratchDir?: string;
         filterNaN?: boolean;

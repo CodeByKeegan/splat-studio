@@ -70,6 +70,7 @@ $<HTMLButtonElement>('lod-add-level').onclick = addLodRow;
 export const updateLodRows = (): void => {
     const combine = lodMode.value === 'combine';
     $('row-lod-levels').classList.toggle('hidden', combine);
+    $('row-lod-decimate-algo').classList.toggle('hidden', combine);
     $('row-lod-files').classList.toggle('hidden', !combine);
     if (combine && lodFileRows.children.length === 0) addLodRow();
 };
@@ -194,6 +195,7 @@ lodRun.onclick = () => {
             device: $<HTMLSelectElement>('lod-device').value,
             lodLevels: Number($<HTMLInputElement>('lod-levels').value),
             lodKeepPercent: Number($<HTMLInputElement>('lod-keep').value),
+            decimateAlgorithm: $<HTMLSelectElement>('lod-decimate-algo').value as 'adaptive' | 'uniform',
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
             scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),

@@ -117,6 +117,11 @@ const pushDeviceFlag = (args, options) => {
     return 'auto';
 };
 
+// decimation algorithm flag: adaptive (default, --decimate) allocates removal by
+// local error; uniform (--decimate-uniform) is the pre-3.2 flat-rate algorithm,
+// lower memory and better on uniformly-sized content. Same value syntax either way.
+const decimateFlag = (options) => (options.decimateAlgorithm === 'uniform' ? '--decimate-uniform' : '--decimate');
+
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
 // pointing spill at another volume is the point. Absolute + existing dir only.
 // Callers consult it only when --decimate is active; blank/unset returns null.
@@ -232,7 +237,7 @@ const pushConvertActions = (args, options) => {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
         // must be the final action, and requires .ply output (guarded in buildConvertCommand)
-        args.push('--decimate', d);
+        args.push(decimateFlag(options), d);
         const sd = scratchDirArg(options);
         if (sd) args.push('--scratch-dir', sd); // spill location (global option)
     }
@@ -298,7 +303,7 @@ const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buil
         if (sd) a.push('--scratch-dir', sd);
         a.push(input);
         if (options.filterNaN) a.push('-N');
-        a.push('--decimate', `${pct}%`, tmp(level)); // decimate is the final action, .ply output
+        a.push(decimateFlag(options), `${pct}%`, tmp(level)); // decimate is the final action, .ply output
         preCommands.push({ args: a });
     }
     // combine: raw input is level 0; each pre-decimated temp is the next level
@@ -322,7 +327,7 @@ const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buil
             mode: 'decimate',
             input,
             levels: metaLevels,
-            settings: { ...settings, lodLevels: levels, keepPercent: keep }
+            settings: { ...settings, lodLevels: levels, keepPercent: keep, decimateAlgorithm: options.decimateAlgorithm === 'uniform' ? 'uniform' : 'adaptive' }
         },
         buildMetaName
     };
