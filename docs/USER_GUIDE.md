@@ -220,8 +220,19 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 - **Remove floaters** — strip disconnected specks (`--filter-floaters`); a GPU pass with optional
   voxel size / opacity / min-contribution overrides.
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`--morton-order`).
-- **Decimate to (count or %)** — reduce the gaussian count to a number or percentage
-  (`--decimate`).
+- **Decimate to (count or %)** — reduce the gaussian count to a number or percentage.
+  Decimation writes a PLY only, so this row appears for PLY output.
+- **Decimate mode** — how the reduction is spread across the scene:
+    - *Adaptive (mixed scenes)* (`--decimate`, the default) allocates removal by local
+      error, so smooth regions such as sky or a distant backdrop give up the most
+      splats and fine detail survives. Right for almost any captured scene.
+    - *Uniform (single objects)* (`--decimate-uniform`) thins at the same rate
+      everywhere. It uses about half the memory and wins at deep targets when every
+      gaussian is a similar size — single scanned objects, uniform texture, snow.
+
+    > Adaptive needs a GPU once a scene is large enough to be processed in more than
+    > one block; the CLI stops with *multi-block adaptive decimation requires WebGPU*.
+    > If you are running **CPU only** on a big scene, pick **Uniform**.
 - **Filter NaN** — drop non-finite gaussians (`-N`).
 - **Verbose** — print memory/timing diagnostics in the job log (`--verbose --memory`).
 
@@ -463,6 +474,8 @@ buttons in the [Scene panel](#scene-hierarchy)**.
   decimation spills temp files on very large scenes. Blank (the default) spills
   alongside the output; point it at another drive only if the output drive is low on
   space. Applies to Export **Decimate** runs and the decimated levels of **Streamed LOD**.
+  This is the fix for running out of *disk*; if a decimation runs out of *memory*, switch
+  **Decimate mode** to **Uniform** first.
 - **About** — component versions.
 
 **Agent (MCP)** holds a single toggle that lets a connected AI agent drive the live

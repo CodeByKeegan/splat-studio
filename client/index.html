@@ -128,10 +128,19 @@
                         <option value="3">3</option>
                     </select>
                 </label>
-                <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
-                    <span>Decimate to (count or %)</span>
-                    <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
-                </label>
+                <div class="field-row" id="row-decimate">
+                    <label class="field half" title="Reduce the gaussian count before writing (--decimate / --decimate-uniform). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
+                        <span>Decimate to (count or %)</span>
+                        <input type="text" id="convert-decimate" placeholder="empty = keep all" />
+                    </label>
+                    <label class="field half" title="How the reduction is spread across the scene. Either way decimation runs last and writes PLY only">
+                        <span>Decimate mode</span>
+                        <select id="convert-decimate-mode">
+                            <option value="adaptive" selected title="Allocate the removal by local error (--decimate) — smooth regions such as sky give up the most splats and fine detail survives. Right for almost any captured scene. Needs a GPU on large scenes; switch to Uniform if CPU only">Adaptive (mixed scenes)</option>
+                            <option value="uniform" title="Remove at the same rate everywhere (--decimate-uniform). About half the memory and runs on CPU at any scene size; better at deep targets when every gaussian is a similar size: single scanned objects, uniform texture, snow">Uniform (single objects)</option>
+                        </select>
+                    </label>
+                </div>
 
                 <div class="hidden" id="html-rows">
                     <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
@@ -695,7 +704,7 @@
                     </section>
                     <section class="settings-page hidden" data-page="advanced">
                         <div class="group">Advanced</div>
-                        <label class="field" title="Directory for decimation spill files on very large scenes (--scratch-dir). Blank = alongside the output. Only matters when the output drive is low on space.">
+                        <label class="field" title="Directory for decimation spill files on very large scenes (--scratch-dir). Blank = alongside the output. Only matters when the output drive is low on space. If a decimation is short of memory rather than disk, try Decimate mode → Uniform first.">
                             <span>Scratch directory for large decimations</span>
                             <input type="text" id="scratch-dir" readonly placeholder="— default: alongside the output —" />
                         </label>

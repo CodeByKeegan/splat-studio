@@ -45,6 +45,8 @@ export interface LodBuildMeta {
         filterNaN?: boolean;
         lodLevels?: number;
         keepPercent?: number;
+        /** decimate mode only: which decimation algorithm baked the lighter levels */
+        decimateMode?: 'adaptive' | 'uniform';
     };
 }
 
@@ -109,6 +111,8 @@ export interface ConvertRequest {
         maxWorkers?: number;
         spzVersion?: number;
         decimate?: string;
+        /** decimation algorithm: adaptive (--decimate, default) or uniform (--decimate-uniform) */
+        decimateMode?: 'adaptive' | 'uniform';
         /** absolute dir for decimation spill files (--scratch-dir); blank = alongside the output */
         scratchDir?: string;
         filterNaN?: boolean;

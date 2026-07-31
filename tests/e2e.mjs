@@ -288,6 +288,48 @@ try {
         assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);
     });
 
+    // decimate mode: adaptive (3.2 default) emits --decimate, uniform emits --decimate-uniform.
+    // Assertions are value-qualified because '--decimate' is a prefix of '--decimate-uniform'.
+    // Adaptive on CPU is safe here only because demo-room.ply is small enough to stay
+    // single-block; multi-block adaptive requires a GPU device.
+    await check('decimate mode adaptive (default) emits --decimate', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(job.command.includes('--decimate 50%'), `no --decimate in cmd: ${job.command}`);
+        assert(!job.command.includes('--decimate-uniform'), `uniform leaked: ${job.command}`);
+    });
+
+    await check('decimate mode uniform emits --decimate-uniform', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', decimateMode: 'uniform', device: SKIP_GPU ? 'cpu' : 'auto' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(job.command.includes('--decimate-uniform 50%'), `no --decimate-uniform in cmd: ${job.command}`);
+    });
+
+    await check('invalid decimate mode is rejected up front', async () => {
+        const { status, json } = await api('POST', '/api/convert', {
+            project: PROJECT, input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', decimateMode: 'best' }
+        });
+        assert(status === 400 && /decimate mode/i.test(json.error || ''), `expected 400, got ${status} ${JSON.stringify(json)}`);
+    });
+
+    await check('LOD decimate mode: uniform reaches every pre-command', async () => {
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2, lodKeepPercent: 50, decimateMode: 'uniform' }
+        });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        const lines = job.command.split('\n');
+        assert(lines.length === 2, `expected 1 pre-command + combine, got ${lines.length}: ${job.command}`);
+        assert(lines[0].includes('--decimate-uniform 50%'), `pre-command not uniform: ${lines[0]}`);
+    });
+
     // --scratch-dir: decimation spill location — emitted only when decimate is active
     await check('decimate + scratchDir emits --scratch-dir', async () => {
         const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'splat-studio-scratch-'));

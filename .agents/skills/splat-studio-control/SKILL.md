@@ -62,9 +62,10 @@ CLI stdout (the summary table for `-m`).
 
 ### `convert` formats
 `ply`, `compressed-ply`, `sog`, `sog-unbundled`, `lod`, `spz`, `glb`, `csv`,
-`html`. `options`: `iterations`, `spzVersion`, `decimate`, `filterNaN`,
-`device` (`auto`|`cpu`), `lodLevels`/`lodKeepPercent`/`lodChunkCount`/
-`lodChunkExtent`/`lodFiles`, and `params` (for `.mjs` generator inputs).
+`html`. `options`: `iterations`, `spzVersion`, `decimate`, `decimateMode`
+(`adaptive`|`uniform`), `filterNaN`, `device` (`auto`|`cpu`),
+`lodLevels`/`lodKeepPercent`/`lodChunkCount`/`lodChunkExtent`/`lodFiles`,
+and `params` (for `.mjs` generator inputs).
 
 ### `collision` options
 `voxelSize`, `opacity`, `filterCluster`, `seedPos:[x,y,z]`,

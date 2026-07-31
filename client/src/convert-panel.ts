@@ -23,6 +23,7 @@ export const updateConvertRows = (): void => {
     const isSog = f === 'sog' || f === 'sog-unbundled' || f === 'html';
     $('row-sog-encode').classList.toggle('hidden', !isSog);
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
+    $('row-decimate').classList.toggle('hidden', f !== 'ply'); // decimation writes a PLY only
     $('html-rows').classList.toggle('hidden', f !== 'html');
     if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Export';
 };
@@ -59,7 +60,9 @@ convertRun.onclick = () => {
             iterations: Number($<HTMLInputElement>('convert-iterations').value),
             maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
             spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
-            decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
+            // the row is hidden for non-PLY output, so a stale value must not reach the server
+            decimate: convertFormat.value === 'ply' ? $<HTMLInputElement>('convert-decimate').value.trim() : '',
+            decimateMode: $<HTMLSelectElement>('convert-decimate-mode').value as 'adaptive' | 'uniform',
             scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
             filterNaN: $<HTMLInputElement>('convert-filter-nan').checked,
             device: $<HTMLSelectElement>('convert-device').value,

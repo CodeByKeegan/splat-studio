@@ -102,8 +102,9 @@ const vec3Arg = (v, name) => {
 
 // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus). Shared by the
 // main command and the LOD decimate pre-commands, which spawn their own CLI process
-// and must honor the same device choice (--decimate defaults to trying GPU init
-// otherwise, even though it runs fine on CPU). Returns the effective device.
+// and must honor the same device choice. Adaptive decimation (the 3.2 default)
+// needs a device once a scene splits into multiple blocks; uniform runs on CPU at
+// any size. Returns the effective device.
 const pushDeviceFlag = (args, options) => {
     if (options.device === 'cpu') {
         args.push('-g', 'cpu');
@@ -116,6 +117,18 @@ const pushDeviceFlag = (args, options) => {
     }
     return 'auto';
 };
+
+// adaptive (--decimate, the 3.2 default) allocates removal by local error; uniform
+// (--decimate-uniform, the pre-3.2 algorithm) thins evenly and costs about half the
+// memory. Both are final-action, PLY-only, and honor --scratch-dir.
+const decimateMode = (options) => {
+    const m = String(options.decimateMode ?? '').trim() || 'adaptive';
+    if (m !== 'adaptive' && m !== 'uniform') {
+        throw new Error(`Invalid decimate mode: ${m} (use "adaptive" or "uniform")`);
+    }
+    return m;
+};
+const decimateFlag = (options) => (decimateMode(options) === 'uniform' ? '--decimate-uniform' : '--decimate');
 
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
 // pointing spill at another volume is the point. Absolute + existing dir only.
@@ -232,7 +245,7 @@ const pushConvertActions = (args, options) => {
         const d = String(options.decimate).trim();
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
         // must be the final action, and requires .ply output (guarded in buildConvertCommand)
-        args.push('--decimate', d);
+        args.push(decimateFlag(options), d);
         const sd = scratchDirArg(options);
         if (sd) args.push('--scratch-dir', sd); // spill location (global option)
     }
@@ -298,7 +311,7 @@ const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buil
         if (sd) a.push('--scratch-dir', sd);
         a.push(input);
         if (options.filterNaN) a.push('-N');
-        a.push('--decimate', `${pct}%`, tmp(level)); // decimate is the final action, .ply output
+        a.push(decimateFlag(options), `${pct}%`, tmp(level)); // decimate is the final action, .ply output
         preCommands.push({ args: a });
     }
     // combine: raw input is level 0; each pre-decimated temp is the next level
@@ -322,7 +335,8 @@ const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buil
             mode: 'decimate',
             input,
             levels: metaLevels,
-            settings: { ...settings, lodLevels: levels, keepPercent: keep }
+            // resolved, not raw: a recipe should replay the same way after the default moves
+            settings: { ...settings, lodLevels: levels, keepPercent: keep, decimateMode: decimateMode(options) }
         },
         buildMetaName
     };
