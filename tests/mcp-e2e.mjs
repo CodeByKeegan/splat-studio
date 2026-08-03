@@ -145,6 +145,17 @@ try {
         assert(w.status === 'done' && w.outputs?.some((o) => /lod-meta\.json$/.test(o)), `lod job: ${JSON.stringify(w).slice(0, 160)}`);
     });
 
+    // the decimation-algorithm choice must survive MCP schema validation: the SDK
+    // strips undeclared args, so an unwired field would silently fall back to adaptive
+    await check('convert carries decimateAlgorithm through to --decimate-uniform', async () => {
+        const j = data(await call('convert', { project: 'Demo', input: 'demo-room.ply', format: 'ply', decimate: '50%', decimateAlgorithm: 'uniform', device: 'cpu' }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 120000 }));
+        assert(w.status === 'done', `decimate job: ${JSON.stringify(w).slice(0, 160)}`);
+        const full = data(await call('jobs', { action: 'get', id: j.jobId }));
+        assert(full.command?.includes('--decimate-uniform 50%'), `no --decimate-uniform 50% in cmd: ${full.command}`);
+    });
+
     await check('render_image equirect rejects a non-2:1 resolution as bad-input', async () => {
         const r = await call('render_image', { project: 'Demo', input: 'demo-room.ply', image: { projection: 'equirect', resolution: '1000x1000' } });
         assert(r.isError && data(r).error === 'bad-input', `expected bad-input: ${text(r)}`);

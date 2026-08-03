@@ -94,6 +94,10 @@ Output is a `lod-meta.json` bundle folder. Deleting that entry point via
 source per level, environment selection, effective settings, and per-level gaussian
 counts (bundles baked before this feature return `not-found`).
 
+Pass `decimateAlgorithm: "uniform"` to decimate every derived level at a flat rate (lower
+memory); omitted or `"adaptive"` allocates removal by local error, which is better on
+mixed-scale content such as skies. The effective choice lands in `build-meta.json`.
+
 ### 4. Collision mesh for a game engine
 
 Voxelize the splat into `*.collision.glb` (plus voxel debug files). **GPU required.**

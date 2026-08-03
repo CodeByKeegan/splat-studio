@@ -62,7 +62,8 @@ CLI stdout (the summary table for `-m`).
 
 ### `convert` formats
 `ply`, `compressed-ply`, `sog`, `sog-unbundled`, `lod`, `spz`, `glb`, `csv`,
-`html`. `options`: `iterations`, `spzVersion`, `decimate`, `filterNaN`,
+`html`. `options`: `iterations`, `spzVersion`, `decimate`,
+`decimateAlgorithm` (`adaptive`|`uniform`), `filterNaN`,
 `device` (`auto`|`cpu`), `lodLevels`/`lodKeepPercent`/`lodChunkCount`/
 `lodChunkExtent`/`lodFiles`, and `params` (for `.mjs` generator inputs).
 
