@@ -12,7 +12,22 @@ This project uses a two-branch flow:
 `main` only ever moves by promoting `dev`. So: branch off `dev`, and open your PR against
 `dev`. PRs opened against `main` will be asked to re-target.
 
-The maintainer (@CodeByKeegan) reviews and merges all PRs.
+## Review policy
+
+The maintainer (@CodeByKeegan) reviews and merges all PRs. Only maintainers have write
+access, so that — not the review settings — is what gates merging; contributors work from
+a fork and open a PR, as usual.
+
+Because there is currently a single maintainer, the branch rulesets **do not require an
+approving review**: GitHub forbids approving your own PR, so a required approval would be
+unsatisfiable and every merge would need a rule bypass. The rulesets gate on CI instead —
+`dev` requires the `test` job (build + typecheck + regression + MCP e2e), and `main`
+requires `guard` (only `dev` may merge into `main`). Both branches still require a PR,
+forbid force-pushes and deletion, and require review threads to be resolved.
+
+**When a second maintainer joins**, set `required_approving_review_count` back to `1` and
+re-enable `require_code_owner_review` on both rulesets — at that point the requirement is
+satisfiable and worth having.
 
 ## Before you start
 

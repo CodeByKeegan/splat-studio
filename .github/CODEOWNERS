@@ -1,4 +1,5 @@
-# The maintainer owns the whole tree, so every PR requires their review.
-# (Combined with a branch ruleset that requires CODEOWNERS review, this makes
-# @CodeByKeegan the sole approver.)
+# The maintainer owns the whole tree, so every PR auto-requests their review.
+# Review is *requested*, not required: with a single maintainer, requiring a
+# code-owner approval is unsatisfiable (GitHub forbids self-approval), so the
+# branch rulesets gate on CI instead. See CONTRIBUTING.md § Review policy.
 * @CodeByKeegan
