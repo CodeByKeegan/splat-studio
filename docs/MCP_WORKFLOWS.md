@@ -97,6 +97,9 @@ counts (bundles baked before this feature return `not-found`).
 Pass `decimateAlgorithm: "uniform"` to decimate every derived level at a flat rate (lower
 memory); omitted or `"adaptive"` allocates removal by local error, which is better on
 mixed-scale content such as skies. The effective choice lands in `build-meta.json`.
+`"uniform"` is also the only algorithm that runs on CPU once a scene is large enough to
+split into multiple blocks (roughly 2M+ gaussians) — adaptive with `device: "cpu"` there
+fails as `gpu-required`.
 
 ### 4. Collision mesh for a game engine
 

@@ -236,6 +236,10 @@ try {
         assert(meta.lodLevels === 3, `expected 3 LOD levels, got ${meta.lodLevels}`);
         assert(!fs.existsSync(path.join(projectDir, 'demo-room-lod-src')), 'temp decimate dir not cleaned up');
         assert(!job.command.includes('--scratch-dir'), `--scratch-dir without scratchDir option: ${job.command}`);
+        // no decimateAlgorithm -> adaptive: every pre-command keeps plain --decimate
+        const pre = job.command.split('\n').slice(0, 2);
+        assert(pre.every((l) => l.includes('--decimate ')), `LOD default not adaptive: ${job.command}`);
+        assert(!job.command.includes('--decimate-uniform'), `LOD default emitted uniform: ${job.command}`);
     });
 
     // build recipe persisted inside the bundle, before the job flips to 'done'
@@ -265,6 +269,7 @@ try {
             `settings defaults: ${JSON.stringify(s)}`);
         assert(s.device === (SKIP_GPU ? 'cpu' : 'auto') && s.maxWorkers === undefined,
             `settings device/workers: ${JSON.stringify(s)}`);
+        assert(s.decimateAlgorithm === 'adaptive', `settings decimateAlgorithm: ${s.decimateAlgorithm}`);
     });
 
     // cheap count parsed from lod-meta.json itself — must mirror what the CLI wrote
@@ -318,6 +323,22 @@ try {
         const lines = job.command.split('\n');
         assert(lines.slice(0, 2).every((l) => l.includes('--decimate-uniform')), `pre-commands missing --decimate-uniform: ${job.command}`);
         assert(!lines[2].includes('--decimate'), `combine step must not carry --decimate: ${lines[2]}`);
+        // the recipe records the resolved algorithm, so the bake replays the same way
+        const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'build-meta.json'), 'utf8'));
+        assert(bm.settings.decimateAlgorithm === 'uniform', `recipe decimateAlgorithm: ${bm.settings.decimateAlgorithm}`);
+    });
+
+    await check('invalid decimateAlgorithm is rejected up front', async () => {
+        const bad = await api('POST', '/api/convert', {
+            project: PROJECT, input: 'demo-room.ply', format: 'ply',
+            options: { decimate: '50%', decimateAlgorithm: 'Uniform' }
+        });
+        assert(bad.status === 400 && /decimate algorithm/i.test(bad.json.error || ''), `case-typo: ${bad.status} ${JSON.stringify(bad.json)}`);
+        // ignored when decimate is inactive, matching how scratchDir is handled
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'csv', options: { decimateAlgorithm: 'nonsense' }
+        });
+        assert(job.status === 'done', `stray algorithm broke a non-decimate job: ${job.status}`);
     });
 
     // --scratch-dir: decimation spill location — emitted only when decimate is active

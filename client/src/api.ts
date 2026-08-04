@@ -45,6 +45,7 @@ export interface LodBuildMeta {
         filterNaN?: boolean;
         lodLevels?: number;
         keepPercent?: number;
+        decimateAlgorithm?: 'adaptive' | 'uniform';
     };
 }
 

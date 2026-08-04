@@ -226,6 +226,11 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
   skies; **Uniform** (`--decimate-uniform`) removes at a flat rate everywhere — lower
   memory, and better at depth on uniformly-sized content (an even texture, a single
   object, snow).
+  > **Adaptive needs a GPU on large scenes.** Once a scene is big enough to split into
+  > multiple blocks (roughly 2M+ gaussians), adaptive decimation requires a GPU device
+  > and the job fails with *"multi-block adaptive decimation requires WebGPU"* if
+  > **Device** is set to CPU. **Uniform** runs on CPU at any size — pick it (or leave
+  > Device on *Auto*) when baking large scenes without a usable GPU.
 - **Filter NaN** — drop non-finite gaussians (`-N`).
 - **Verbose** — print memory/timing diagnostics in the job log (`--verbose --memory`).
 
@@ -246,7 +251,8 @@ folders that the engine streams by camera distance, for scenes too big to load a
    (e.g. exports at different gaussian counts) as explicit levels.
 4. In Decimate mode, set **LOD levels** and **Keep per level (%)**, and pick a
    **Decimation** algorithm (same Adaptive/Uniform choice as Export — applies to every
-   decimated level). In Combine mode, each **Additional level** row is the next,
+   decimated level; Adaptive needs a GPU on large scenes, Uniform does not).
+   In Combine mode, each **Additional level** row is the next,
    lighter level — order matters (each level should have fewer gaussians than the one
    before). Tick a row's **Env** box to make that file an always-visible far/background
    shell (a coarse, decimated backdrop — skybox, distant cityscape — emitted as LOD

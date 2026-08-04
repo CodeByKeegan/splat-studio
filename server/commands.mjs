@@ -102,8 +102,9 @@ const vec3Arg = (v, name) => {
 
 // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus). Shared by the
 // main command and the LOD decimate pre-commands, which spawn their own CLI process
-// and must honor the same device choice (--decimate defaults to trying GPU init
-// otherwise, even though it runs fine on CPU). Returns the effective device.
+// and must honor the same device choice. Adaptive decimation (the 3.2 default) needs
+// a device once a scene splits into multiple blocks; uniform runs on CPU at any size.
+// Returns the effective device.
 const pushDeviceFlag = (args, options) => {
     if (options.device === 'cpu') {
         args.push('-g', 'cpu');
@@ -117,10 +118,18 @@ const pushDeviceFlag = (args, options) => {
     return 'auto';
 };
 
-// decimation algorithm flag: adaptive (default, --decimate) allocates removal by
-// local error; uniform (--decimate-uniform) is the pre-3.2 flat-rate algorithm,
-// lower memory and better on uniformly-sized content. Same value syntax either way.
-const decimateFlag = (options) => (options.decimateAlgorithm === 'uniform' ? '--decimate-uniform' : '--decimate');
+// decimation algorithm: adaptive (default, --decimate) allocates removal by local
+// error; uniform (--decimate-uniform) is the pre-3.2 flat-rate algorithm, lower
+// memory and better on uniformly-sized content. Same value syntax either way.
+// Validated here because /api/convert passes the request body through unchecked.
+const decimateAlgorithm = (options) => {
+    const a = String(options.decimateAlgorithm ?? '').trim() || 'adaptive';
+    if (a !== 'adaptive' && a !== 'uniform') {
+        throw new Error(`Invalid decimate algorithm: ${a} (use "adaptive" or "uniform")`);
+    }
+    return a;
+};
+const decimateFlag = (options) => (decimateAlgorithm(options) === 'uniform' ? '--decimate-uniform' : '--decimate');
 
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
 // pointing spill at another volume is the point. Absolute + existing dir only.
@@ -327,7 +336,8 @@ const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buil
             mode: 'decimate',
             input,
             levels: metaLevels,
-            settings: { ...settings, lodLevels: levels, keepPercent: keep, decimateAlgorithm: options.decimateAlgorithm === 'uniform' ? 'uniform' : 'adaptive' }
+            // resolved, not raw: a recipe should replay the same way after the default moves
+            settings: { ...settings, lodLevels: levels, keepPercent: keep, decimateAlgorithm: decimateAlgorithm(options) }
         },
         buildMetaName
     };
