@@ -220,8 +220,17 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 - **Remove floaters** — strip disconnected specks (`--filter-floaters`); a GPU pass with optional
   voxel size / opacity / min-contribution overrides.
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`--morton-order`).
-- **Decimate to (count or %)** — reduce the gaussian count to a number or percentage
-  (`--decimate`).
+- **Decimate to (count or %)** — reduce the gaussian count to a number or percentage.
+  The paired **Decimation** dropdown picks the algorithm: **Adaptive** (`--decimate`,
+  default) allocates removal by local error — much better on mixed-scale scenes like
+  skies; **Uniform** (`--decimate-uniform`) removes at a flat rate everywhere — lower
+  memory, and better at depth on uniformly-sized content (an even texture, a single
+  object, snow).
+  > **Adaptive needs a GPU on large scenes.** Once a scene is big enough to split into
+  > multiple blocks (roughly 2M+ gaussians), adaptive decimation requires a GPU device
+  > and the job fails with *"multi-block adaptive decimation requires WebGPU"* if
+  > **Device** is set to CPU. **Uniform** runs on CPU at any size — pick it (or leave
+  > Device on *Auto*) when baking large scenes without a usable GPU.
 - **Filter NaN** — drop non-finite gaussians (`-N`).
 - **Verbose** — print memory/timing diagnostics in the job log (`--verbose --memory`).
 
@@ -229,6 +238,7 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
 
 ## LOD: streamed multi-LOD
 
+![LOD decimate mode](screenshots/lod-decimate.png)
 ![LOD auto-tune](screenshots/lod-autotune.png)
 
 The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-LOD chunk
@@ -239,12 +249,15 @@ folders that the engine streams by camera distance, for scenes too big to load a
 3. **LOD source** — *Decimate input automatically* derives the lighter levels from the
    single input, or *Combine existing files as levels* uses files you already have
    (e.g. exports at different gaussian counts) as explicit levels.
-4. In Decimate mode, set **LOD levels** and **Keep per level (%)**. In Combine mode,
-   each **Additional level** row is the next, lighter level — order matters (each level
-   should have fewer gaussians than the one before). Tick a row's **Env** box to make
-   that file an always-visible far/background shell (a coarse, decimated backdrop —
-   skybox, distant cityscape — emitted as LOD `-1`) the runtime keeps resident instead
-   of culling it by distance. One environment layer per bake; Combine mode only.
+4. In Decimate mode, set **LOD levels** and **Keep per level (%)**, and pick a
+   **Decimation** algorithm (same Adaptive/Uniform choice as Export — applies to every
+   decimated level; Adaptive needs a GPU on large scenes, Uniform does not).
+   In Combine mode, each **Additional level** row is the next,
+   lighter level — order matters (each level should have fewer gaussians than the one
+   before). Tick a row's **Env** box to make that file an always-visible far/background
+   shell (a coarse, decimated backdrop — skybox, distant cityscape — emitted as LOD
+   `-1`) the runtime keeps resident instead of culling it by distance. One environment
+   layer per bake; Combine mode only.
 5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
    **Generate streamed LOD**.
 

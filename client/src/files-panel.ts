@@ -523,7 +523,9 @@ const renderRecipe = (host: HTMLElement, recipe: api.LodBuildMeta): void => {
         s.iterations != null ? `iterations ${s.iterations}` : '',
         s.maxWorkers != null ? `workers ${s.maxWorkers}` : '',
         s.device != null ? `device ${s.device}` : '',
-        s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : ''
+        s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : '',
+        // absent on pre-3.2 bakes, where plain --decimate was the uniform algorithm
+        s.decimateAlgorithm ? `decimation ${s.decimateAlgorithm}` : ''
     ].filter(Boolean);
     if (parts.length) host.appendChild(detailRow('Settings', parts.join(' · ')));
     const versions = [

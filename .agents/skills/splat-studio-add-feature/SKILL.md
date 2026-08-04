@@ -38,13 +38,22 @@ running it against `workspace/demo-room.ply` (regenerate with `npm run demo`).
 - Viewport features go in `client/src/viewer.ts` (immediate-layer draws; see the
   voxel/bounds/capsule code for the box/wireframe pattern).
 
-## 4. Test + verify
+## 4. MCP — the agent surface
+- If the flag is agent-relevant, add it to the matching tool's `inputSchema` in
+  `mcp-server/tools/*.mjs`. The handlers spread undeclared keys into `options`, so the
+  schema entry *is* the wiring — but the SDK strips anything not in the shape, so an
+  unwired flag silently falls back to its default.
+- List it in `.claude/skills/splat-studio-control/SKILL.md`, then run `npm run sync-skills`
+  (`.agents/skills/` is generated — never hand-edit it), and add a `check(...)` to
+  `tests/mcp-e2e.mjs` (`npm run test:mcp`).
+
+## 5. Test + verify
 - Add an e2e `check(...)` in `tests/e2e.mjs` (see **splat-studio-test**).
 - `npm run typecheck && npm test` until green.
 - For UI/viewport, build `dist/` and drive it in a browser preview against an
   isolated server (own port + temp workspace) — assert via DOM/`window.__viewer`.
 
-## 5. Ship
+## 6. Ship
 Commit (author CodeByKeegan; Claude attribution comes from repo settings — leave it),
 push the branch, open a PR with a "Verification" section. Check off the matching coverage-board task.
 

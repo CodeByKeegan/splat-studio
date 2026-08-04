@@ -128,10 +128,19 @@
                         <option value="3">3</option>
                     </select>
                 </label>
-                <label class="field" id="row-decimate" title="Reduce the gaussian count before writing (--decimate). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
-                    <span>Decimate to (count or %)</span>
-                    <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
-                </label>
+                <div class="field-row" id="row-decimate">
+                    <label class="field half" title="Reduce the gaussian count before writing (--decimate / --decimate-uniform). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
+                        <span>Decimate to (count or %)</span>
+                        <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
+                    </label>
+                    <label class="field half" title="Adaptive (--decimate) allocates removal by local error — much better on mixed-scale scenes like skies. Uniform (--decimate-uniform) removes at a flat rate everywhere — lower memory, and better at depth on uniformly-sized gaussians: an even texture, a single object, snow. Adaptive needs a GPU on large scenes; Uniform runs on CPU at any size">
+                        <span>Decimation</span>
+                        <select id="convert-decimate-algo">
+                            <option value="adaptive" selected>Adaptive</option>
+                            <option value="uniform">Uniform</option>
+                        </select>
+                    </label>
+                </div>
 
                 <div class="hidden" id="html-rows">
                     <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
@@ -141,7 +150,7 @@
                     </label>
                 </div>
 
-                <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU">
+                <label class="field" id="row-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Voxel/collision/cluster filtering always need a GPU, and so does Adaptive decimation on large scenes">
                     <span>Device</span>
                     <select id="convert-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
@@ -252,11 +261,18 @@
                         <span>LOD levels</span>
                         <input type="number" id="lod-levels" value="3" min="1" max="8" required />
                     </label>
-                    <label class="field half" title="Each successive level keeps this percentage of the previous one (--decimate, GPU-accelerated)">
+                    <label class="field half" title="Each successive level keeps this percentage of the previous one (--decimate / --decimate-uniform). Adaptive needs a GPU on large scenes; Uniform never does">
                         <span>Keep per level (%)</span>
                         <input type="number" id="lod-keep" value="50" min="5" max="95" required />
                     </label>
                 </div>
+                <label class="field" id="row-lod-decimate-algo" title="Adaptive (--decimate) allocates removal by local error — much better on mixed-scale scenes like skies. Uniform (--decimate-uniform) removes at a flat rate everywhere — lower memory, and better at depth on uniformly-sized gaussians: an even texture, a single object, snow. Applies to every decimated level. Adaptive needs a GPU on large scenes; Uniform runs on CPU at any size">
+                    <span>Decimation</span>
+                    <select id="lod-decimate-algo">
+                        <option value="adaptive" selected>Adaptive</option>
+                        <option value="uniform">Uniform</option>
+                    </select>
+                </label>
                 <div class="field hidden" id="row-lod-files" title="The Input above is LOD 0 (highest detail). Each row here is the next, lighter level — order matters: every level should have fewer gaussians than the one before. Tick a row's Env box to make that file an always-visible far/background shell (LOD -1) instead of a distance-streamed level.">
                     <span>Additional levels <em>(Input = LOD 0; tick 'Env' for an always-visible backdrop)</em></span>
                     <div id="lod-file-rows"></div>
@@ -272,7 +288,7 @@
                         <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
                     </label>
                 </div>
-                <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower)">
+                <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Adaptive decimation on large scenes needs a GPU — pick Uniform to bake on CPU">
                     <span>Device</span>
                     <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>

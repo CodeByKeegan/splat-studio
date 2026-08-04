@@ -62,9 +62,12 @@ CLI stdout (the summary table for `-m`).
 
 ### `convert` formats
 `ply`, `compressed-ply`, `sog`, `sog-unbundled`, `lod`, `spz`, `glb`, `csv`,
-`html`. `options`: `iterations`, `spzVersion`, `decimate`, `filterNaN`,
+`html`. `options`: `iterations`, `spzVersion`, `decimate`,
+`decimateAlgorithm` (`adaptive`|`uniform`), `filterNaN`,
 `device` (`auto`|`cpu`), `lodLevels`/`lodKeepPercent`/`lodChunkCount`/
 `lodChunkExtent`/`lodFiles`, and `params` (for `.mjs` generator inputs).
+`uniform` is the only decimation algorithm that runs on CPU once a scene splits into
+multiple blocks (roughly 2M+ gaussians); adaptive with `device: "cpu"` fails there.
 
 ### `collision` options
 `voxelSize`, `opacity`, `filterCluster`, `seedPos:[x,y,z]`,
