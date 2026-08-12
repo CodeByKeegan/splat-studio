@@ -129,11 +129,11 @@
                     </select>
                 </label>
                 <div class="field-row" id="row-decimate">
-                    <label class="field half" title="Reduce the gaussian count before writing (--decimate / --decimate-uniform). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
+                    <label class="field half" title="Reduce the gaussian count before writing (--decimate / --decimate-adaptive). A number keeps that many gaussians, a percentage like 50% keeps that fraction. Leave empty to keep all">
                         <span>Decimate to (count or %)</span>
                         <input type="text" id="convert-decimate" placeholder="e.g. 500000 or 50% — empty keeps all" />
                     </label>
-                    <label class="field half" title="Adaptive (--decimate) allocates removal by local error — much better on mixed-scale scenes like skies. Uniform (--decimate-uniform) removes at a flat rate everywhere — lower memory, and better at depth on uniformly-sized gaussians: an even texture, a single object, snow. Adaptive needs a GPU on large scenes; Uniform runs on CPU at any size">
+                    <label class="field half" title="Adaptive (--decimate-adaptive) allocates removal by local error — much better on mixed-scale scenes like skies. Uniform (--decimate) removes at a flat rate everywhere — lower memory, and better at depth on uniformly-sized gaussians: an even texture, a single object, snow. Adaptive needs a GPU on large scenes; Uniform runs on CPU at any size">
                         <span>Decimation</span>
                         <select id="convert-decimate-algo">
                             <option value="adaptive" selected>Adaptive</option>
@@ -261,12 +261,12 @@
                         <span>LOD levels</span>
                         <input type="number" id="lod-levels" value="3" min="1" max="8" required />
                     </label>
-                    <label class="field half" title="Each successive level keeps this percentage of the previous one (--decimate / --decimate-uniform). Adaptive needs a GPU on large scenes; Uniform never does">
+                    <label class="field half" title="Each successive level keeps this percentage of the previous one (--decimate / --decimate-adaptive). Adaptive needs a GPU on large scenes; Uniform never does">
                         <span>Keep per level (%)</span>
                         <input type="number" id="lod-keep" value="50" min="5" max="95" required />
                     </label>
                 </div>
-                <label class="field" id="row-lod-decimate-algo" title="Adaptive (--decimate) allocates removal by local error — much better on mixed-scale scenes like skies. Uniform (--decimate-uniform) removes at a flat rate everywhere — lower memory, and better at depth on uniformly-sized gaussians: an even texture, a single object, snow. Applies to every decimated level. Adaptive needs a GPU on large scenes; Uniform runs on CPU at any size">
+                <label class="field" id="row-lod-decimate-algo" title="Adaptive (--decimate-adaptive) allocates removal by local error — much better on mixed-scale scenes like skies. Uniform (--decimate) removes at a flat rate everywhere — lower memory, and better at depth on uniformly-sized gaussians: an even texture, a single object, snow. Applies to every decimated level. Adaptive needs a GPU on large scenes; Uniform runs on CPU at any size">
                     <span>Decimation</span>
                     <select id="lod-decimate-algo">
                         <option value="adaptive" selected>Adaptive</option>
