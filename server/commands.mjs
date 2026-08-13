@@ -118,9 +118,12 @@ const pushDeviceFlag = (args, options) => {
     return 'auto';
 };
 
-// decimation algorithm: adaptive (default, --decimate) allocates removal by local
-// error; uniform (--decimate-uniform) is the pre-3.2 flat-rate algorithm, lower
-// memory and better on uniformly-sized content. Same value syntax either way.
+// decimation algorithm: adaptive (--decimate-adaptive) allocates removal by local
+// error, much better on mixed-scale content such as skies; uniform (--decimate,
+// the CLI's own default since 3.3) is the flat-rate algorithm, lower memory and
+// better on uniformly-sized content. Splat Studio keeps its own default at
+// adaptive regardless of the CLI's default, so the flag is always emitted
+// explicitly rather than relying on bare --decimate. Same value syntax either way.
 // Validated here because /api/convert passes the request body through unchecked.
 const decimateAlgorithm = (options) => {
     const a = String(options.decimateAlgorithm ?? '').trim() || 'adaptive';
@@ -129,7 +132,7 @@ const decimateAlgorithm = (options) => {
     }
     return a;
 };
-const decimateFlag = (options) => (decimateAlgorithm(options) === 'uniform' ? '--decimate-uniform' : '--decimate');
+const decimateFlag = (options) => (decimateAlgorithm(options) === 'uniform' ? '--decimate' : '--decimate-adaptive');
 
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
 // pointing spill at another volume is the point. Absolute + existing dir only.
