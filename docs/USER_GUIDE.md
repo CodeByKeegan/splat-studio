@@ -221,11 +221,11 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
   voxel size / opacity / min-contribution overrides.
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`--morton-order`).
 - **Decimate to (count or %)** — reduce the gaussian count to a number or percentage.
-  The paired **Decimation** dropdown picks the algorithm: **Adaptive** (`--decimate`,
-  default) allocates removal by local error — much better on mixed-scale scenes like
-  skies; **Uniform** (`--decimate-uniform`) removes at a flat rate everywhere — lower
-  memory, and better at depth on uniformly-sized content (an even texture, a single
-  object, snow).
+  The paired **Decimation** dropdown picks the algorithm: **Adaptive**
+  (`--decimate-adaptive`, default) allocates removal by local error — much better on
+  mixed-scale scenes like skies; **Uniform** (`--decimate`) removes at a flat rate
+  everywhere — lower memory, and better at depth on uniformly-sized content (an even
+  texture, a single object, snow).
   > **Adaptive needs a GPU on large scenes.** Once a scene is big enough to split into
   > multiple blocks (roughly 2M+ gaussians), adaptive decimation requires a GPU device
   > and the job fails with *"multi-block adaptive decimation requires WebGPU"* if
