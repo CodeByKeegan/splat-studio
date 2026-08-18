@@ -63,7 +63,7 @@ CLI stdout (the summary table for `-m`).
 ### `convert` formats
 `ply`, `compressed-ply`, `sog`, `sog-unbundled`, `lod`, `spz`, `glb`, `csv`,
 `html`. `options`: `iterations`, `spzVersion`, `decimate`,
-`decimateAlgorithm` (`adaptive`|`uniform`), `filterNaN`,
+`decimateAlgorithm` (`adaptive`|`uniform`, default `uniform`), `filterNaN`,
 `device` (`auto`|`cpu`), `lodLevels`/`lodKeepPercent`/`lodChunkCount`/
 `lodChunkExtent`/`lodFiles`, and `params` (for `.mjs` generator inputs).
 `uniform` is the only decimation algorithm that runs on CPU once a scene splits into
