@@ -271,6 +271,35 @@ try {
         assert(s.decimateAlgorithm === 'adaptive', `settings decimateAlgorithm: ${s.decimateAlgorithm}`);
     });
 
+    // splat-transform 3.3 aborts a LOD bake on any non-finite gaussian; -N is the
+    // documented remedy and must reach the CLI *after* the input (actions are ordered)
+    await check('streamed LOD: NaN source fails without Filter NaN, bakes with it', async () => {
+        const src = await fsp.readFile(path.join(projectDir, 'demo-room.ply'));
+        const off = src.indexOf(Buffer.from('end_header\n')) + 'end_header\n'.length;
+        src.writeFloatLE(NaN, off + 7 * 56); // 14 float32 props/vertex; poke vertex 7's x
+        await fsp.writeFile(path.join(projectDir, 'nan-room.ply'), src);
+
+        const bad = await runJob('/api/convert', {
+            input: 'nan-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2 }
+        });
+        assert(bad.status === 'error', `NaN LOD bake should error, got ${bad.status}: ${(bad.log || '').slice(-200)}`);
+        assert(/non-finite|filter-nan/i.test(bad.log || ''), `error should name the remedy: ${(bad.log || '').slice(-200)}`);
+
+        const ok = await runJob('/api/convert', {
+            input: 'nan-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2, filterNaN: true }
+        });
+        assert(ok.status === 'done', `filterNaN LOD bake ${ok.status}: ${(ok.log || '').slice(-200)}`);
+        // -N is an action on the preceding input, so it must follow it, not lead the argv
+        for (const line of ok.command.split('\n')) {
+            if (!line.includes('-N')) continue;
+            assert(/nan-room\.ply["']?\s+-N|l\d\.ply["']?\s+-N/.test(line), `-N must follow its input: ${line}`);
+        }
+        const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'nan-room-lod', 'build-meta.json'), 'utf8'));
+        assert(bm.settings.filterNaN === true, `build-meta should record filterNaN: ${JSON.stringify(bm.settings)}`);
+    });
+
     // cheap count parsed from lod-meta.json itself — must mirror what the CLI wrote
     await check('files listing: lod entry carries gaussians + per-level lodCounts', async () => {
         const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
