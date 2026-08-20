@@ -292,6 +292,7 @@
                     <span>Device</span>
                     <select id="lod-device"><option value="auto" selected>Auto</option><option value="cpu">CPU</option></select>
                 </label>
+                <label class="check" title="Drop gaussians containing NaN/Infinity values before tagging levels (-N/--filter-nan). The LOD writer refuses a source with a non-finite gaussian and aborts the bake — tick this to drop them instead. Applies to every level, including combine rows"><input type="checkbox" id="lod-filter-nan" /> Filter NaN</label>
                 <label class="check" title="When the bake finishes, load the streamed LOD into the 3D viewport"><input type="checkbox" id="lod-autoload" checked /> Load result into viewport</label>
                 <button id="lod-run" class="primary" title="Run the streamed-LOD bake as a background job — the exact CLI command appears in the Jobs panel">Generate streamed LOD</button>
             </section>

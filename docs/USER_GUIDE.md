@@ -261,6 +261,12 @@ folders that the engine streams by camera distance, for scenes too big to load a
 5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
    **Generate streamed LOD**.
 
+> **Filter NaN.** The LOD writer refuses a source containing a non-finite gaussian and
+> aborts the bake (`LOD 0 gaussian N has a non-finite position; run --filter-nan …`).
+> Tick **Filter NaN** to drop those gaussians instead (`-N`); it applies to every level,
+> including Combine rows. Sources exported from Splat Studio are already clean — reach
+> for this when a bake fails on third-party or scanner-produced input.
+
 Every bake also writes a `build-meta.json` next to the bundle's `lod-meta.json` — the
 recipe it was built from: the source file per level, the environment selection, the
 effective settings, and per-level gaussian counts. Expand the bundle's row in the Files

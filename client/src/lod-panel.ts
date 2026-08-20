@@ -199,6 +199,7 @@ lodRun.onclick = () => {
             lodChunkCount: Number($<HTMLInputElement>('lod-chunk-count').value),
             lodChunkExtent: Number($<HTMLInputElement>('lod-chunk-extent').value),
             scratchDir: $<HTMLInputElement>('scratch-dir').value.trim(),
+            filterNaN: $<HTMLInputElement>('lod-filter-nan').checked,
             lodFiles,
             lodEnvFlags
         }
