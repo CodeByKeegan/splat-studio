@@ -41,8 +41,8 @@ the job LOG, no file).
 ...suggestion)`. Big scenes: `timeout_ms: 1800000`. Output = `lod-meta.json` bundle folder
 (+ a `build-meta.json` recipe — read via `inspect(target:"lod_recipe")`; pre-feature
 bundles return `not-found`); deleting that entry deletes the folder. Add
-`decimateAlgorithm:"uniform"` to decimate every derived level at a flat rate instead of
-the adaptive default.
+`decimateAlgorithm:"adaptive"` to allocate removal by local error instead of
+the uniform default.
 
 **Environment-shell LOD (combine):** lighter levels first (`convert(decimate:"50%")` per level),
 then `build_lod(mode:"combine", lodFiles:[...], lodEnvFlags:[...])` — env flag = always-visible
