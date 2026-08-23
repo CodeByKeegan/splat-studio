@@ -42,7 +42,8 @@ the job LOG, no file).
 (+ a `build-meta.json` recipe — read via `inspect(target:"lod_recipe")`; pre-feature
 bundles return `not-found`); deleting that entry deletes the folder. Add
 `decimateAlgorithm:"uniform"` to decimate every derived level at a flat rate instead of
-the adaptive default.
+the adaptive default. If a bake dies with "non-finite position", re-run with
+`filterNaN:true` — the LOD writer aborts on the first bad gaussian.
 
 **Environment-shell LOD (combine):** lighter levels first (`convert(decimate:"50%")` per level),
 then `build_lod(mode:"combine", lodFiles:[...], lodEnvFlags:[...])` — env flag = always-visible

@@ -236,10 +236,9 @@ try {
         assert(meta.lodLevels === 3, `expected 3 LOD levels, got ${meta.lodLevels}`);
         assert(!fs.existsSync(path.join(projectDir, 'demo-room-lod-src')), 'temp decimate dir not cleaned up');
         assert(!job.command.includes('--scratch-dir'), `--scratch-dir without scratchDir option: ${job.command}`);
-        // no decimateAlgorithm -> adaptive: every pre-command keeps plain --decimate
+        // no decimateAlgorithm -> adaptive: every pre-command uses --decimate-adaptive
         const pre = job.command.split('\n').slice(0, 2);
-        assert(pre.every((l) => l.includes('--decimate ')), `LOD default not adaptive: ${job.command}`);
-        assert(!job.command.includes('--decimate-uniform'), `LOD default emitted uniform: ${job.command}`);
+        assert(pre.every((l) => l.includes('--decimate-adaptive ')), `LOD default not adaptive: ${job.command}`);
     });
 
     // build recipe persisted inside the bundle, before the job flips to 'done'
@@ -272,6 +271,35 @@ try {
         assert(s.decimateAlgorithm === 'adaptive', `settings decimateAlgorithm: ${s.decimateAlgorithm}`);
     });
 
+    // splat-transform 3.3 aborts a LOD bake on any non-finite gaussian; -N is the
+    // documented remedy and must reach the CLI *after* the input (actions are ordered)
+    await check('streamed LOD: NaN source fails without Filter NaN, bakes with it', async () => {
+        const src = await fsp.readFile(path.join(projectDir, 'demo-room.ply'));
+        const off = src.indexOf(Buffer.from('end_header\n')) + 'end_header\n'.length;
+        src.writeFloatLE(NaN, off + 7 * 56); // 14 float32 props/vertex; poke vertex 7's x
+        await fsp.writeFile(path.join(projectDir, 'nan-room.ply'), src);
+
+        const bad = await runJob('/api/convert', {
+            input: 'nan-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2 }
+        });
+        assert(bad.status === 'error', `NaN LOD bake should error, got ${bad.status}: ${(bad.log || '').slice(-200)}`);
+        assert(/non-finite|filter-nan/i.test(bad.log || ''), `error should name the remedy: ${(bad.log || '').slice(-200)}`);
+
+        const ok = await runJob('/api/convert', {
+            input: 'nan-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2, filterNaN: true }
+        });
+        assert(ok.status === 'done', `filterNaN LOD bake ${ok.status}: ${(ok.log || '').slice(-200)}`);
+        // -N is an action on the preceding input, so it must follow it, not lead the argv
+        for (const line of ok.command.split('\n')) {
+            if (!line.includes('-N')) continue;
+            assert(/nan-room\.ply["']?\s+-N|l\d\.ply["']?\s+-N/.test(line), `-N must follow its input: ${line}`);
+        }
+        const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'nan-room-lod', 'build-meta.json'), 'utf8'));
+        assert(bm.settings.filterNaN === true, `build-meta should record filterNaN: ${JSON.stringify(bm.settings)}`);
+    });
+
     // cheap count parsed from lod-meta.json itself — must mirror what the CLI wrote
     await check('files listing: lod entry carries gaussians + per-level lodCounts', async () => {
         const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
@@ -293,35 +321,35 @@ try {
         assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);
     });
 
-    // decimation strategy: adaptive (default/omitted) stays plain --decimate;
-    // 'uniform' switches to the pre-3.2 flat-rate --decimate-uniform algorithm
-    await check('decimate defaults to adaptive (--decimate, not --decimate-uniform)', async () => {
+    // decimation strategy: adaptive (default/omitted) needs the new --decimate-adaptive
+    // flag; 'uniform' stays plain --decimate (the CLI default since 3.3)
+    await check('decimate defaults to adaptive (--decimate-adaptive)', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room.ply', format: 'ply',
             options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' }
         });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-        assert(job.command.includes('--decimate 50%'), `no --decimate 50% in cmd: ${job.command}`);
-        assert(!job.command.includes('--decimate-uniform'), `unexpected --decimate-uniform: ${job.command}`);
+        assert(job.command.includes('--decimate-adaptive 50%'), `no --decimate-adaptive 50% in cmd: ${job.command}`);
     });
 
-    await check('decimateAlgorithm uniform emits --decimate-uniform', async () => {
+    await check('decimateAlgorithm uniform emits plain --decimate', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room.ply', format: 'ply',
             options: { decimate: '50%', decimateAlgorithm: 'uniform', device: SKIP_GPU ? 'cpu' : 'auto' }
         });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-        assert(job.command.includes('--decimate-uniform 50%'), `no --decimate-uniform 50% in cmd: ${job.command}`);
+        assert(job.command.includes('--decimate 50%'), `no --decimate 50% in cmd: ${job.command}`);
+        assert(!job.command.includes('--decimate-adaptive'), `unexpected --decimate-adaptive: ${job.command}`);
     });
 
-    await check('LOD decimate mode: decimateAlgorithm uniform emits --decimate-uniform on each pre-command', async () => {
+    await check('LOD decimate mode: decimateAlgorithm uniform emits plain --decimate on each pre-command', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room.ply', format: 'lod',
             options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 3, lodKeepPercent: 50, decimateAlgorithm: 'uniform' }
         });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
         const lines = job.command.split('\n');
-        assert(lines.slice(0, 2).every((l) => l.includes('--decimate-uniform')), `pre-commands missing --decimate-uniform: ${job.command}`);
+        assert(lines.slice(0, 2).every((l) => l.includes('--decimate ') && !l.includes('--decimate-adaptive')), `pre-commands missing plain --decimate: ${job.command}`);
         assert(!lines[2].includes('--decimate'), `combine step must not carry --decimate: ${lines[2]}`);
         // the recipe records the resolved algorithm, so the bake replays the same way
         const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'build-meta.json'), 'utf8'));

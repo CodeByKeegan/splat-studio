@@ -221,9 +221,9 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
   voxel size / opacity / min-contribution overrides.
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`--morton-order`).
 - **Decimate to (count or %)** — reduce the gaussian count to a number or percentage.
-  The paired **Decimation** dropdown picks the algorithm: **Adaptive** (`--decimate`,
+  The paired **Decimation** dropdown picks the algorithm: **Adaptive** (`--decimate-adaptive`,
   default) allocates removal by local error — much better on mixed-scale scenes like
-  skies; **Uniform** (`--decimate-uniform`) removes at a flat rate everywhere — lower
+  skies; **Uniform** (`--decimate`) removes at a flat rate everywhere — lower
   memory, and better at depth on uniformly-sized content (an even texture, a single
   object, snow).
   > **Adaptive needs a GPU on large scenes.** Once a scene is big enough to split into
@@ -260,6 +260,12 @@ folders that the engine streams by camera distance, for scenes too big to load a
    layer per bake; Combine mode only.
 5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
    **Generate streamed LOD**.
+
+> **Filter NaN.** The LOD writer refuses a source containing a non-finite gaussian and
+> aborts the bake (`LOD 0 gaussian N has a non-finite position; run --filter-nan …`).
+> Tick **Filter NaN** to drop those gaussians instead (`-N`); it applies to every level,
+> including Combine rows. Sources exported from Splat Studio are already clean — reach
+> for this when a bake fails on third-party or scanner-produced input.
 
 Every bake also writes a `build-meta.json` next to the bundle's `lod-meta.json` — the
 recipe it was built from: the source file per level, the environment selection, the

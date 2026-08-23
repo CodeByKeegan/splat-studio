@@ -101,6 +101,11 @@ mixed-scale content such as skies. The effective choice lands in `build-meta.jso
 split into multiple blocks (roughly 2M+ gaussians) — adaptive with `device: "cpu"` there
 fails as `gpu-required`.
 
+Pass `filterNaN: true` when a source may contain non-finite gaussians. The LOD writer
+aborts the whole bake on the first one (`has a non-finite position; run --filter-nan …`),
+so this is the remedy — it applies to every level in both modes, and the choice lands in
+`build-meta.json`.
+
 ### 4. Collision mesh for a game engine
 
 Voxelize the splat into `*.collision.glb` (plus voxel debug files). **GPU required.**
