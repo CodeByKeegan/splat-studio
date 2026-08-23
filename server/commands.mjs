@@ -102,8 +102,9 @@ const vec3Arg = (v, name) => {
 
 // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus). Shared by the
 // main command and the LOD decimate pre-commands, which spawn their own CLI process
-// and must honor the same device choice. Adaptive decimation (the 3.2 default) needs
-// a device once a scene splits into multiple blocks; uniform runs on CPU at any size.
+// and must honor the same device choice. Adaptive decimation (Splat Studio's default,
+// --decimate-adaptive) needs a device once a scene splits into multiple blocks;
+// uniform (the CLI's own 3.3+ default) runs on CPU at any size.
 // Returns the effective device.
 const pushDeviceFlag = (args, options) => {
     if (options.device === 'cpu') {
@@ -118,10 +119,12 @@ const pushDeviceFlag = (args, options) => {
     return 'auto';
 };
 
-// decimation algorithm: adaptive (default, --decimate) allocates removal by local
-// error; uniform (--decimate-uniform) is the pre-3.2 flat-rate algorithm, lower
-// memory and better on uniformly-sized content. Same value syntax either way.
-// Validated here because /api/convert passes the request body through unchecked.
+// decimation algorithm: adaptive (--decimate-adaptive) allocates removal by local
+// error, better on mixed-scale content such as skies; uniform (--decimate, the
+// 3.3+ default) is the flat-rate algorithm, lower memory and better on uniformly-
+// sized content. Splat Studio keeps its own default at adaptive regardless of the
+// CLI's default. Same value syntax either way. Validated here because /api/convert
+// passes the request body through unchecked.
 const decimateAlgorithm = (options) => {
     const a = String(options.decimateAlgorithm ?? '').trim() || 'adaptive';
     if (a !== 'adaptive' && a !== 'uniform') {
@@ -129,7 +132,7 @@ const decimateAlgorithm = (options) => {
     }
     return a;
 };
-const decimateFlag = (options) => (decimateAlgorithm(options) === 'uniform' ? '--decimate-uniform' : '--decimate');
+const decimateFlag = (options) => (decimateAlgorithm(options) === 'adaptive' ? '--decimate-adaptive' : '--decimate');
 
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
 // pointing spill at another volume is the point. Absolute + existing dir only.
