@@ -118,10 +118,12 @@ const pushDeviceFlag = (args, options) => {
     return 'auto';
 };
 
-// decimation algorithm: adaptive (default, --decimate) allocates removal by local
-// error; uniform (--decimate-uniform) is the pre-3.2 flat-rate algorithm, lower
-// memory and better on uniformly-sized content. Same value syntax either way.
-// Validated here because /api/convert passes the request body through unchecked.
+// decimation algorithm: adaptive (--decimate-adaptive) allocates removal by local
+// error; uniform (--decimate, the flat-rate algorithm and the CLI's own default
+// since 3.3) is lower memory and better on uniformly-sized content. The app's own
+// default stays adaptive regardless of which flag is bare — only the flag names
+// swapped in 3.3. Same value syntax either way. Validated here because
+// /api/convert passes the request body through unchecked.
 const decimateAlgorithm = (options) => {
     const a = String(options.decimateAlgorithm ?? '').trim() || 'adaptive';
     if (a !== 'adaptive' && a !== 'uniform') {
@@ -129,7 +131,7 @@ const decimateAlgorithm = (options) => {
     }
     return a;
 };
-const decimateFlag = (options) => (decimateAlgorithm(options) === 'uniform' ? '--decimate-uniform' : '--decimate');
+const decimateFlag = (options) => (decimateAlgorithm(options) === 'uniform' ? '--decimate' : '--decimate-adaptive');
 
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
 // pointing spill at another volume is the point. Absolute + existing dir only.
