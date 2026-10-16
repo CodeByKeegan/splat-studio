@@ -44,8 +44,8 @@
     "shell-quote": "^1.10.0"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "concurrently": "^10.0.5",
+    "@types/node": "^26.6.5",
+    "concurrently": "^10.0.6",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.7",
     "playcanvas": "^2.21.4",
@@ -53,7 +53,7 @@
     "pngjs": "^7.0.0",
     "rcedit": "^5.0.2",
     "typescript": "^7.0.2",
-    "vite": "^8.2.1"
+    "vite": "^8.3.4"
   },
   "build": {
     "appId": "com.codebykeegan.splatstudio",
