@@ -121,6 +121,7 @@
                         <input type="number" id="convert-max-workers" value="4" min="0" max="64" />
                     </label>
                 </div>
+                <label class="check" id="row-sog-effort" title="Spend more time on lossless WebP compression for slightly smaller files (--webp-effort 9). Same quality; encodes several times slower for under 1% smaller output"><input type="checkbox" id="convert-webp-max" /> Maximum compression (slower)</label>
                 <label class="field hidden" id="row-spz-version" title="SPZ container version (--spz-version). 4 is current; use 3 for older consumers">
                     <span>SPZ version</span>
                     <select id="convert-spz-version">
@@ -144,7 +145,7 @@
 
                 <div class="hidden" id="html-rows">
                     <label class="check" title="Write the HTML viewer as separate files instead of one self-contained page (--unbundled)"><input type="checkbox" id="convert-unbundled" /> Unbundled (separate files)</label>
-                    <label class="field" title="HTML viewer settings JSON file in this project (--viewer-settings). Upload it first, then type its name here. Optional">
+                    <label class="field" title="HTML viewer settings JSON in this project (--viewer-settings). Upload it first, then type its name here. Must be a valid viewer settings file: a v1 file needs camera and background objects; a version 2 file needs the full schema. An invalid file stops the export, and the job log names the bad field. Optional">
                         <span>Viewer settings (.json)</span>
                         <input type="text" id="convert-viewer-settings" placeholder="e.g. settings.json — optional" />
                     </label>
@@ -245,6 +246,7 @@
                         <input type="number" id="lod-max-workers" value="4" min="0" max="64" />
                     </label>
                 </div>
+                <label class="check" id="row-lod-effort" title="Spend more time on lossless WebP compression for slightly smaller files (--webp-effort 9). Same quality; encodes several times slower for under 1% smaller output"><input type="checkbox" id="lod-webp-max" /> Maximum compression (slower)</label>
                 <label class="field" id="row-lod-mode" title="Where the detail levels come from: decimate the single input automatically, or combine files you already have (e.g. exports at different gaussian counts) as explicit levels">
                     <span>LOD source</span>
                     <select id="lod-mode">
@@ -286,6 +288,16 @@
                     <label class="field half" title="Approximate world-space size of a chunk in meters (--lod-chunk-extent, whole meters). Default 16">
                         <span>Chunk extent (m)</span>
                         <input type="number" id="lod-chunk-extent" value="16" min="1" max="1000" required />
+                    </label>
+                </div>
+                <div class="field-row" id="row-lod-chunks-2">
+                    <label class="field half" title="Areas holding fewer than this many thousand splats are not split further just because they are wide (--lod-chunk-min). Higher = fewer, larger chunks over sparse backdrops; 0 = split down to the chunk extent (far more chunks, bigger lod-meta.json). Default 8">
+                        <span>Min split (K splats)</span>
+                        <input type="number" id="lod-chunk-min" value="8" min="0" max="8192" required />
+                    </label>
+                    <label class="field half" title="Thousands of splats packed into each streamed file (--lod-file-count). Blank = same as Chunk size. Larger = fewer, bigger files (fewer requests when hosted, more memory while baking)">
+                        <span>File size (K splats)</span>
+                        <input type="number" id="lod-file-count" min="1" max="65536" placeholder="= chunk size" />
                     </label>
                 </div>
                 <label class="field" id="row-lod-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). 'Auto' picks the default; 'CPU' disables the GPU (SOG compression only, 5–10× slower). Adaptive decimation on large scenes needs a GPU — pick Uniform to bake on CPU">
@@ -335,10 +347,12 @@
                     <label class="field half" title="Aperture f-stop (--f-stop). Smaller = more blur. Empty = no defocus"><span>f-stop</span><input type="number" id="webp-fstop" step="0.1" min="0.5" placeholder="off" /></label>
                     <label class="field half" title="Focus plane distance in world units (--focus-distance). Empty = distance to look-at"><span>Focus dist</span><input type="number" id="webp-focus" step="0.1" min="0.001" placeholder="look-at" /></label>
                 </div>
+                <label class="field" id="row-webp-dofsamples" title="Aperture samples per image for depth of field (--dof-samples). More = smoother bokeh, proportionally slower. With motion blur the cost multiplies: DoF samples × motion samples renders per image. Only used when f-stop is set"><span>Blur quality</span>
+                    <select id="webp-dofsamples"><option value="8">Draft (8)</option><option value="" selected>Standard (32)</option><option value="128">High (128)</option></select></label>
                 <div class="group">Motion blur</div>
                 <label class="field" title="End camera position (--camera-pos-end) enables motion blur. Empty = none"><span>End camera (x,y,z)</span><input type="text" id="webp-cameraend" placeholder="off — e.g. 3,1,-2" /></label>
                 <div class="field-row">
-                    <label class="field half" title="Shutter fraction 0..1 (--shutter). 1=full, 0.5=180°"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
+                    <label class="field half" title="Shutter fraction 0..1 (--shutter). 1 = blur across the whole move (Splat Studio default), 0.5 = 180° film look (the CLI's own default)"><span>Shutter</span><input type="number" id="webp-shutter" value="1" step="0.1" min="0" max="1" /></label>
                     <label class="field half" title="Sub-frames accumulated (--motion-samples). Cost is N× a render"><span>Samples</span><input type="number" id="webp-motionsamples" value="16" min="1" max="256" /></label>
                 </div>
                 <label class="field" id="row-render-device" title="GPU adapter for GPU operations (-g, listed by --list-gpus). The render needs a GPU rasterizer; 'Auto' picks the default">
@@ -712,15 +726,15 @@
                     </section>
                     <section class="settings-page hidden" data-page="advanced">
                         <div class="group">Advanced</div>
-                        <label class="field" title="Directory for decimation spill files on very large scenes (--scratch-dir). Blank = alongside the output. Only matters when the output drive is low on space.">
+                        <label class="field" title="Where a very deep decimation writes temporary data when it can't fit in memory (--scratch-dir). Blank = the project folder (files are removed afterwards). Point it at a roomier drive if the project drive is tight on space.">
                             <span>Scratch directory for large decimations</span>
-                            <input type="text" id="scratch-dir" readonly placeholder="— default: alongside the output —" />
+                            <input type="text" id="scratch-dir" readonly placeholder="— default: the project folder —" />
                         </label>
                         <div class="field-row">
                             <button id="scratch-dir-change" title="Choose a folder for decimation spill files (--scratch-dir)">Choose folder…</button>
-                            <button id="scratch-dir-clear" title="Back to the default — spill alongside the output">Clear</button>
+                            <button id="scratch-dir-clear" title="Back to the default — the project folder">Clear</button>
                         </div>
-                        <span class="hint">Used only while a decimate (or decimate-mode LOD) job runs. Point it at a roomier drive if the output drive is tight on space.</span>
+                        <span class="hint">Used only while a decimate (or decimate-mode LOD) job runs. Point it at a roomier drive if the project drive is tight on space.</span>
                     </section>
                     <section class="settings-page hidden" data-page="updates">
                         <div class="group">Updates</div>

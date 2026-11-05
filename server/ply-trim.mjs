@@ -200,6 +200,7 @@ export const trimPly = async (srcAbs, outAbs, { box, sphere, mode = 'remove' }, 
         }
 
         if (h.format === 'ascii') {
+            // output stays ASCII, which splat-transform no longer reads
             // toString('utf8') throws a cryptic ERR_STRING_TOO_LONG past ~512 MB;
             // guard well under that with a clear, actionable message
             if (size - h.dataStart > 256 * 1024 * 1024) {
@@ -228,7 +229,7 @@ export const trimPly = async (srcAbs, outAbs, { box, sphere, mode = 'remove' }, 
             return { kept: out.length, total: h.vertexCount };
         }
 
-        throw new Error(`unsupported PLY format "${h.format}" — convert to binary_little_endian or ascii PLY first`);
+        throw new Error(`unsupported PLY format "${h.format}" — Export it to PLY first (splat-transform reads it and writes binary_little_endian)`);
     } finally {
         await fh.close();
     }

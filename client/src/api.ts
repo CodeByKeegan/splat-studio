@@ -39,9 +39,12 @@ export interface LodBuildMeta {
     settings: {
         iterations?: number;
         maxWorkers?: number;
+        webpEffort?: number;
         device?: string | number;
         chunkCount?: number;
         chunkExtent?: number;
+        chunkMin?: number;
+        fileCount?: number[];
         filterNaN?: boolean;
         lodLevels?: number;
         keepPercent?: number;
@@ -93,6 +96,7 @@ export interface ImageOptions {
     projection?: 'pinhole' | 'equirect';
     fStop?: number;         // DoF (pinhole only)
     focusDistance?: number;
+    dofSamples?: number;    // DoF aperture samples (--dof-samples), CLI default 32
     sensorSize?: number;
     cameraEnd?: string;     // motion blur
     lookAtEnd?: string;
@@ -108,20 +112,22 @@ export interface ConvertRequest {
         iterations?: number;
         /** SOG encoder worker threads (--max-workers); 0 = inline/serial */
         maxWorkers?: number;
+        /** lossless WebP effort 0-9 (--webp-effort); omitted = CLI default */
+        webpEffort?: number;
         spzVersion?: number;
         decimate?: string;
         /** decimation strategy (--decimate-adaptive vs --decimate); 'uniform' or omitted = plain --decimate */
         decimateAlgorithm?: 'adaptive' | 'uniform';
-        /** absolute dir for decimation spill files (--scratch-dir); blank = alongside the output */
+        /** absolute dir for decimation spill files (--scratch-dir); blank = the project folder */
         scratchDir?: string;
         filterNaN?: boolean;
         /** 'auto' | 'cpu' | a GPU adapter index (string) */
         device?: string;
         verbose?: boolean;
-        /** HTML output: separate files (-U) + a viewer-settings.json (-E) */
+        /** HTML output: separate files (--unbundled) + a viewer settings JSON (--viewer-settings) */
         unbundled?: boolean;
         viewerSettings?: string;
-        /** LCC input: comma-separated LOD levels to read (-O) */
+        /** LCC input: comma-separated LOD levels to read (--select-lod) */
         lodSelect?: string;
         // Convert-panel transform/filter actions applied to the working set before
         // writing (not applied to LOD bakes). translate/rotate are [x,y,z].
@@ -138,6 +144,10 @@ export interface ConvertRequest {
         lodKeepPercent?: number;
         lodChunkCount?: number;
         lodChunkExtent?: number;
+        /** K splats below which wide nodes stop splitting (--lod-chunk-min), default 8 */
+        lodChunkMin?: number;
+        /** K splats per streamed file (--lod-file-count); array = per level from finest, last repeats */
+        lodFileCount?: number | number[];
         /** combine mode: files for LOD 1..n (the main input is LOD 0) */
         lodFiles?: string[];
         /** combine mode: per-file flag aligned 1:1 with lodFiles; true tags that file -l -1 (always-resident environment level) */

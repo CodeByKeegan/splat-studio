@@ -34,7 +34,7 @@ const filterFloaters = z
         opacity: z.number().min(0).max(1).optional(),
         min: z.number().min(0).optional()
     })
-    .describe('GPU-only floater removal (-G). Empty {} = CLI defaults (0.05,0.1,0.004). With device "cpu" the server rejects it up front (bad-input); with no usable GPU the job fails as gpu-required.');
+    .describe('GPU-only floater removal (--filter-floaters). Empty {} = CLI defaults (0.05,0.1,0.004). With device "cpu" the server rejects it up front (bad-input); with no usable GPU the job fails as gpu-required.');
 
 export function register(server) {
     server.registerTool('convert', {
@@ -49,6 +49,7 @@ export function register(server) {
             device: device.optional(),
             iterations: z.number().int().min(1).max(100).optional().describe('SOG SH-compression iterations (sog/sog-unbundled/html), default 10.'),
             maxWorkers: z.number().int().min(0).max(64).optional().describe('SOG encoder worker threads (default 4; 0 = inline).'),
+            webpEffort: z.number().int().min(0).max(9).optional().describe('Lossless WebP effort 0-9 for SOG/HTML/LOD textures (--webp-effort). Omit for the CLI default; 9 = under 1% smaller, several times slower.'),
             spzVersion: z.union([z.literal(3), z.literal(4)]).optional().describe('SPZ version (default 4).'),
             scale: z.number().positive().optional().describe('Uniform scale -s (> 0).'),
             translate: vec3.optional().describe('Translate -t [x,y,z] (CLI space).'),
@@ -59,15 +60,15 @@ export function register(server) {
             filterBox: filterBox.optional(),
             filterSphere: filterSphere.optional(),
             filterNaN: z.boolean().optional().describe('Drop NaN/Inf gaussians (-N).'),
-            decimate: z.string().regex(/^\d+%?$/).optional().describe('Decimate to a count or percentage like "50%" (-d).'),
+            decimate: z.string().regex(/^\d+%?$/).optional().describe('Decimate to a count or percentage like "50%" (--decimate / --decimate-adaptive).'),
             decimateAlgorithm: z.enum(['adaptive', 'uniform']).optional().describe('Decimation algorithm (default adaptive). "adaptive" (--decimate-adaptive) allocates removal by local error — better on mixed-scale content such as skies; "uniform" (--decimate) removes at a flat rate — lower memory. Only used with decimate. "uniform" is the only algorithm that runs on CPU once a scene is large enough to split into multiple blocks; adaptive with device "cpu" there fails as gpu-required.'),
-            scratchDir: z.string().optional().describe('Absolute path to an existing directory for decimation spill files (--scratch-dir); may be off-workspace (another volume). Only used with decimate; omitted/blank = alongside the output.'),
-            mortonOrder: z.boolean().optional().describe('Morton-reorder (-M).'),
+            scratchDir: z.string().optional().describe('Absolute path to an existing directory for decimation spill files (--scratch-dir); may be off-workspace (another volume). Only used with decimate; omitted/blank = the project folder (splat-transform otherwise fails a decimation too deep for memory).'),
+            mortonOrder: z.boolean().optional().describe('Morton-reorder (--morton-order).'),
             verbose: z.boolean().optional(),
             params: z.string().regex(/^[A-Za-z0-9_]+=[^,=]+(,[A-Za-z0-9_]+=[^,=]+)*$/).optional().describe('Generator params key=val,key=val (.mjs inputs only).'),
-            lodSelect: z.string().regex(/^\d+(,\d+)*$/).optional().describe('LCC LOD select -O (.lcc/.lcc2 inputs).'),
-            unbundled: z.boolean().optional().describe('HTML viewer: unbundled output (-U).'),
-            viewerSettings: z.string().optional().describe('HTML viewer: viewer-settings json path (-E).')
+            lodSelect: z.string().regex(/^\d+(,\d+)*$/).optional().describe('LCC LOD select --select-lod (.lcc/.lcc2 inputs).'),
+            unbundled: z.boolean().optional().describe('HTML viewer: unbundled output (--unbundled).'),
+            viewerSettings: z.string().optional().describe('HTML viewer: project-relative viewer settings JSON (--viewer-settings). Validated: missing camera/background objects (v1), a version other than 2, or a BOM → bad-input; other field errors fail the job (see the job log); version 2 needs the full viewer schema.')
         }
     }, headless(async ({ project, input, format, ...options }) => await apiPost('/api/convert', { project, input, format, options })));
 
@@ -83,14 +84,17 @@ export function register(server) {
             lodLevels: z.number().int().min(1).max(8).optional().describe('decimate: number of levels incl. LOD 0 (default 3).'),
             lodKeepPercent: z.number().min(5).max(95).optional().describe('decimate: percent kept per level (default 50).'),
             decimateAlgorithm: z.enum(['adaptive', 'uniform']).optional().describe('decimate: algorithm for every derived level — "adaptive" (--decimate-adaptive, default) allocates removal by local error; "uniform" (--decimate) removes at a flat rate. Ignored in combine mode. "uniform" is the only algorithm that runs on CPU once a scene is large enough to split into multiple blocks; adaptive with device "cpu" there fails as gpu-required.'),
-            scratchDir: z.string().optional().describe('decimate: absolute path to an existing directory for decimation spill files (--scratch-dir); may be off-workspace. Omitted/blank = alongside each temp output.'),
+            scratchDir: z.string().optional().describe('decimate: absolute path to an existing directory for decimation spill files (--scratch-dir); may be off-workspace. Omitted/blank = the project folder.'),
             filterNaN: z.boolean().optional().describe('Drop NaN/Inf gaussians before tagging levels (-N). The LOD writer aborts the bake on a non-finite gaussian ("has a non-finite position; run --filter-nan..."), so set this to bake a source that may contain them. Applies to every level in both modes.'),
             lodFiles: z.array(z.string()).optional().describe('combine: additional level files in detail order (each lighter than the last).'),
             lodEnvFlags: z.array(z.boolean()).optional().describe('combine: per lodFiles entry, true = always-visible backdrop (LOD -1). Needs >=1 non-env level.'),
-            lodChunkCount: z.number().int().min(16).max(8192).optional().describe('approx gaussians per chunk in K (-C, default 512).'),
-            lodChunkExtent: z.number().int().min(1).max(1000).optional().describe('approx chunk size in meters (-X, default 16).'),
+            lodChunkCount: z.number().int().min(16).max(8192).optional().describe('approx gaussians per chunk in K (--lod-chunk-count, default 512).'),
+            lodChunkExtent: z.number().int().min(1).max(1000).optional().describe('approx chunk size in meters (--lod-chunk-extent, default 16).'),
+            lodChunkMin: z.number().int().min(0).max(8192).optional().describe('K splats below which wide nodes stop splitting (--lod-chunk-min, default 8; 0 = split to the extent limit).'),
+            lodFileCount: z.union([z.number().int().min(1).max(65536), z.array(z.number().int().min(1).max(65536)).min(1).max(8)]).optional().describe('K splats per streamed file (--lod-file-count); array = per level from finest, last value repeats. Default = lodChunkCount.'),
             iterations: z.number().int().min(1).max(100).optional(),
             maxWorkers: z.number().int().min(0).max(64).optional(),
+            webpEffort: z.number().int().min(0).max(9).optional().describe('Lossless WebP effort 0-9 for SOG/HTML/LOD textures (--webp-effort). Omit for the CLI default; 9 = under 1% smaller, several times slower.'),
             device: device.optional()
         }
     }, headless(async ({ project, input, mode, lodFiles, lodEnvFlags, ...rest }) => {
@@ -115,7 +119,7 @@ export function register(server) {
             device: device.optional(),
             image: z
                 .object({
-                    projection: z.enum(['perspective', 'equirect']).optional().describe('default perspective. equirect REJECTS fov/fStop/focusDistance/sensorSize (omit them) and requires a 2:1 resolution (width = 2 × height; default 2048x1024).'),
+                    projection: z.enum(['perspective', 'equirect']).optional().describe('default perspective. equirect REJECTS fov/fStop/focusDistance/sensorSize/dofSamples (omit them) and requires a 2:1 resolution (width = 2 × height; default 2048x1024).'),
                     camera: z.string().optional().describe('eye "x,y,z" (CLI space; default "2,1,-2").'),
                     lookAt: z.string().optional().describe('target "x,y,z" (default "0,0,0").'),
                     up: z.string().optional().describe('up "x,y,z" (default "0,1,0").'),
@@ -126,11 +130,12 @@ export function register(server) {
                     fStop: z.number().min(0.5).max(64).optional().describe('DoF aperture (pinhole only, default 2.8).'),
                     focusDistance: z.number().min(0.001).max(10000).optional(),
                     sensorSize: z.number().min(0.0001).max(1000).optional(),
+                    dofSamples: z.number().int().min(1).max(512).optional().describe('DoF aperture samples (--dof-samples, default 32). Only with fStop. Cost multiplies with motionSamples.'),
                     cameraEnd: z.string().optional().describe('motion-blur end eye "x,y,z" (enables motion blur).'),
                     lookAtEnd: z.string().optional(),
                     upEnd: z.string().optional(),
-                    shutter: z.number().min(0).max(1).optional(),
-                    motionSamples: z.number().int().min(1).max(256).optional()
+                    shutter: z.number().min(0).max(1).optional().describe('exposure fraction of the move 0..1 (default 1; 0.5 = 180°). Only with cameraEnd.'),
+                    motionSamples: z.number().int().min(1).max(256).optional().describe('motion-blur sub-frames (default 16). With fStop, total renders = motionSamples × dofSamples.')
                 })
                 .optional()
         }
@@ -138,7 +143,7 @@ export function register(server) {
         const img = image ?? {};
         if (img.projection === 'equirect') {
             // enforce what the description promises: no pinhole-only params, 2:1 resolution
-            for (const k of ['fov', 'fStop', 'focusDistance', 'sensorSize']) {
+            for (const k of ['fov', 'fStop', 'focusDistance', 'sensorSize', 'dofSamples']) {
                 if (img[k] != null) throw new Error(`equirect rejects ${k} — omit it`);
             }
             const r = img.resolution ?? '2048x1024';

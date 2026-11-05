@@ -7,7 +7,7 @@ all in a dockable, Unity/Unreal-style tab editor you can rearrange and save per
 workspace.
 
 <!-- versions: the "Built with" line below is kept in sync by the weekly dependency-update routine -->
-**Built with [PlayCanvas](https://github.com/playcanvas/engine) `2.21.4` · [@playcanvas/splat-transform](https://github.com/playcanvas/splat-transform) `3.3.3`**
+**Built with [PlayCanvas](https://github.com/playcanvas/engine) `2.23.3` · [@playcanvas/splat-transform](https://github.com/playcanvas/splat-transform) `3.10.3`**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue.svg)
@@ -236,11 +236,11 @@ Then in the browser:
   `--resolution`/`--background`). **📷 from viewer** seeds the camera from the 3D
   view. **Projection** switches pinhole ↔ equirectangular 360° panorama. **Depth
   of field** (`--f-stop`/`--focus-distance`, pinhole only) and **motion blur**
-  (`--camera-end`/`--shutter`/`--motion-samples`) are exposed too.
-- **Device** dropdown — choose the GPU adapter (listed via `-L/--list-gpus`) or
+  (`--camera-pos-end`/`--shutter`/`--motion-samples`) are exposed too.
+- **Device** dropdown — choose the GPU adapter (listed via `--list-gpus`) or
   CPU (`-g`). **Verbose** adds `--verbose --memory` diagnostics to the Job log.
-- **HTML viewer** output gains **Unbundled** (`-U`, separate files) and a
-  **Viewer settings** JSON (`-E`). An **.lcc** input gains **LOD levels** (`-O`).
+- **HTML viewer** output gains **Unbundled** (`--unbundled`, separate files) and a
+  **Viewer settings** JSON (`--viewer-settings`). An **.lcc** input gains **LOD levels** (`--select-lod`).
 
 ## Edit: measure-to-scale & set origin
 
