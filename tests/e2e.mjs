@@ -235,11 +235,14 @@ try {
         const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
         assert(meta.lodLevels === 3, `expected 3 LOD levels, got ${meta.lodLevels}`);
         assert(!fs.existsSync(path.join(projectDir, 'demo-room-lod-src')), 'temp decimate dir not cleaned up');
-        assert(!job.command.includes('--scratch-dir'), `--scratch-dir without scratchDir option: ${job.command}`);
-        // no decimateAlgorithm -> adaptive: every pre-command keeps plain --decimate
+        assert(/--lod-chunk-min 8\b/.test(job.command), `no default --lod-chunk-min 8: ${job.command}`);
+        const lines = job.command.split('\n');
+        assert(lines.slice(0, 2).every((l) => l.includes(` --scratch-dir ${path.resolve(projectDir)} `)), `blank scratchDir must default to the project dir on pre-commands: ${job.command}`);
+        assert(!lines[2].includes('--scratch-dir'), `combine step must not carry --scratch-dir: ${lines[2]}`);
+        // no decimateAlgorithm -> adaptive: every pre-command uses --decimate-adaptive
         const pre = job.command.split('\n').slice(0, 2);
-        assert(pre.every((l) => l.includes('--decimate ')), `LOD default not adaptive: ${job.command}`);
-        assert(!job.command.includes('--decimate-uniform'), `LOD default emitted uniform: ${job.command}`);
+        assert(pre.every((l) => l.includes('--decimate-adaptive ')), `LOD default not adaptive: ${job.command}`);
+        assert(!job.command.includes('--decimate '), `LOD default emitted uniform: ${job.command}`);
     });
 
     // build recipe persisted inside the bundle, before the job flips to 'done'
@@ -267,9 +270,52 @@ try {
         assert(s.lodLevels === 3 && s.keepPercent === 50, `settings: ${JSON.stringify(s)}`);
         assert(s.iterations === 10 && s.chunkCount === 512 && s.chunkExtent === 16 && s.filterNaN === false,
             `settings defaults: ${JSON.stringify(s)}`);
-        assert(s.device === (SKIP_GPU ? 'cpu' : 'auto') && s.maxWorkers === undefined,
+        assert(s.device === (SKIP_GPU ? 'cpu' : 'auto') && s.maxWorkers === undefined && s.webpEffort === undefined,
             `settings device/workers: ${JSON.stringify(s)}`);
+        assert(s.chunkMin === 8 && s.fileCount === undefined, `settings chunkMin/fileCount: ${JSON.stringify(s)}`);
         assert(s.decimateAlgorithm === 'adaptive', `settings decimateAlgorithm: ${s.decimateAlgorithm}`);
+    });
+
+    // re-bakes demo-room-lod with non-default chunking; later readers compare against the meta itself
+    await check('LOD chunk-min + file-count (--lod-chunk-min 0 --lod-file-count 64,128; 0 → 400)', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'lod', options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2, lodChunkMin: 0, lodFileCount: [64, 128] } });
+        assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
+        assert(/--lod-chunk-min 0\b/.test(job.command) && /--lod-file-count 64,128\b/.test(job.command), `cmd: ${job.command}`);
+        const meta = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'lod-meta.json'), 'utf8'));
+        assert(meta.asset?.chunkMinGaussians === 0, `chunkMinGaussians: ${JSON.stringify(meta.asset)}`);
+        const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'build-meta.json'), 'utf8'));
+        assert(bm.settings.chunkMin === 0 && JSON.stringify(bm.settings.fileCount) === '[64,128]', `build-meta: ${JSON.stringify(bm.settings)}`);
+        const bad = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'lod', options: { lodFileCount: 0 } });
+        assert(bad.status === 400, `lodFileCount 0 should 400, got ${bad.status}`);
+    });
+
+    // splat-transform 3.3 aborts a LOD bake on any non-finite gaussian; -N is the
+    // documented remedy and must reach the CLI *after* the input (actions are ordered)
+    await check('streamed LOD: NaN source fails without Filter NaN, bakes with it', async () => {
+        const src = await fsp.readFile(path.join(projectDir, 'demo-room.ply'));
+        const off = src.indexOf(Buffer.from('end_header\n')) + 'end_header\n'.length;
+        src.writeFloatLE(NaN, off + 7 * 56); // 14 float32 props/vertex; poke vertex 7's x
+        await fsp.writeFile(path.join(projectDir, 'nan-room.ply'), src);
+
+        const bad = await runJob('/api/convert', {
+            input: 'nan-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2 }
+        });
+        assert(bad.status === 'error', `NaN LOD bake should error, got ${bad.status}: ${(bad.log || '').slice(-200)}`);
+        assert(/non-finite|filter-nan/i.test(bad.log || ''), `error should name the remedy: ${(bad.log || '').slice(-200)}`);
+
+        const ok = await runJob('/api/convert', {
+            input: 'nan-room.ply', format: 'lod',
+            options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 2, filterNaN: true }
+        });
+        assert(ok.status === 'done', `filterNaN LOD bake ${ok.status}: ${(ok.log || '').slice(-200)}`);
+        // -N is an action on the preceding input, so it must follow it, not lead the argv
+        for (const line of ok.command.split('\n')) {
+            if (!line.includes('-N')) continue;
+            assert(/nan-room\.ply["']?\s+-N|l\d\.ply["']?\s+-N/.test(line), `-N must follow its input: ${line}`);
+        }
+        const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'nan-room-lod', 'build-meta.json'), 'utf8'));
+        assert(bm.settings.filterNaN === true, `build-meta should record filterNaN: ${JSON.stringify(bm.settings)}`);
     });
 
     // cheap count parsed from lod-meta.json itself — must mirror what the CLI wrote
@@ -293,35 +339,36 @@ try {
         assert(status === 400 && /PLY/i.test(json.error || ''), `expected 400 PLY error, got ${status} ${JSON.stringify(json)}`);
     });
 
-    // decimation strategy: adaptive (default/omitted) stays plain --decimate;
-    // 'uniform' switches to the pre-3.2 flat-rate --decimate-uniform algorithm
-    await check('decimate defaults to adaptive (--decimate, not --decimate-uniform)', async () => {
+    // decimation strategy: adaptive (default/omitted) maps to --decimate-adaptive;
+    // 'uniform' emits plain --decimate (the flat-rate algorithm, default since 3.3)
+    await check('decimate defaults to adaptive (--decimate-adaptive)', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room.ply', format: 'ply',
             options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' }
         });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-        assert(job.command.includes('--decimate 50%'), `no --decimate 50% in cmd: ${job.command}`);
-        assert(!job.command.includes('--decimate-uniform'), `unexpected --decimate-uniform: ${job.command}`);
+        assert(job.command.includes('--decimate-adaptive 50%'), `no --decimate-adaptive 50% in cmd: ${job.command}`);
+        assert(!job.command.includes('--decimate 50%'), `unexpected bare --decimate: ${job.command}`);
     });
 
-    await check('decimateAlgorithm uniform emits --decimate-uniform', async () => {
+    await check('decimateAlgorithm uniform emits plain --decimate', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room.ply', format: 'ply',
             options: { decimate: '50%', decimateAlgorithm: 'uniform', device: SKIP_GPU ? 'cpu' : 'auto' }
         });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-        assert(job.command.includes('--decimate-uniform 50%'), `no --decimate-uniform 50% in cmd: ${job.command}`);
+        assert(job.command.includes('--decimate 50%'), `no --decimate 50% in cmd: ${job.command}`);
+        assert(!job.command.includes('--decimate-adaptive'), `unexpected --decimate-adaptive: ${job.command}`);
     });
 
-    await check('LOD decimate mode: decimateAlgorithm uniform emits --decimate-uniform on each pre-command', async () => {
+    await check('LOD decimate mode: decimateAlgorithm uniform emits plain --decimate on each pre-command', async () => {
         const job = await runJob('/api/convert', {
             input: 'demo-room.ply', format: 'lod',
             options: { device: SKIP_GPU ? 'cpu' : 'auto', lodLevels: 3, lodKeepPercent: 50, decimateAlgorithm: 'uniform' }
         });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
         const lines = job.command.split('\n');
-        assert(lines.slice(0, 2).every((l) => l.includes('--decimate-uniform')), `pre-commands missing --decimate-uniform: ${job.command}`);
+        assert(lines.slice(0, 2).every((l) => l.includes('--decimate ') && !l.includes('--decimate-adaptive')), `pre-commands missing plain --decimate: ${job.command}`);
         assert(!lines[2].includes('--decimate'), `combine step must not carry --decimate: ${lines[2]}`);
         // the recipe records the resolved algorithm, so the bake replays the same way
         const bm = JSON.parse(fs.readFileSync(path.join(projectDir, 'demo-room-lod', 'build-meta.json'), 'utf8'));
@@ -364,6 +411,13 @@ try {
         });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
         assert(!job.command.includes('--scratch-dir'), `--scratch-dir leaked into cmd: ${job.command}`);
+    });
+
+    // flag emission only: demo-room is far below the spill threshold
+    await check('decimate with blank scratchDir defaults --scratch-dir to the project dir', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'ply', options: { decimate: '50%', device: SKIP_GPU ? 'cpu' : 'auto' } });
+        assert(job.status === 'done' && job.command.includes(` --scratch-dir ${path.resolve(projectDir)} `), `cmd: ${job.command}`);
+        assert(!fs.readdirSync(projectDir).some((f) => f.startsWith('.decimate-gen')), 'spill temp left behind');
     });
 
     await check('decimate + invalid scratchDir is rejected up front', async () => {
@@ -480,16 +534,36 @@ try {
     });
 
     await check('HTML unbundled (--unbundled) + viewer-settings (--viewer-settings)', async () => {
-        await fsp.writeFile(path.join(projectDir, 'settings.json'), '{}');
+        await fsp.writeFile(path.join(projectDir, 'settings.json'), '{"camera":{},"background":{}}');
         const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'html', options: { unbundled: true, viewerSettings: 'settings.json' } });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
         assert(/--unbundled\b/.test(job.command) && /--viewer-settings settings\.json/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('viewer-settings preflight rejects an invalid settings file (400)', async () => {
+        const cases = [
+            ['bad-settings.json', '{}', /settings\.camera/],
+            ['bad-version.json', '{"version":1,"camera":{},"background":{}}', /settings\.version/],
+            ['bad-bom.json', '\uFEFF{"camera":{},"background":{}}', /BOM/]
+        ];
+        for (const [name, body, re] of cases) {
+            await fsp.writeFile(path.join(projectDir, name), body);
+            const r = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'html', options: { viewerSettings: name } });
+            assert(r.status === 400 && re.test(r.json?.error ?? ''), `${name}: expected 400 matching ${re}: ${r.status} ${JSON.stringify(r.json)}`);
+        }
     });
 
     await check('SOG encoder workers (--max-workers)', async () => {
         const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'html', options: { maxWorkers: 2 } });
         assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
         assert(/--max-workers 2\b/.test(job.command), `cmd: ${job.command}`);
+    });
+
+    await check('SOG webp effort (--webp-effort 9; 10 → 400)', async () => {
+        const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'sog', options: { device: SKIP_GPU ? 'cpu' : 'auto', webpEffort: 9 } });
+        assert(job.status === 'done' && /--webp-effort 9\b/.test(job.command), `cmd: ${job.command}`);
+        const bad = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'sog', options: { webpEffort: 10 } });
+        assert(bad.status === 400, `webpEffort 10 should 400, got ${bad.status}`);
     });
 
     await check('streamed LOD combine + environment level (-l -1)', async () => {
@@ -774,6 +848,28 @@ try {
         assert(status === 400, `expected 400, got ${status}`);
     });
 
+    await check('dofSamples is validated with fStop (0 → 400)', async () => {
+        const bad = await api('POST', '/api/convert', { project: PROJECT, input: 'demo-room.ply', format: 'webp', options: { image: { fStop: 2.8, dofSamples: 0 } } });
+        assert(bad.status === 400, `dofSamples 0 should 400, got ${bad.status}`);
+    });
+
+    // argv only (submit, read, cancel) so CI without a GPU covers it
+    await check('WebP argv: shutter pinned to 1, --dof-samples only with fStop', async () => {
+        const cmdFor = async (image) => {
+            const id = await submitJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '160x90', ...image } } });
+            const { json } = await api('GET', `/api/jobs/${id}`);
+            await api('POST', `/api/jobs/${id}/cancel`);
+            await waitJob(id);
+            return json.command;
+        };
+        const blur = await cmdFor({ cameraEnd: '3,1,-2', motionSamples: 2 });
+        assert(/--shutter 1\b/.test(blur), `shutter not pinned to 1: ${blur}`);
+        const dof = await cmdFor({ fStop: 2.8, dofSamples: 4 });
+        assert(/--dof-samples 4\b/.test(dof), `no --dof-samples 4: ${dof}`);
+        const noDof = await cmdFor({ dofSamples: 4 });
+        assert(!/--dof-samples/.test(noDof), `--dof-samples without fStop: ${noDof}`);
+    });
+
     // ----- WebP image rendering (GPU rasterizer) -----
     if (!SKIP_GPU) {
         await check('WebP render (--camera-pos/--camera-target/--camera-fov)', async () => {
@@ -782,9 +878,9 @@ try {
             assert(fs.existsSync(path.join(projectDir, 'demo-room.webp')), 'no webp output');
         });
         await check('WebP DoF + motion-blur flags assemble & render', async () => {
-            const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '160x90', fStop: 2.8, focusDistance: 3, cameraEnd: '3,1,-2', shutter: 0.5, motionSamples: 2 } } });
+            const job = await runJob('/api/convert', { input: 'demo-room.ply', format: 'webp', options: { image: { resolution: '160x90', fStop: 2.8, focusDistance: 3, dofSamples: 4, cameraEnd: '3,1,-2', shutter: 0.5, motionSamples: 2 } } });
             assert(job.status === 'done', `job ${job.status}: ${(job.log || '').slice(-200)}`);
-            assert(/--f-stop 2.8/.test(job.command) && /--camera-pos-end 3,1,-2/.test(job.command) && /--motion-samples 2/.test(job.command), `cmd: ${job.command}`);
+            assert(/--f-stop 2.8/.test(job.command) && /--dof-samples 4\b/.test(job.command) && /--camera-pos-end 3,1,-2/.test(job.command) && /--shutter 0.5\b/.test(job.command) && /--motion-samples 2/.test(job.command), `cmd: ${job.command}`);
         });
     } else {
         console.log('  - WebP render skipped (SKIP_GPU)');

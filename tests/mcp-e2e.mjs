@@ -139,25 +139,45 @@ try {
     });
 
     await check('build_lod (decimate, CPU) -> lod-meta.json output', async () => {
-        const j = data(await call('build_lod', { project: 'Demo', input: 'demo-room.ply', mode: 'decimate', device: 'cpu', lodLevels: 2, lodKeepPercent: 50, decimateAlgorithm: 'uniform' }));
+        const j = data(await call('build_lod', { project: 'Demo', input: 'demo-room.ply', mode: 'decimate', device: 'cpu', lodLevels: 2, lodKeepPercent: 50, decimateAlgorithm: 'uniform', lodChunkMin: 0 }));
         assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
         const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 120000 }));
         assert(w.status === 'done' && w.outputs?.some((o) => /lod-meta\.json$/.test(o)), `lod job: ${JSON.stringify(w).slice(0, 160)}`);
         // build_lod declares decimateAlgorithm separately from convert — an undeclared
         // field would be stripped by the SDK and fall back to adaptive
         const full = data(await call('jobs', { action: 'get', id: j.jobId }));
-        assert(full.command?.includes('--decimate-uniform'), `no --decimate-uniform in cmd: ${full.command}`);
+        assert(full.command?.includes('--decimate ') && !full.command.includes('--decimate-adaptive'), `no plain --decimate in cmd: ${full.command}`);
+        assert(full.command.includes('--lod-chunk-min 0'), `lodChunkMin stripped: ${full.command}`);
     });
 
     // the decimation-algorithm choice must survive MCP schema validation: the SDK
     // strips undeclared args, so an unwired field would silently fall back to adaptive
-    await check('convert carries decimateAlgorithm through to --decimate-uniform', async () => {
+    await check('convert carries decimateAlgorithm through to plain --decimate', async () => {
         const j = data(await call('convert', { project: 'Demo', input: 'demo-room.ply', format: 'ply', decimate: '50%', decimateAlgorithm: 'uniform', device: 'cpu' }));
         assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
         const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 120000 }));
         assert(w.status === 'done', `decimate job: ${JSON.stringify(w).slice(0, 160)}`);
         const full = data(await call('jobs', { action: 'get', id: j.jobId }));
-        assert(full.command?.includes('--decimate-uniform 50%'), `no --decimate-uniform 50% in cmd: ${full.command}`);
+        assert(full.command?.includes('--decimate 50%'), `no --decimate 50% in cmd: ${full.command}`);
+    });
+
+    await check('convert carries webpEffort through to --webp-effort', async () => {
+        const j = data(await call('convert', { project: 'Demo', input: 'demo-room.ply', format: 'sog', device: 'cpu', webpEffort: 9 }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const w = data(await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 120000 }));
+        assert(w.status === 'done', `sog job: ${JSON.stringify(w).slice(0, 160)}`);
+        const full = data(await call('jobs', { action: 'get', id: j.jobId }));
+        assert(full.command?.includes('--webp-effort 9'), `no --webp-effort 9 in cmd: ${full.command}`);
+    });
+
+    // argv only: cancelled before it needs a GPU
+    await check('render_image carries dofSamples through to --dof-samples', async () => {
+        const j = data(await call('render_image', { project: 'Demo', input: 'demo-room.ply', image: { fStop: 2.8, dofSamples: 4, resolution: '160x90' } }));
+        assert(j.jobId, `no jobId: ${JSON.stringify(j)}`);
+        const full = data(await call('jobs', { action: 'get', id: j.jobId }));
+        await call('jobs', { action: 'cancel', id: j.jobId });
+        await call('jobs', { action: 'wait', id: j.jobId, timeout_ms: 60000 });
+        assert(full.command?.includes('--dof-samples 4'), `no --dof-samples 4 in cmd: ${full.command}`);
     });
 
     await check('render_image equirect rejects a non-2:1 resolution as bad-input', async () => {

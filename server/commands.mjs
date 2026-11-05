@@ -2,7 +2,7 @@
 // summary / trim) into a validated splat-transform CLI argv (or trim-worker
 // invocation). Builders assume the route layer (startJob) has already validated
 // and resolved the input paths.
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -102,8 +102,8 @@ const vec3Arg = (v, name) => {
 
 // device: 'cpu' | 'auto' | a GPU adapter index (from -L/--list-gpus). Shared by the
 // main command and the LOD decimate pre-commands, which spawn their own CLI process
-// and must honor the same device choice. Adaptive decimation (the 3.2 default) needs
-// a device once a scene splits into multiple blocks; uniform runs on CPU at any size.
+// and must honor the same device choice. Adaptive decimation needs a device once a
+// scene splits into multiple blocks; uniform (the default) runs on CPU at any size.
 // Returns the effective device.
 const pushDeviceFlag = (args, options) => {
     if (options.device === 'cpu') {
@@ -118,10 +118,11 @@ const pushDeviceFlag = (args, options) => {
     return 'auto';
 };
 
-// decimation algorithm: adaptive (default, --decimate) allocates removal by local
-// error; uniform (--decimate-uniform) is the pre-3.2 flat-rate algorithm, lower
-// memory and better on uniformly-sized content. Same value syntax either way.
-// Validated here because /api/convert passes the request body through unchecked.
+// decimation algorithm: uniform (default, --decimate as of splat-transform 3.3)
+// removes at a flat rate everywhere, lower memory and better on uniformly-sized
+// content; adaptive (--decimate-adaptive) allocates removal by local error. Same
+// value syntax either way. Validated here because /api/convert passes the request
+// body through unchecked.
 const decimateAlgorithm = (options) => {
     const a = String(options.decimateAlgorithm ?? '').trim() || 'adaptive';
     if (a !== 'adaptive' && a !== 'uniform') {
@@ -129,19 +130,55 @@ const decimateAlgorithm = (options) => {
     }
     return a;
 };
-const decimateFlag = (options) => (decimateAlgorithm(options) === 'uniform' ? '--decimate-uniform' : '--decimate');
+const decimateFlag = (options) => (decimateAlgorithm(options) === 'adaptive' ? '--decimate-adaptive' : '--decimate');
 
 // --scratch-dir: decimation spill directory. Deliberately NOT workspace-guarded —
 // pointing spill at another volume is the point. Absolute + existing dir only.
-// Callers consult it only when --decimate is active; blank/unset returns null.
-const scratchDirArg = (options) => {
+// Callers consult it only when --decimate is active.
+// blank = the project dir (the CLI has no default and fails a decimation too deep for memory)
+const scratchDirArg = (options, workspaceDir) => {
     const s = String(options.scratchDir ?? '').trim();
-    if (!s) return null;
+    if (!s) return workspaceDir ? path.resolve(workspaceDir) : null;
     if (!path.isAbsolute(s)) throw new Error(`Invalid scratch directory: ${s} (must be an absolute path)`);
     let st = null;
     try { st = statSync(s); } catch { /* missing */ }
     if (!st?.isDirectory()) throw new Error(`Scratch directory not found: ${s} (must be an existing directory)`);
     return s;
+};
+
+// whole number in [min, max] or undefined when blank; throws (400) otherwise
+const intOrUndef = (v, label, min, max) => {
+    if (v == null || v === '') return undefined;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < min || n > max) throw new Error(`Invalid ${label}: ${v} (whole number ${min}-${max})`);
+    return n;
+};
+
+// --lod-file-count: K splats per file, per level from finest (last repeats)
+const lodFileCountArg = (v) => {
+    if (v == null || v === '') return undefined;
+    const list = Array.isArray(v) ? v : [v];
+    if (list.length < 1 || list.length > 8) throw new Error(`Invalid LOD file count: ${JSON.stringify(v)} (1-8 values)`);
+    return list.map((n) => intOrUndef(n === '' || n == null ? NaN : n, 'LOD file count', 1, 65536));
+};
+
+// mirrors the CLI's viewer-settings shape check (an invalid file fails the export)
+const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+const checkViewerSettings = (abs, rel) => {
+    let text;
+    try { text = readFileSync(abs, 'utf8'); }
+    catch (e) { throw new Error(`Viewer settings: ${rel} is not readable (${e.code ?? e.message})`); }
+    // the CLI's JSON.parse rejects a BOM
+    if (text.charCodeAt(0) === 0xFEFF) throw new Error(`Viewer settings: ${rel} has a UTF-8 BOM; save it without one`);
+    let s;
+    try { s = JSON.parse(text); }
+    catch (e) { throw new Error(`Viewer settings: ${rel} is not valid JSON (${e.message})`); }
+    if (!isObj(s)) throw new Error(`Viewer settings: ${rel} must be a JSON object`);
+    if (s.version === 2) return; // full schema left to the CLI
+    if (s.version !== undefined) throw new Error(`Viewer settings: settings.version must be absent (v1) or 2, got ${JSON.stringify(s.version)}`);
+    for (const k of ['camera', 'background']) {
+        if (!isObj(s[k])) throw new Error(`Viewer settings: settings.${k} must be an object (a v1 file needs camera and background objects)`);
+    }
 };
 
 // -B/-S spatial crop, shared by convert and collision. They are per-input filter
@@ -178,7 +215,7 @@ const pushCropFilters = (args, options) => {
 // written (CLI grammar: input [ACTIONS] output). Fixed pipeline order; only
 // non-default values emit a flag. Not used by the LOD path, which bakes levels
 // of its own.
-const pushConvertActions = (args, options) => {
+const pushConvertActions = (args, options, workspaceDir) => {
     if (options.filterNaN) args.push('-N');
 
     const tr = options.translate;
@@ -247,7 +284,7 @@ const pushConvertActions = (args, options) => {
         if (!/^\d+%?$/.test(d)) throw new Error(`Invalid decimate value: ${d} (use a count or percentage like 50%)`);
         // must be the final action, and requires .ply output (guarded in buildConvertCommand)
         args.push(decimateFlag(options), d);
-        const sd = scratchDirArg(options);
+        const sd = scratchDirArg(options, workspaceDir);
         if (sd) args.push('--scratch-dir', sd); // spill location (global option)
     }
 };
@@ -293,13 +330,13 @@ const buildLodCombine = ({ input, options, args, output, lodDir, settings, build
 // writing a .ply, so it can't run inline while tagging LOD levels. Pre-decimate
 // each level to a temp .ply in a sibling <lod>-src dir, then combine the raw
 // input (level 0) with those pre-authored levels in one invocation.
-const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buildMetaName }) => {
+const buildLodDecimate = ({ input, options, args, output, lodDir, settings, buildMetaName, workspaceDir }) => {
     const levels = Math.round(num(options.lodLevels, 3, 1, 8));
     const keep = num(options.lodKeepPercent, 50, 5, 95);
     const tmpDir = `${lodDir}-src`;
     const tmp = (level) => `${tmpDir}/l${level}.ply`;
 
-    const sd = scratchDirArg(options); // each pre-command decimates
+    const sd = scratchDirArg(options, workspaceDir); // each pre-command decimates
     // provenance is the original input at each level's kept percentage — the
     // l<n>.ply temps are plumbing
     const metaLevels = [{ level: 0, source: input, keepPercent: 100 }];
@@ -362,7 +399,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
     const args = [cliPath, '--no-tty', '-w'];
     if (options.verbose) args.push('--verbose', '--memory'); // diagnostics
     const device = pushDeviceFlag(args, options);
-    let iterations, maxWorkers;
+    let iterations, maxWorkers, webpEffort;
     if (format === 'sog' || format === 'sog-unbundled' || format === 'html' || format === 'lod') {
         iterations = Math.round(num(options.iterations, 10, 1, 100));
         args.push('-i', String(iterations));
@@ -371,6 +408,8 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             maxWorkers = Math.round(num(options.maxWorkers, 4, 0, 64));
             args.push('--max-workers', String(maxWorkers));
         }
+        webpEffort = intOrUndef(options.webpEffort, 'WebP effort', 0, 9);
+        if (webpEffort != null) args.push('--webp-effort', String(webpEffort));
     }
     if (format === 'html') {
         if (options.unbundled) args.push('--unbundled'); // separate files instead of one .html
@@ -379,6 +418,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             if (!/^[A-Za-z0-9()._ /-]+\.json$/i.test(vs) || vs.includes('..')) {
                 throw new Error(`Invalid viewer-settings path: ${vs}`);
             }
+            if (workspaceDir) checkViewerSettings(path.resolve(workspaceDir, ...vs.split('/')), vs);
             args.push('--viewer-settings', vs);
         }
     }
@@ -394,9 +434,13 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         const chunkExtent = Math.round(num(options.lodChunkExtent, 16, 1, 1000));
         args.push('--lod-chunk-count', String(chunkCount));
         args.push('--lod-chunk-extent', String(chunkExtent));
+        const chunkMin = Math.round(num(options.lodChunkMin === '' ? undefined : options.lodChunkMin, 8, 0, 8192));
+        args.push('--lod-chunk-min', String(chunkMin));
+        const fileCount = lodFileCountArg(options.lodFileCount);
+        if (fileCount) args.push('--lod-file-count', fileCount.join(','));
         const lodDir = output.split('/')[0];
         // build recipe skeleton — gaussians/createdAt/generator fill in at write time
-        const settings = { iterations, maxWorkers, device, chunkCount, chunkExtent, filterNaN: !!options.filterNaN };
+        const settings = { iterations, maxWorkers, webpEffort, device, chunkCount, chunkExtent, chunkMin, fileCount, filterNaN: !!options.filterNaN };
         const buildMetaName = `${lodDir}/build-meta.json`;
 
         const rawFiles = Array.isArray(options.lodFiles) ? options.lodFiles : null;
@@ -415,7 +459,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         if (pairs.length > 0 && pairs.every((p) => p.env)) {
             throw new Error('Combine mode needs at least one non-environment LOD level');
         }
-        const ctx = { input, options, args, output, lodDir, settings, buildMetaName, pairs };
+        const ctx = { input, options, args, output, lodDir, settings, buildMetaName, pairs, workspaceDir };
         return pairs.length > 0 ? buildLodCombine(ctx) : buildLodDecimate(ctx);
     }
 
@@ -442,7 +486,7 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
         }
     }
     // Convert-panel transforms/filters + filterNaN + decimate + morton-order
-    pushConvertActions(args, options);
+    pushConvertActions(args, options, workspaceDir);
     // WebP image render: camera + projection + DoF + motion blur, before output
     if (format === 'webp') {
         const img = options.image ?? {};
@@ -463,12 +507,15 @@ export const buildConvertCommand = ({ input, format, options = {}, workspaceDir 
             args.push('--f-stop', String(num(img.fStop, 2.8, 0.5, 64)));
             if (img.focusDistance) args.push('--focus-distance', String(num(img.focusDistance, 1, 0.001, 10000)));
             if (img.sensorSize) args.push('--sensor-size', String(num(img.sensorSize, 0.024, 0.0001, 1000)));
+            const dof = intOrUndef(img.dofSamples, 'DoF samples', 1, 512);
+            if (dof != null) args.push('--dof-samples', String(dof));
         }
         if (img.cameraEnd) { // camera motion blur
             args.push('--camera-pos-end', csv(img.cameraEnd, 'camera-end', 3));
             if (img.lookAtEnd) args.push('--camera-target-end', csv(img.lookAtEnd, 'look-at-end', 3));
             if (img.upEnd) args.push('--camera-up-end', csv(img.upEnd, 'up-end', 3));
-            if (img.shutter != null && img.shutter !== '') args.push('--shutter', String(num(img.shutter, 1, 0, 1)));
+            // pinned to 1 (the CLI default is 0.5)
+            args.push('--shutter', String(num(img.shutter === '' ? undefined : img.shutter, 1, 0, 1)));
             if (img.motionSamples) args.push('--motion-samples', String(Math.round(num(img.motionSamples, 16, 1, 256))));
         }
     }

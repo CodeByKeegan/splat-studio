@@ -524,6 +524,9 @@ const renderRecipe = (host: HTMLElement, recipe: api.LodBuildMeta): void => {
         s.maxWorkers != null ? `workers ${s.maxWorkers}` : '',
         s.device != null ? `device ${s.device}` : '',
         s.chunkCount != null ? `chunks ${s.chunkCount}K / ${s.chunkExtent} m` : '',
+        s.chunkMin != null ? `min split ${s.chunkMin}K` : '',
+        s.fileCount?.length ? `files ${s.fileCount.join(',')}K` : '',
+        s.webpEffort != null ? `webp effort ${s.webpEffort}` : '',
         // absent on pre-3.2 bakes, where plain --decimate was the uniform algorithm
         s.decimateAlgorithm ? `decimation ${s.decimateAlgorithm}` : ''
     ].filter(Boolean);

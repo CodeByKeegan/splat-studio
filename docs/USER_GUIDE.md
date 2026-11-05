@@ -85,7 +85,9 @@ To add splats:
 
 1. **Drop** files anywhere in the window, or click **browse**. Supported inputs:
    `.ply`, `.compressed.ply`, `.sog`, `.spz`, `.splat`, `.ksplat`, `.lcc`, `.lcc2`,
-   `meta.json`, and `.mjs` generators.
+   `meta.json`, and `.mjs` generators. PLY sources must be binary (little- or
+   big-endian); ASCII PLY no longer loads in Export, LOD, Render, or Collision —
+   re-export it as binary PLY first.
 2. The **file list** shows every source in the project, one row per file:
    **checkbox · ▸ chevron · 👁 eye · kind tag · name · gaussian count · size · ⋯ · ✕**.
 
@@ -184,7 +186,12 @@ the [LOD panel](#lod-streamed-multi-lod), and image renders in the
 3. Set format-specific options as they appear. For SOG-backed outputs that's a
    paired **SH iterations** / **Encoder workers** row — iterations trade quality
    for speed, while Encoder workers (`--max-workers`) only changes encode speed,
-   not the output (`0` = serial). Other formats surface SPZ version, HTML viewer
+   not the output (`0` = serial). Tick **Maximum compression (slower)**
+   (`--webp-effort 9`) for slightly smaller SOG/HTML files (under 1%) at several
+   times the encode time. For HTML viewer output, a **Viewer settings** JSON must be
+   a valid viewer settings file (a v1 file needs `camera` and `background` objects);
+   an invalid file stops the export, and the error (or the job log) names the bad
+   field. Other formats surface SPZ version, HTML viewer
    options, etc. Then click **Export**. The job lands in the **Jobs** panel — click it
    there for its exact CLI command and live output. Jobs queue up and run one at a
    time by default; the panel's **parallel** field raises how many may run at once
@@ -221,9 +228,9 @@ They run in a fixed pipeline order (and don't apply to streamed-LOD bakes):
   voxel size / opacity / min-contribution overrides.
 - **Reorder (Morton / Z-order)** — spatially sort for better compression (`--morton-order`).
 - **Decimate to (count or %)** — reduce the gaussian count to a number or percentage.
-  The paired **Decimation** dropdown picks the algorithm: **Adaptive** (`--decimate`,
+  The paired **Decimation** dropdown picks the algorithm: **Adaptive** (`--decimate-adaptive`,
   default) allocates removal by local error — much better on mixed-scale scenes like
-  skies; **Uniform** (`--decimate-uniform`) removes at a flat rate everywhere — lower
+  skies; **Uniform** (`--decimate`) removes at a flat rate everywhere — lower
   memory, and better at depth on uniformly-sized content (an even texture, a single
   object, snow).
   > **Adaptive needs a GPU on large scenes.** Once a scene is big enough to split into
@@ -245,7 +252,8 @@ The LOD panel bakes a **streamed multi-LOD SOG** — a `lod-meta.json` plus per-
 folders that the engine streams by camera distance, for scenes too big to load at once.
 
 1. **Input** — the highest-detail source (LOD 0).
-2. Set the paired **SH iterations** / **Encoder workers** row (as in Export).
+2. Set the paired **SH iterations** / **Encoder workers** row and **Maximum compression**
+   (as in Export).
 3. **LOD source** — *Decimate input automatically* derives the lighter levels from the
    single input, or *Combine existing files as levels* uses files you already have
    (e.g. exports at different gaussian counts) as explicit levels.
@@ -258,8 +266,18 @@ folders that the engine streams by camera distance, for scenes too big to load a
    shell (a coarse, decimated backdrop — skybox, distant cityscape — emitted as LOD
    `-1`) the runtime keeps resident instead of culling it by distance. One environment
    layer per bake; Combine mode only.
-5. Set the **Chunk size (K splats)** and **Chunk extent (m)**, pick a **Device**, then
-   **Generate streamed LOD**.
+5. Set the **Chunk size (K splats)** and **Chunk extent (m)**. Optionally set **Min split
+   (K splats)** (`--lod-chunk-min`, default 8: sparse wide areas stop splitting, giving
+   far fewer chunks and a smaller `lod-meta.json`; 0 splits down to the extent as older
+   versions did) and **File size (K splats)** (`--lod-file-count`; blank = chunk size;
+   larger means fewer, bigger streamed files). Pick a **Device**, then **Generate
+   streamed LOD**.
+
+> **Filter NaN.** The LOD writer refuses a source containing a non-finite gaussian and
+> aborts the bake (`LOD 0 gaussian N has a non-finite position; run --filter-nan …`).
+> Tick **Filter NaN** to drop those gaussians instead (`-N`); it applies to every level,
+> including Combine rows. Sources exported from Splat Studio are already clean — reach
+> for this when a bake fails on third-party or scanner-produced input.
 
 Every bake also writes a `build-meta.json` next to the bundle's `lod-meta.json` — the
 recipe it was built from: the source file per level, the environment selection, the
@@ -294,8 +312,11 @@ rasterizer.
    **Render camera** gizmo (select it in the [Scene panel](#scene-hierarchy)).
 3. Set **FOV°**, **Resolution**, **Projection** (pinhole or equirect 360°), and a
    **Background** color.
-4. Optionally add **Depth of field** (f-stop + focus distance, pinhole only) and
-   **Motion blur** (an end camera pose + shutter / sample count).
+4. Optionally add **Depth of field** (f-stop + focus distance, pinhole only). **Blur
+   quality** sets the aperture samples (`--dof-samples`: Draft 8 / Standard 32 / High
+   128), and each sample is a full render. Optionally add **Motion blur** (an end camera
+   pose + shutter / sample count; shutter defaults to 1, the whole move). With both on,
+   the cost is DoF samples × motion samples renders per image.
 5. Pick the **Device** and click **Render WebP image**.
 
 The render camera is also previewed as a **frustum gizmo** in the viewport (and live in
@@ -473,9 +494,10 @@ buttons in the [Scene panel](#scene-hierarchy)**.
 - **Workspace** — the folder whose subfolders are your projects.
 - **Agent (MCP)** — agent control of the live editor (below).
 - **Advanced** — a **scratch directory for large decimations** (`--scratch-dir`): where
-  decimation spills temp files on very large scenes. Blank (the default) spills
-  alongside the output; point it at another drive only if the output drive is low on
-  space. Applies to Export **Decimate** runs and the decimated levels of **Streamed LOD**.
+  a very deep decimation writes temporary data when it can't fit in memory. Blank (the
+  default) uses the project folder, and the files are removed afterwards. Point it at
+  another drive only if that drive is low on space. Applies to Export **Decimate** runs
+  and the decimated levels of **Streamed LOD**.
 - **About** — component versions.
 
 **Agent (MCP)** holds a single toggle that lets a connected AI agent drive the live

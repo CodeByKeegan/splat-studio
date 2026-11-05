@@ -101,6 +101,11 @@ mixed-scale content such as skies. The effective choice lands in `build-meta.jso
 split into multiple blocks (roughly 2M+ gaussians) — adaptive with `device: "cpu"` there
 fails as `gpu-required`.
 
+Pass `filterNaN: true` when a source may contain non-finite gaussians. The LOD writer
+aborts the whole bake on the first one (`has a non-finite position; run --filter-nan …`),
+so this is the remedy — it applies to every level in both modes, and the choice lands in
+`build-meta.json`.
+
 ### 4. Collision mesh for a game engine
 
 Voxelize the splat into `*.collision.glb` (plus voxel debug files). **GPU required.**
@@ -133,7 +138,8 @@ render_image(project: "My Scan", input: "room.ply", image: {
 ```
 
 Camera vectors are splat-frame `"x,y,z"` strings (viewer `[x, y, z]` → `[x, -y, -z]`). For depth of field add
-`fStop: 1.4, focusDistance: 4`. To *see* what the camera will frame before burning a
+`fStop: 1.4, focusDistance: 4` (optionally `dofSamples`, default 32; each sample is a
+full render, and with motion blur the count multiplies). To *see* what the camera will frame before burning a
 render, use the editor: `render_pose(action: "set", camera: [...], lookAt: [...])`
 shows a frustum in the viewport, then `viewport_screenshot(max_width: 800)` to check.
 
@@ -201,7 +207,7 @@ render_image(project: "My Scan", input: "room.ply", image: {
 })
 ```
 
-`shutter` (0–1) is the exposure fraction of the move; more `motionSamples` = smoother
+`shutter` (0–1, default 1) is the exposure fraction of the move (0.5 = 180° film look); more `motionSamples` = smoother
 trails, linearly slower. Keep the move small — motion blur sells at 10–20 cm of travel.
 
 ### 10. Scale to real-world units *(editor)*

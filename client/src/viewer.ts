@@ -201,6 +201,9 @@ export class SplatViewer {
 
         const app = new pc.AppBase(canvas);
         app.init(createOptions);
+        // distance-band LOD selection (no splat budget)
+        const gs = app.scene.gsplat;
+        if (gs) { gs.splatBudgetMode = pc.GSPLAT_BUDGET_LIMIT; gs.splatBudget = 0; }
         // size from the canvas's container (CSS 100%), not the window — the
         // viewport is a resizable dock tab, so it's rarely the full window
         app.setCanvasFillMode(pc.FILLMODE_NONE);
@@ -621,9 +624,11 @@ export class SplatViewer {
             const wires: pc.MeshInstance[] = [];
             const surfs: pc.MeshInstance[] = [];
             for (const mi of component.meshInstances) {
-                wires.push(new pc.MeshInstance(mi.mesh, this.wireMaterial, mi.node));
-                surfs.push(new pc.MeshInstance(mi.mesh, this.depthMaterial, mi.node));
-                this.collisionTriangles += Math.floor(mi.mesh.primitive[0].count / 3);
+                const mesh = mi.mesh;
+                if (!mesh) continue; // destroyed instance
+                wires.push(new pc.MeshInstance(mesh, this.wireMaterial, mi.node));
+                surfs.push(new pc.MeshInstance(mesh, this.depthMaterial, mi.node));
+                this.collisionTriangles += Math.floor(mesh.primitive[0].count / 3);
             }
             component.meshInstances = [...surfs, ...wires];
             for (const wire of wires) {
