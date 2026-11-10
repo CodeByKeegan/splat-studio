@@ -62,10 +62,11 @@ CLI stdout (the summary table for `-m`).
 
 ### `convert` formats
 `ply`, `compressed-ply`, `sog`, `sog-unbundled`, `lod`, `spz`, `glb`, `csv`,
-`html`. `options`: `iterations`, `spzVersion`, `decimate`,
-`decimateAlgorithm` (`adaptive`|`uniform`), `filterNaN`,
-`device` (`auto`|`cpu`), `lodLevels`/`lodKeepPercent`/`lodChunkCount`/
-`lodChunkExtent`/`lodFiles`, and `params` (for `.mjs` generator inputs).
+`html`. `options`: `iterations`, `webpEffort` (0-9, SOG/HTML/LOD), `spzVersion`, `decimate`,
+`decimateAlgorithm` (`adaptive`|`uniform`), `scratchDir` (blank = the project folder),
+`filterNaN`, `device` (`auto`|`cpu`), `lodLevels`/`lodKeepPercent`/`lodChunkCount`/
+`lodChunkExtent`/`lodChunkMin`/`lodFileCount`/`lodFiles`, `image` (webp renders; incl.
+`dofSamples` with `fStop`, `shutter` default 1), and `params` (for `.mjs` generator inputs).
 `uniform` is the only decimation algorithm that runs on CPU once a scene splits into
 multiple blocks (roughly 2M+ gaussians); adaptive with `device: "cpu"` fails there.
 

@@ -173,7 +173,7 @@ const listFiles = async (projectDir) => {
             const rel = prefix ? `${prefix}/${e.name}` : e.name;
             if (e.isDirectory()) {
                 if (depth < 4 && isSafeSegment(e.name)) await walk(path.join(dir, e.name), rel, depth + 1);
-            } else if (isSafeSegment(e.name) && fileKind(rel) !== 'other') {
+            } else if (isSafeSegment(e.name) && fileKind(rel) !== 'other' && !e.name.startsWith('.decimate-gen')) { // skip leftover decimation spill
                 out.push(await statEntry(rel));
             }
         }

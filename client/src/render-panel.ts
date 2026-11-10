@@ -47,6 +47,7 @@ const webpImageOptions = (): api.ImageOptions => ({
     projection: $<HTMLSelectElement>('webp-projection').value as 'pinhole' | 'equirect',
     fStop: numOrUndef('webp-fstop'),
     focusDistance: numOrUndef('webp-focus'),
+    dofSamples: numOrUndef('webp-dofsamples'),
     cameraEnd: strOrUndef('webp-cameraend'),
     shutter: numOrUndef('webp-shutter'),
     motionSamples: numOrUndef('webp-motionsamples')

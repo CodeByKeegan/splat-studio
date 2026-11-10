@@ -22,6 +22,7 @@ export const updateConvertRows = (): void => {
     const f = convertFormat.value;
     const isSog = f === 'sog' || f === 'sog-unbundled' || f === 'html';
     $('row-sog-encode').classList.toggle('hidden', !isSog);
+    $('row-sog-effort').classList.toggle('hidden', !isSog);
     $('row-spz-version').classList.toggle('hidden', f !== 'spz');
     $('html-rows').classList.toggle('hidden', f !== 'html');
     if (!convertRun.disabled) convertRun.textContent = RUN_LABELS[f] ?? 'Export';
@@ -58,6 +59,7 @@ convertRun.onclick = () => {
         options: {
             iterations: Number($<HTMLInputElement>('convert-iterations').value),
             maxWorkers: Number($<HTMLInputElement>('convert-max-workers').value),
+            webpEffort: $<HTMLInputElement>('convert-webp-max').checked ? 9 : undefined,
             spzVersion: Number($<HTMLSelectElement>('convert-spz-version').value),
             decimate: $<HTMLInputElement>('convert-decimate').value.trim(),
             decimateAlgorithm: $<HTMLSelectElement>('convert-decimate-algo').value as 'adaptive' | 'uniform',

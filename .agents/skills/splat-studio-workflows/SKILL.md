@@ -24,7 +24,7 @@ After every job-starting call: `jobs(action:"wait", id, timeout_ms)` → on `don
   On `{refused:true}`: raise voxelSize or crop via filterBox/filterSphere; `overridePreflight:true`
   only with user buy-in.
 - **"A beauty shot"** → `render_image` with CLI-space `"x,y,z"` camera strings; DoF via
-  `fStop`+`focusDistance`. Frame it first *(editor)*: `render_pose(action:"set")` +
+  `fStop`+`focusDistance` (+ `dofSamples`, default 32; each sample is a full render). Frame it first *(editor)*: `render_pose(action:"set")` +
   `viewport_screenshot(max_width:800)`.
 - **"Wrong size / wrong origin"** *(editor)* → measure/origin recipes below.
 - **"Share with a non-technical person"** → `convert(format:"html")` (single self-contained file).
@@ -42,7 +42,8 @@ the job LOG, no file).
 (+ a `build-meta.json` recipe — read via `inspect(target:"lod_recipe")`; pre-feature
 bundles return `not-found`); deleting that entry deletes the folder. Add
 `decimateAlgorithm:"uniform"` to decimate every derived level at a flat rate instead of
-the adaptive default.
+the adaptive default. If a bake dies with "non-finite position", re-run with
+`filterNaN:true` — the LOD writer aborts on the first bad gaussian.
 
 **Environment-shell LOD (combine):** lighter levels first (`convert(decimate:"50%")` per level),
 then `build_lod(mode:"combine", lodFiles:[...], lodEnvFlags:[...])` — env flag = always-visible
@@ -53,7 +54,8 @@ resolution:"4096x2048"})` — 2:1 aspect REQUIRED (else the CLI errors); OMIT fo
 options (rejected, not ignored). Result can feed `set_view_option(option:"skybox", value:<file>)`.
 
 **Motion blur:** add `cameraEnd`/`lookAtEnd` + `shutter:0.5, motionSamples:64` to a normal
-render. Keep the move 10–20 cm.
+render (`shutter` defaults to 1). With DoF on too, cost = `motionSamples` × `dofSamples`
+renders. Keep the move 10–20 cm.
 
 **Scale to real (editor):** `load_into_viewport` → `panel(open, "panel-edit")` →
 `measure(action:"measure", points:[[A],[B]])` on a known span (passing points turns measure
