@@ -179,7 +179,7 @@ async function run() {
     };
 
     // load the demo splat into the viewer (real window → viewport renders)
-    await js(`(function(){var li=[...document.querySelectorAll('#file-list li')].find(x=>x.textContent.includes('demo-room'));if(li){var v=[...li.querySelectorAll('button')].find(b=>/view/i.test(b.textContent));v&&v.click();}return true;})()`);
+    await js(`(function(){var li=[...document.querySelectorAll('#file-list li')].find(x=>x.textContent.includes('demo-room'));if(li){var v=li.querySelector('.file-eye');v&&v.click();}return true;})()`);
     for (let i = 0; i < 80; i++) {
         if (await js('!!(window.__viewer&&window.__viewer.splatEntity&&window.__viewer.splatEntity.gsplat&&window.__viewer.splatEntity.gsplat.customAabb)')) break;
         await sleep(200);
