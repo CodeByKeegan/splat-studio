@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 const jobs = new Map();
 const children = new Map();
@@ -107,9 +108,30 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             }, IDLE_TIMEOUT_MS);
         };
         arm();
+        let stderrLine = '';
+        let lastError;
+        // The CLI prefixes rendered errors with ✗; keep the diagnostic itself.
+        const captureError = (line) => {
+            if (line == null || line.length > MAX_LOG) return;
+            const match = /^\s*(?:✗\s*)?(Error:\s*\S.*)$/.exec(stripVTControlCharacters(line));
+            if (match) lastError = match[1].trimEnd();
+        };
         const onData = (chunk) => { append(chunk); arm(); };
         child.stdout.on('data', onData);
-        child.stderr.on('data', onData);
+        child.stderr.setEncoding('utf8').on('data', (chunk) => {
+            onData(chunk);
+            const lines = chunk.split(/[\r\n]/);
+            if (stderrLine === null) {
+                // Skip the remainder of an overlong line.
+                if (lines.length === 1) return;
+                lines.shift();
+            } else {
+                lines[0] = stderrLine + lines[0];
+            }
+            stderrLine = lines.pop();
+            if (stderrLine.length > MAX_LOG) stderrLine = null;
+            for (const line of lines) captureError(line);
+        });
         child.on('error', (err) => {
             clearTimeout(idleTimer);
             children.delete(id);
@@ -119,7 +141,10 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             clearTimeout(idleTimer);
             children.delete(id);
             if (code === 0) resolve();
-            else reject(Object.assign(new Error(`Process exited with code ${code}`), { code }));
+            else {
+                captureError(stderrLine);
+                reject(Object.assign(new Error(`Process exited with code ${code}`), { code, summary: lastError }));
+            }
         });
     });
 
@@ -175,6 +200,7 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             if (cancelledIds.has(id)) return finish('cancelled');
             if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
             else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;
+            if (e?.summary) job.error = e.summary;
             finish('error');
         });
     };

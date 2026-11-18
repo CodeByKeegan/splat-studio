@@ -65,6 +65,7 @@ export interface Job {
     status: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
     command: string;
     log: string;
+    error?: string;
     outputs: string[];
     viewables: Viewable[];
     queuedAt: number;

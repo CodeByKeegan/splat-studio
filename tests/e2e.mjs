@@ -690,6 +690,21 @@ try {
     });
 
     // ----- job queue + concurrency -----
+    await check('invalid viewer settings expose the CLI error on job detail and list', async () => {
+        const viewerSettings = 'bad-viewer-settings.json';
+        await fsp.writeFile(path.join(projectDir, viewerSettings), '{ invalid JSON');
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'html', options: { viewerSettings }
+        });
+        const message = `Error: Failed to parse viewer settings JSON file: ${viewerSettings}`;
+        assert(job.status === 'error', `status: ${job.status}`);
+        assert(job.error === message, `error summary: ${job.error}`);
+        assert(job.log.includes(message) && job.log.includes('Process exited with code 1'), `log: ${job.log}`);
+        const { json: { jobs } } = await api('GET', '/api/jobs');
+        const summary = jobs.find((j) => j.id === job.id);
+        assert(summary?.error === message && !Object.hasOwn(summary, 'log'), `list summary: ${JSON.stringify(summary)}`);
+    });
+
     await check('jobs queue FIFO at the default concurrency of 1', async () => {
         const { json: list } = await api('GET', '/api/jobs');
         assert(Array.isArray(list.jobs) && list.concurrency === 1, `list: ${JSON.stringify({ concurrency: list.concurrency })}`);
@@ -701,6 +716,7 @@ try {
         const ja = await waitJob(a);
         const jb = await waitJob(b);
         assert(ja.status === 'done' && jb.status === 'done', `jobs: ${ja.status}/${jb.status}`);
+        assert(ja.error === undefined && jb.error === undefined, 'successful jobs must omit error summaries');
         assert(jb.startedAt >= ja.endedAt, `serial violated: b started ${jb.startedAt} before a ended ${ja.endedAt}`);
     });
 
