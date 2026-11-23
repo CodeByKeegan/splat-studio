@@ -73,7 +73,7 @@ const GPU_RE = /webgpu|gpu|adapter|dawn|device lost|d3d|vulkan|no suitable|filte
 export function classifyJobFailure(job) {
     const log = job?.log || '';
     if (GPU_RE.test(log)) return { error: ERR.GPU_REQUIRED, message: tail(log) || 'A GPU is required for this operation.' };
-    return { error: ERR.JOB_FAILED, message: tail(log) || `Job ${job?.id ?? ''} failed.` };
+    return { error: ERR.JOB_FAILED, message: job?.error || tail(log) || `Job ${job?.id ?? ''} failed.` };
 }
 
 // ---- CallToolResult helpers ----

@@ -705,6 +705,19 @@ try {
         assert(summary?.error === message && !Object.hasOwn(summary, 'log'), `list summary: ${JSON.stringify(summary)}`);
     });
 
+    await check('long CLI errors are abbreviated in job records and preserved in the log', async () => {
+        const input = 'failing-generator.mjs';
+        const reason = 'Unexpected generator input: ' + 'x'.repeat(70_000) + ' (end)';
+        await fsp.writeFile(path.join(projectDir, input),
+            `export class Generator { static create() { throw new Error(${JSON.stringify(reason)}); } }`);
+        const job = await runJob('/api/convert', { input, format: 'ply' });
+        const message = `Error: ${reason}`;
+        assert(job.status === 'error' && job.log.includes(message), 'missing full generator error in log');
+        assert(job.error === message.slice(0, 599) + '…', `unexpected summary length: ${job.error?.length}`);
+        const { json: { jobs } } = await api('GET', '/api/jobs');
+        assert(jobs.find((j) => j.id === job.id)?.error === job.error, 'job list must carry the short summary');
+    });
+
     await check('jobs queue FIFO at the default concurrency of 1', async () => {
         const { json: list } = await api('GET', '/api/jobs');
         assert(Array.isArray(list.jobs) && list.concurrency === 1, `list: ${JSON.stringify({ concurrency: list.concurrency })}`);

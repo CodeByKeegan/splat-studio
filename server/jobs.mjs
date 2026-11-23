@@ -12,6 +12,7 @@ const children = new Map();
 let nextId = 1;
 
 const MAX_LOG = 200_000;
+const MAX_ERROR_SUMMARY = 600;
 const MAX_FINISHED_JOBS = 50;
 // Reap a job only after this long with NO output — a stall, not a long-but-healthy
 // run. Streamed-LOD bakes on large scenes legitimately run 1h+ while emitting a
@@ -112,24 +113,20 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
         let lastError;
         // The CLI prefixes rendered errors with ✗; keep the diagnostic itself.
         const captureError = (line) => {
-            if (line == null || line.length > MAX_LOG) return;
             const match = /^\s*(?:✗\s*)?(Error:\s*\S.*)$/.exec(stripVTControlCharacters(line));
-            if (match) lastError = match[1].trimEnd();
+            if (!match) return;
+            const message = match[1].trimEnd();
+            lastError = message.length <= MAX_ERROR_SUMMARY ? message :
+                message.slice(0, MAX_ERROR_SUMMARY - 1).replace(/[\uD800-\uDBFF]$/, '') + '…';
         };
         const onData = (chunk) => { append(chunk); arm(); };
         child.stdout.on('data', onData);
         child.stderr.setEncoding('utf8').on('data', (chunk) => {
             onData(chunk);
             const lines = chunk.split(/[\r\n]/);
-            if (stderrLine === null) {
-                // Skip the remainder of an overlong line.
-                if (lines.length === 1) return;
-                lines.shift();
-            } else {
-                lines[0] = stderrLine + lines[0];
-            }
-            stderrLine = lines.pop();
-            if (stderrLine.length > MAX_LOG) stderrLine = null;
+            lines[0] = stderrLine + lines[0];
+            // Keep the start of a diagnostic even when it spans multiple chunks.
+            stderrLine = lines.pop().slice(0, MAX_LOG);
             for (const line of lines) captureError(line);
         });
         child.on('error', (err) => {

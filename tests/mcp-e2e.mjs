@@ -160,6 +160,23 @@ try {
         assert(full.command?.includes('--decimate-uniform 50%'), `no --decimate-uniform 50% in cmd: ${full.command}`);
     });
 
+    await check('jobs wait, get and list report the same failed conversion', async () => {
+        const viewerSettings = 'bad-viewer-settings.json';
+        await fsp.writeFile(path.join(ws, 'Demo', viewerSettings), '{ invalid JSON');
+        const { jobId } = data(await call('convert', { project: 'Demo', input: 'demo-room.ply', format: 'html', viewerSettings, device: 'cpu' }));
+        assert(jobId, 'convert did not return a job ID');
+        const expected = `Error: Failed to parse viewer settings JSON file: ${viewerSettings}`;
+
+        const result = await call('jobs', { action: 'wait', id: jobId });
+        const error = data(result);
+        assert(result.isError && error.error === 'job-failed' && error.message === expected, `wait: ${text(result)}`);
+        const full = data(await call('jobs', { action: 'get', id: jobId }));
+        assert(full.status === 'error' && full.error === expected && full.log.includes(expected), `get: ${full.error}`);
+        const { jobs } = data(await call('jobs', { action: 'list' }));
+        const row = jobs.find((job) => job.id === jobId);
+        assert(row?.status === 'error' && row.error === expected && !Object.hasOwn(row, 'log'), `list: ${JSON.stringify(row)}`);
+    });
+
     await check('render_image equirect rejects a non-2:1 resolution as bad-input', async () => {
         const r = await call('render_image', { project: 'Demo', input: 'demo-room.ply', image: { projection: 'equirect', resolution: '1000x1000' } });
         assert(r.isError && data(r).error === 'bad-input', `expected bad-input: ${text(r)}`);
