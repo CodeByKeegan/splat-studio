@@ -49,8 +49,8 @@ const renderJobList = (): void => {
         badge.textContent = j.status;
         const title = document.createElement('span');
         title.className = 'job-row-title';
-        title.textContent = j.title;
-        title.title = j.title;
+        title.textContent = j.error ? `${j.title} — ${j.error}` : j.title;
+        title.title = title.textContent;
         const time = document.createElement('span');
         time.className = 'job-row-time';
         if (j.startedAt != null) time.textContent = fmtDuration((j.endedAt ?? Date.now()) - j.startedAt);
@@ -145,8 +145,8 @@ export const runJob = async (start: () => Promise<string>, button?: HTMLButtonEl
         } else if (/DEVICE_HUNG|device lost/i.test(job.log)) {
             showToast(`${job.title} — the GPU watchdog reset the device (TDR). On large scenes this is usually the cluster-filter pass: retry with "Filter to connected cluster" unchecked.`, true);
         } else {
-            const lastLine = job.log.split('\n').map((l) => l.trim()).filter(Boolean).pop();
-            showToast(`${job.title} — failed: ${lastLine?.slice(0, 160) ?? 'see the Jobs panel log'}`, true);
+            const detail = job.error ?? job.log.split('\n').map((l) => l.trim()).filter(Boolean).pop();
+            showToast(`${job.title} — failed: ${detail?.slice(0, 160) ?? 'see the Jobs panel log'}`, true);
         }
         return job;
     } catch (err) {

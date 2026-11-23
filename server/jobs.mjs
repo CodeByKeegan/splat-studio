@@ -5,12 +5,14 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 const jobs = new Map();
 const children = new Map();
 let nextId = 1;
 
 const MAX_LOG = 200_000;
+const MAX_ERROR_SUMMARY = 600;
 const MAX_FINISHED_JOBS = 50;
 // Reap a job only after this long with NO output — a stall, not a long-but-healthy
 // run. Streamed-LOD bakes on large scenes legitimately run 1h+ while emitting a
@@ -107,9 +109,26 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             }, IDLE_TIMEOUT_MS);
         };
         arm();
+        let stderrLine = '';
+        let lastError;
+        // The CLI prefixes rendered errors with ✗; keep the diagnostic itself.
+        const captureError = (line) => {
+            const match = /^\s*(?:✗\s*)?(Error:\s*\S.*)$/.exec(stripVTControlCharacters(line));
+            if (!match) return;
+            const message = match[1].trimEnd();
+            lastError = message.length <= MAX_ERROR_SUMMARY ? message :
+                message.slice(0, MAX_ERROR_SUMMARY - 1).replace(/[\uD800-\uDBFF]$/, '') + '…';
+        };
         const onData = (chunk) => { append(chunk); arm(); };
         child.stdout.on('data', onData);
-        child.stderr.on('data', onData);
+        child.stderr.setEncoding('utf8').on('data', (chunk) => {
+            onData(chunk);
+            const lines = chunk.split(/[\r\n]/);
+            lines[0] = stderrLine + lines[0];
+            // Keep the start of a diagnostic even when it spans multiple chunks.
+            stderrLine = lines.pop().slice(0, MAX_LOG);
+            for (const line of lines) captureError(line);
+        });
         child.on('error', (err) => {
             clearTimeout(idleTimer);
             children.delete(id);
@@ -119,7 +138,10 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             clearTimeout(idleTimer);
             children.delete(id);
             if (code === 0) resolve();
-            else reject(Object.assign(new Error(`Process exited with code ${code}`), { code }));
+            else {
+                captureError(stderrLine);
+                reject(Object.assign(new Error(`Process exited with code ${code}`), { code, summary: lastError }));
+            }
         });
     });
 
@@ -175,6 +197,7 @@ export const createJob = ({ title, args, command, cwd, expectedOutputs = [], vie
             if (cancelledIds.has(id)) return finish('cancelled');
             if (e?.launch) job.log += `\nFailed to launch: ${e.launch.message}\n`;
             else if (e?.code != null) job.log += `\nProcess exited with code ${e.code}\n`;
+            if (e?.summary) job.error = e.summary;
             finish('error');
         });
     };

@@ -690,6 +690,34 @@ try {
     });
 
     // ----- job queue + concurrency -----
+    await check('invalid viewer settings expose the CLI error on job detail and list', async () => {
+        const viewerSettings = 'bad-viewer-settings.json';
+        await fsp.writeFile(path.join(projectDir, viewerSettings), '{ invalid JSON');
+        const job = await runJob('/api/convert', {
+            input: 'demo-room.ply', format: 'html', options: { viewerSettings }
+        });
+        const message = `Error: Failed to parse viewer settings JSON file: ${viewerSettings}`;
+        assert(job.status === 'error', `status: ${job.status}`);
+        assert(job.error === message, `error summary: ${job.error}`);
+        assert(job.log.includes(message) && job.log.includes('Process exited with code 1'), `log: ${job.log}`);
+        const { json: { jobs } } = await api('GET', '/api/jobs');
+        const summary = jobs.find((j) => j.id === job.id);
+        assert(summary?.error === message && !Object.hasOwn(summary, 'log'), `list summary: ${JSON.stringify(summary)}`);
+    });
+
+    await check('long CLI errors are abbreviated in job records and preserved in the log', async () => {
+        const input = 'failing-generator.mjs';
+        const reason = 'Unexpected generator input: ' + 'x'.repeat(70_000) + ' (end)';
+        await fsp.writeFile(path.join(projectDir, input),
+            `export class Generator { static create() { throw new Error(${JSON.stringify(reason)}); } }`);
+        const job = await runJob('/api/convert', { input, format: 'ply' });
+        const message = `Error: ${reason}`;
+        assert(job.status === 'error' && job.log.includes(message), 'missing full generator error in log');
+        assert(job.error === message.slice(0, 599) + '…', `unexpected summary length: ${job.error?.length}`);
+        const { json: { jobs } } = await api('GET', '/api/jobs');
+        assert(jobs.find((j) => j.id === job.id)?.error === job.error, 'job list must carry the short summary');
+    });
+
     await check('jobs queue FIFO at the default concurrency of 1', async () => {
         const { json: list } = await api('GET', '/api/jobs');
         assert(Array.isArray(list.jobs) && list.concurrency === 1, `list: ${JSON.stringify({ concurrency: list.concurrency })}`);
@@ -701,6 +729,7 @@ try {
         const ja = await waitJob(a);
         const jb = await waitJob(b);
         assert(ja.status === 'done' && jb.status === 'done', `jobs: ${ja.status}/${jb.status}`);
+        assert(ja.error === undefined && jb.error === undefined, 'successful jobs must omit error summaries');
         assert(jb.startedAt >= ja.endedAt, `serial violated: b started ${jb.startedAt} before a ended ${ja.endedAt}`);
     });
 
